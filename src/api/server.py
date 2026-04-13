@@ -291,6 +291,14 @@ def _include_routers(application: FastAPI) -> None:
     # ── Voice AI pipeline (STT → LLM → TTS) ─────────────────
     _load_voice_pipeline(application)
 
+    # ── Voice Cloning ────────────────────────────────────────
+    try:
+        from voice_cloning.router import voice_clone_router
+        application.include_router(voice_clone_router)
+        logger.info("Voice Cloning router loaded")
+    except Exception as exc:
+        logger.warning("Voice Cloning router not available: %s", exc)
+
     # ── Telephony (7 providers + WebRTC) ────────────────────
     try:
         from integrations.telephony.router import telephony_router, webrtc_router

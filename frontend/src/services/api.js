@@ -693,4 +693,31 @@ export const webrtcAPI = {
   getIceConfig: () => api.get('/api/v1/webrtc/ice-config'),
 };
 
+// ============================================
+// VOICE CLONING API
+// ============================================
+export const voiceCloneAPI = {
+  // Upload sample + create clone
+  register: (formData) => api.post('/api/v1/voice-clone/register', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+
+  // Check audio quality before cloning
+  qualityCheck: (formData) => api.post('/api/v1/voice-clone/quality-check', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+
+  // Synthesize speech in cloned voice
+  synthesize: (data) => api.post('/api/v1/voice-clone/synthesize', data),
+
+  // List all cloned voices
+  listVoices: (params) => api.get('/api/v1/voice-clone/voices', { params }),
+
+  // Get single voice details
+  getVoice: (voiceId) => api.get(`/api/v1/voice-clone/voices/${voiceId}`),
+
+  // Delete a cloned voice
+  deleteVoice: (voiceId) => api.delete(`/api/v1/voice-clone/voices/${voiceId}`),
+};
+
 export default api;

@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     WHITELABEL_ENABLED: bool = True
     DEFAULT_TENANT_PLAN: str = "starter"
 
+    # ── Voice Cloning ─────────────────────────────────────────────
+    ELEVENLABS_API_KEY: str = ""
+    PLAYHT_API_KEY: str = ""
+    PLAYHT_USER_ID: str = ""
+    VOICE_SAMPLES_DIR: str = "data/voice_samples"
+    VOICE_EMBEDDINGS_DIR: str = "data/voice_embeddings"
+    VOICE_OUTPUTS_DIR: str = "data/voice_outputs"
+
     # ── WhatsApp Business API ────────────────────────────────────
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_ACCESS_TOKEN: str = ""
