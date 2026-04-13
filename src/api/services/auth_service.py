@@ -6,7 +6,7 @@ Business logic for authentication: registration, login, token management.
 Rules enforced:
 - KB-004: Uses PyJWT exclusively (NOT python-jose)
 - KB-005: Password validation (8+ chars, 1 uppercase, 1 digit)
-- Uses sha256_crypt (NOT bcrypt) due to passlib 1.7.4 / bcrypt 4.x incompatibility
+- Uses bcrypt for password hashing (bcrypt<4.1 pinned for passlib compatibility)
 - KB-017: Always call db.refresh() / re-fetch after db.commit()
 """
 
@@ -24,8 +24,8 @@ from api.exceptions import ConflictError, NotFoundError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
-# Use sha256_crypt — NOT bcrypt (passlib 1.7.4 incompatible with bcrypt 4.x)
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+# Use bcrypt for password hashing (pin bcrypt<4.1 in requirements.txt for passlib compat)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class AuthService:

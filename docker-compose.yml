@@ -1,0 +1,108 @@
+# ============================================
+# VoiceFlow AI SaaS - Docker Compose
+# ============================================
+
+services:
+  # ── PostgreSQL ─────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voiceflow
+      POSTGRES_USER: voiceflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-voiceflow_secret}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voiceflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── VoiceFlow API ─────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://voiceflow:${DB_PASSWORD:-voiceflow_secret}@postgres:5432/voiceflow
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      APP_ENV: ${APP_ENV:-production}
+      # LLM Providers
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      # Telephony
+      TELECMI_API_KEY: ${TELECMI_API_KEY:-}
+      TELECMI_API_SECRET: ${TELECMI_API_SECRET:-}
+      TELECMI_ACCOUNT_ID: ${TELECMI_ACCOUNT_ID:-}
+      BOLNA_API_KEY: ${BOLNA_API_KEY:-}
+      VOBIZ_API_KEY: ${VOBIZ_API_KEY:-}
+      VOBIZ_SENDER_ID: ${VOBIZ_SENDER_ID:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      VONAGE_API_KEY: ${VONAGE_API_KEY:-}
+      VONAGE_API_SECRET: ${VONAGE_API_SECRET:-}
+      VONAGE_APPLICATION_ID: ${VONAGE_APPLICATION_ID:-}
+      # SIP
+      SIP_HOST: ${SIP_HOST:-}
+      SIP_PORT: ${SIP_PORT:-5060}
+      SIP_USERNAME: ${SIP_USERNAME:-}
+      SIP_PASSWORD: ${SIP_PASSWORD:-}
+      # Payments
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      # Monitoring
+      SENTRY_DSN: ${SENTRY_DSN:-}
+    volumes:
+      - recordings_data:/app/data/recordings
+      - voices_data:/app/data/voices
+      - logs_data:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ── Frontend Dev (optional, for dev mode) ──
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8001
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+  recordings_data:
+  voices_data:
+  logs_data:
+  frontend_node_modules:

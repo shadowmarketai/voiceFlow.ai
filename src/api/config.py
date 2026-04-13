@@ -48,11 +48,39 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     GROQ_API_KEY: str = ""
 
-    # ── Telephony ────────────────────────────────────────────────
+    # ── Telephony (India-first, 7 providers) ────────────────────
+    # TeleCMI (Primary India — cheapest)
     TELECMI_API_KEY: str = ""
+    TELECMI_API_SECRET: str = ""
+    TELECMI_ACCOUNT_ID: str = ""
+    # Bolna (AI voice agents)
+    BOLNA_API_KEY: str = ""
+    # Vobiz (Bulk voice + IVR)
+    VOBIZ_API_KEY: str = ""
+    VOBIZ_API_SECRET: str = ""
+    VOBIZ_SENDER_ID: str = ""
+    # Exotel (IVR focused)
     EXOTEL_API_KEY: str = ""
+    EXOTEL_API_TOKEN: str = ""
+    EXOTEL_SID: str = ""
+    # Twilio (International)
     TWILIO_ACCOUNT_SID: str = ""
     TWILIO_AUTH_TOKEN: str = ""
+    # Vonage (International)
+    VONAGE_API_KEY: str = ""
+    VONAGE_API_SECRET: str = ""
+    VONAGE_APPLICATION_ID: str = ""
+    VONAGE_PRIVATE_KEY_PATH: str = ""
+    # Native SIP Trunk
+    SIP_HOST: str = ""
+    SIP_PORT: int = 5060
+    SIP_USERNAME: str = ""
+    SIP_PASSWORD: str = ""
+    SIP_TRANSPORT: str = "udp"
+    SIP_DID_NUMBERS: str = ""
+    # WebRTC (browser calls)
+    WEBRTC_ENABLED: bool = True
+    WEBRTC_STUN_SERVERS: str = "stun:stun.l.google.com:19302"
 
     # ── Payments ─────────────────────────────────────────────────
     RAZORPAY_KEY_ID: str = ""

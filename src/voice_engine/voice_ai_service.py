@@ -2,7 +2,8 @@
 VoiceFlow - Full Voice AI Pipeline
 ====================================
 Wires together:
-  STT (Whisper) → Analysis (emotion/intent) → LLM (Claude/Groq) → TTS (Indic Parler/OpenVoice)
+  VAD → Noise Reduction → STT (Whisper) → Analysis (emotion/intent)
+  → LLM (Claude/Groq) → TTS (Indic Parler/OpenVoice) → EOS
 
 Usage:
     service = VoiceAIService()
@@ -164,6 +165,9 @@ class VoiceAIService:
     def __init__(self):
         self._voice_engine = None   # STT + analysis
         self._tts_service = None    # TTS
+        self._vad_engine = None     # Voice Activity Detection
+        self._noise_engine = None   # Noise Reduction
+        self._eos_engine = None     # End-of-Speech Detection
 
     def _get_voice_engine(self):
         if self._voice_engine is None:
@@ -178,6 +182,82 @@ class VoiceAIService:
             from tts.service import get_tts_service
             self._tts_service = get_tts_service()
         return self._tts_service
+
+    def _get_vad(self):
+        if self._vad_engine is None:
+            from voice_engine.vad import VADEngine
+            self._vad_engine = VADEngine(provider="auto", threshold=0.5)
+        return self._vad_engine
+
+    def _get_noise_reducer(self):
+        if self._noise_engine is None:
+            from voice_engine.noise_reduction import NoiseReductionEngine
+            self._noise_engine = NoiseReductionEngine(
+                method="spectral_gate", aggressiveness=1.0
+            )
+        return self._noise_engine
+
+    def _get_eos(self):
+        if self._eos_engine is None:
+            from voice_engine.eos import EOSEngine, EOSConfig
+            self._eos_engine = EOSEngine(EOSConfig(
+                min_silence_ms=500,
+                indian_language_mode=True,
+                smart_mode=True,
+            ))
+        return self._eos_engine
+
+    def preprocess_audio(
+        self,
+        audio_bytes: bytes,
+        sample_rate: int = 16000,
+    ) -> Dict[str, Any]:
+        """Pre-process audio: noise reduction → VAD → extract speech.
+
+        Returns dict with cleaned audio bytes, VAD result, and whether
+        to proceed with STT.
+        """
+        import numpy as np
+
+        audio = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+
+        # Step 1: Noise reduction
+        try:
+            nr = self._get_noise_reducer()
+            audio = nr.reduce(audio, sample_rate)
+            noise_reduced = True
+        except Exception as e:
+            logger.warning("Noise reduction failed (using raw audio): %s", e)
+            noise_reduced = False
+
+        # Step 2: VAD
+        try:
+            vad = self._get_vad()
+            vad_result = vad.detect(audio, sample_rate)
+            has_speech = vad_result.is_speech
+            speech_ratio = vad_result.speech_ratio
+
+            # Extract only speech segments to reduce STT load
+            if has_speech and speech_ratio < 0.8:
+                speech_audio = vad.extract_speech(audio, sample_rate)
+                if speech_audio is not None:
+                    audio = speech_audio
+        except Exception as e:
+            logger.warning("VAD failed (processing full audio): %s", e)
+            has_speech = True
+            speech_ratio = 1.0
+
+        # Convert back to bytes
+        audio_int16 = (audio * 32768.0).clip(-32768, 32767).astype(np.int16)
+        clean_bytes = audio_int16.tobytes()
+
+        return {
+            "audio_bytes": clean_bytes,
+            "has_speech": has_speech,
+            "speech_ratio": speech_ratio,
+            "noise_reduced": noise_reduced,
+            "duration_s": len(audio) / sample_rate,
+        }
 
     async def transcribe_and_analyze(self, audio_bytes: bytes, language: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -271,15 +351,42 @@ class VoiceAIService:
     async def handle_turn(self, request: VoiceTurnRequest) -> VoiceTurnResponse:
         """
         Full pipeline for one conversational turn:
+          0. Preprocess (noise reduction + VAD)
           1. STT + Analysis
           2. LLM response generation
           3. TTS
         """
         t_start = time.time()
 
+        # --- Step 0: Preprocess audio (noise reduction + VAD) ---
+        try:
+            preprocess = self.preprocess_audio(request.audio_bytes)
+            processed_bytes = preprocess["audio_bytes"]
+            if not preprocess["has_speech"]:
+                logger.info("No speech detected (VAD), skipping turn")
+                return VoiceTurnResponse(
+                    text="",
+                    audio_base64="",
+                    audio_format="wav",
+                    sample_rate=16000,
+                    analysis={"transcription": "", "vad": "no_speech"},
+                    latency_ms=(time.time() - t_start) * 1000,
+                    tts_engine="none",
+                )
+            t_preprocess = time.time()
+            logger.info(
+                "Preprocess done in %.0fms: speech_ratio=%.2f, noise_reduced=%s",
+                (t_preprocess - t_start) * 1000,
+                preprocess["speech_ratio"],
+                preprocess["noise_reduced"],
+            )
+        except Exception as e:
+            logger.warning("Preprocess failed, using raw audio: %s", e)
+            processed_bytes = request.audio_bytes
+
         # --- Step 1: Analyse incoming audio ---
         analysis = await self.transcribe_and_analyze(
-            request.audio_bytes, language=request.language
+            processed_bytes, language=request.language
         )
         user_text = analysis["transcription"]
         detected_emotion = analysis.get("emotion", "neutral")

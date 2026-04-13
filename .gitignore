@@ -42,3 +42,11 @@ voices/
 agents
 rules
 skills
+
+# Docker
+docker-compose.override.yml
+
+# Coverage
+htmlcov/
+.coverage
+.pytest_cache/

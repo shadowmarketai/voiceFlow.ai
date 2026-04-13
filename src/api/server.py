@@ -291,6 +291,15 @@ def _include_routers(application: FastAPI) -> None:
     # ── Voice AI pipeline (STT → LLM → TTS) ─────────────────
     _load_voice_pipeline(application)
 
+    # ── Telephony (7 providers + WebRTC) ────────────────────
+    try:
+        from integrations.telephony.router import telephony_router, webrtc_router
+        application.include_router(telephony_router)
+        application.include_router(webrtc_router)
+        logger.info("Telephony router loaded (7 providers + WebRTC)")
+    except Exception as exc:
+        logger.warning("Telephony router not available: %s", exc)
+
     # ── CRM Integration API ──────────────────────────────────
     _register_crm_integration_api(application)
 
