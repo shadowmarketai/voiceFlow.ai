@@ -52,19 +52,34 @@ const item = {
 export default function Integrations() {
   const [activeCategory, setActiveCategory] = useState('All')
   const [search, setSearch] = useState('')
-  const [integrations, setIntegrations] = useState(() => {
-    const saved = localStorage.getItem('vf_integrations')
-    return saved ? JSON.parse(saved) : INITIAL_INTEGRATIONS
+  // Store only connection state separately — never serialize static definitions
+  const [connectionState, setConnectionState] = useState(() => {
+    try {
+      // Clean up old format that caused the blank screen bug
+      localStorage.removeItem('vf_integrations')
+      const saved = localStorage.getItem('vf_integration_connections')
+      return saved ? JSON.parse(saved) : {}
+    } catch { return {} }
   })
-  const [connectModal, setConnectModal] = useState(null) // integration id
+  const [connectModal, setConnectModal] = useState(null)
   const [configValues, setConfigValues] = useState({})
   const [connecting, setConnecting] = useState(false)
   const [manageModal, setManageModal] = useState(null)
 
-  // Persist connection state
-  const saveIntegrations = (updated) => {
-    setIntegrations(updated)
-    localStorage.setItem('vf_integrations', JSON.stringify(updated))
+  // Merge static definitions with saved connection state
+  const integrations = INITIAL_INTEGRATIONS.map(def => ({
+    ...def,
+    connected: connectionState[def.id]?.connected || false,
+    config: connectionState[def.id]?.config || undefined,
+  }))
+
+  const saveConnection = (id, connected, config) => {
+    setConnectionState(prev => {
+      const next = { ...prev, [id]: { connected, config } }
+      if (!connected) delete next[id]
+      localStorage.setItem('vf_integration_connections', JSON.stringify(next))
+      return next
+    })
   }
 
   const filtered = integrations.filter((i) => {
@@ -82,7 +97,6 @@ export default function Integrations() {
     const integration = integrations.find(i => i.id === integrationId)
     if (!integration) return
 
-    // Check all required fields are filled
     const missing = integration.configFields?.filter(f => !configValues[f.key]?.trim())
     if (missing?.length > 0) {
       toast.error(`Fill in: ${missing.map(f => f.label).join(', ')}`)
@@ -90,12 +104,8 @@ export default function Integrations() {
     }
 
     setConnecting(true)
-    // Simulate API call to save config
     setTimeout(() => {
-      const updated = integrations.map(i =>
-        i.id === integrationId ? { ...i, connected: true, config: { ...configValues } } : i
-      )
-      saveIntegrations(updated)
+      saveConnection(integrationId, true, { ...configValues })
       setConnectModal(null)
       setConfigValues({})
       setConnecting(false)
@@ -106,10 +116,7 @@ export default function Integrations() {
   // Disconnect
   const handleDisconnect = (integrationId) => {
     const integration = integrations.find(i => i.id === integrationId)
-    const updated = integrations.map(i =>
-      i.id === integrationId ? { ...i, connected: false, config: undefined } : i
-    )
-    saveIntegrations(updated)
+    saveConnection(integrationId, false, undefined)
     setManageModal(null)
     toast.success(`${integration?.name} disconnected`)
   }
