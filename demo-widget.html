@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceFlow AI Widget Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .hero {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 80px 24px;
+            text-align: center;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(99, 102, 241, 0.2);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            color: #a5b4fc;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 24px;
+        }
+        h1 {
+            font-size: 56px;
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #e2e8f0, #a5b4fc, #c4b5fd);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            font-size: 20px;
+            color: #94a3b8;
+            max-width: 600px;
+            margin: 0 auto 40px;
+            line-height: 1.6;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            max-width: 1000px;
+            margin: 60px auto;
+            padding: 0 24px;
+        }
+        .feature-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 32px;
+            text-align: left;
+        }
+        .feature-card h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #f1f5f9;
+        }
+        .feature-card p {
+            font-size: 14px;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+        .embed-section {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 24px;
+        }
+        .embed-section h2 {
+            font-size: 28px;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .code-block {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: #a5b4fc;
+            overflow-x: auto;
+            margin-bottom: 16px;
+        }
+        .try-text {
+            text-align: center;
+            color: #f59e0b;
+            font-size: 18px;
+            margin-top: 60px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .agent-cards {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 40px 0;
+        }
+        .agent-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 200px;
+        }
+        .agent-card:hover {
+            border-color: #6366f1;
+            transform: translateY(-4px);
+        }
+        .agent-card.active {
+            border-color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+        .agent-card img {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            margin-bottom: 12px;
+        }
+        .agent-card h4 { font-size: 16px; margin-bottom: 4px; }
+        .agent-card p { font-size: 12px; color: #94a3b8; }
+        .stats {
+            display: flex;
+            gap: 40px;
+            justify-content: center;
+            margin: 40px 0;
+        }
+        .stat { text-align: center; }
+        .stat-number {
+            font-size: 40px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #6366f1, #f59e0b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .stat-label { font-size: 14px; color: #94a3b8; margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <div class="badge">India's #1 Voice AI Platform</div>
+        <h1>Voice AI for Every Website</h1>
+        <p class="subtitle">
+            Add intelligent voice conversations to any website with one line of code.
+            12+ Indian languages. Sub-second latency. Beautiful widget.
+        </p>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number">12+</div>
+                <div class="stat-label">Indian Languages</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">&lt;500ms</div>
+                <div class="stat-label">Response Latency</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">5</div>
+                <div class="stat-label">TTS Engines</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number">₹5/min</div>
+                <div class="stat-label">Starting Price</div>
+            </div>
+        </div>
+
+        <h2 style="margin-top: 60px; font-size: 24px;">Try Our Voice Agents</h2>
+        <p style="color: #94a3b8; margin-bottom: 24px;">Click on an agent, then use the chat bubble in the bottom-right corner</p>
+
+        <div class="agent-cards">
+            <div class="agent-card active" onclick="switchAgent('sales-assistant-en')">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Aria" alt="Aria" />
+                <h4>Aria</h4>
+                <p>English Sales Assistant</p>
+            </div>
+            <div class="agent-card" onclick="switchAgent('support-assistant-hi')">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Priya" alt="Priya" />
+                <h4>Priya</h4>
+                <p>Hindi/Hinglish Support</p>
+            </div>
+            <div class="agent-card" onclick="switchAgent('support-assistant-ta')">
+                <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Kavitha" alt="Kavitha" />
+                <h4>Kavitha</h4>
+                <p>Tamil Support</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="features">
+        <div class="feature-card">
+            <div class="feature-icon">🎤</div>
+            <h3>Voice + Text Chat</h3>
+            <p>Users can speak or type. AI responds with natural voice in their language — Hindi, Tamil, Telugu, and 9 more.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Sub-Second Latency</h3>
+            <p>Powered by 5 TTS engines with intelligent selection. Faster than any competitor in the Indian market.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔌</div>
+            <h3>One-Line Integration</h3>
+            <p>Add to any website with a single script tag. Works with React, WordPress, Shopify, and any HTML page.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🧠</div>
+            <h3>Emotion Detection</h3>
+            <p>Detects customer emotions in real-time. AI adapts tone and response based on sentiment.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📱</div>
+            <h3>Multi-Channel</h3>
+            <p>Web widget, WhatsApp Business, phone calls, API — all channels, one platform, unified analytics.</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">💰</div>
+            <h3>Built for India</h3>
+            <p>INR pricing from ₹5/min. Razorpay billing. Hinglish support. Regional accent detection.</p>
+        </div>
+    </div>
+
+    <div class="embed-section">
+        <h2>Integration Code</h2>
+        <div class="code-block">
+&lt;script src="http://localhost:8001/api/v1/widget/embed.js" data-agent-id="sales-assistant-en"&gt;&lt;/script&gt;
+        </div>
+        <p style="text-align: center; color: #94a3b8; font-size: 14px;">
+            That's it. One line. Add it to any website and your AI voice agent is live.
+        </p>
+    </div>
+
+    <p class="try-text">👇 Click the chat bubble in the bottom-right to try it live!</p>
+
+    <div style="height: 100px;"></div>
+
+    <!-- VoiceFlow AI Widget -->
+    <script src="http://localhost:8001/api/v1/widget/embed.js" data-agent-id="sales-assistant-en" id="vf-script"></script>
+
+    <script>
+        function switchAgent(agentId) {
+            // Update active card styling
+            document.querySelectorAll('.agent-card').forEach(c => c.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+
+            // Remove existing widget and reload with new agent
+            if (window.VoiceFlowWidget) {
+                window.VoiceFlowWidget.destroy();
+            }
+            var oldScript = document.getElementById('vf-script');
+            if (oldScript) oldScript.remove();
+
+            var s = document.createElement('script');
+            s.id = 'vf-script';
+            s.src = 'http://localhost:8001/api/v1/widget/embed.js';
+            s.setAttribute('data-agent-id', agentId);
+            document.body.appendChild(s);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Primary SEO -->
+    <title>Swetha Structures CRM — PEB Quotation & Voice AI</title>
+    <meta name="description" content="CRM + Voice AI + PEB Quotation system for Swetha Structures. Manage leads, generate BOQ quotations, and automate customer engagement." />
+    <meta name="keywords" content="peb quotation, steel building, crm, voice ai, swetha structures, boq calculator, pre-engineered building" />
+    <meta name="author" content="Swetha Structures" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Open Graph / Social sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Swetha Structures CRM — PEB Quotation & Voice AI" />
+    <meta property="og:description" content="CRM + Voice AI + PEB Quotation for Swetha Structures. Generate BOQ quotations linked to CRM leads." />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:site_name" content="Swetha Structures CRM" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Swetha Structures CRM — PEB Quotation & Voice AI" />
+    <meta name="twitter:description" content="CRM + Voice AI + PEB Quotation for Swetha Structures. Manage leads and generate professional quotations." />
+    <meta name="twitter:image" content="/og-image.png" />
+
+    <!-- Theme color for mobile browsers -->
+    <meta name="theme-color" content="#D97706" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Swetha CRM" />
+
+    <!-- Structured data (SaaS product) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Swetha Structures CRM",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "description": "CRM + Voice AI + PEB Quotation system for Swetha Structures. Manage leads and generate professional BOQ quotations."
+    }
+    </script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <script>
+      // Apply dark mode before React mounts to prevent flash
+      try {
+        var stored = localStorage.getItem('swetha_dark_mode');
+        if (stored === 'true' || (stored === null && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          document.documentElement.classList.add('dark');
+        }
+      } catch(e) {}
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
