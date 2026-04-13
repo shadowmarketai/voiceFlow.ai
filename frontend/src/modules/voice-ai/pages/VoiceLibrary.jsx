@@ -121,10 +121,16 @@ function VoiceCard({ voice, isPlaying, onPlay }) {
     >
       <div className="flex items-start justify-between mb-2.5">
         <div className="flex items-center gap-2 min-w-0">
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0 ${
+            voice.gender === 'female'
+              ? 'bg-pink-100 text-pink-600'
+              : voice.gender === 'male'
+                ? 'bg-blue-100 text-blue-600'
+                : 'bg-gray-100 text-gray-600'
+          }`}>
+            {voice.gender === 'female' ? '\u2640' : voice.gender === 'male' ? '\u2642' : '\u25CE'}
+          </div>
           <h3 className="text-sm font-semibold text-gray-900">{voice.name}</h3>
-          <span className="text-[11px]">
-            {voice.gender === 'female' ? '♀' : voice.gender === 'male' ? '♂' : '◎'}
-          </span>
           {voice.badge && (
             <span className={`px-1.5 py-0.5 text-[9px] font-medium rounded-full border ${badgeColors[voice.badge] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
               {voice.badge}
@@ -179,7 +185,22 @@ export default function VoiceLibrary() {
   const [genderFilter, setGenderFilter] = useState('all')
   const [playingId, setPlayingId] = useState(null)
   const [favorites, setFavorites] = useState(new Set())
+  const [browserVoices, setBrowserVoices] = useState([])
   const audioRef = useRef(null)
+
+  // Load browser voices (they load async on some browsers)
+  useEffect(() => {
+    const loadVoices = () => {
+      const voices = window.speechSynthesis?.getVoices() || []
+      if (voices.length > 0) setBrowserVoices(voices)
+    }
+    loadVoices()
+    window.speechSynthesis?.addEventListener('voiceschanged', loadVoices)
+    return () => {
+      window.speechSynthesis?.removeEventListener('voiceschanged', loadVoices)
+      window.speechSynthesis?.cancel()
+    }
+  }, [])
 
   const filtered = useMemo(() => {
     return VOICES.filter(v => {
@@ -207,36 +228,91 @@ export default function VoiceLibrary() {
     filtered: filtered.length,
   }), [filtered])
 
+  // Sample texts per language — proper native text
+  const SAMPLE_TEXTS = {
+    'ta-IN': 'வணக்கம்! நான் உங்கள் AI குரல் உதவியாளர். இன்று நான் உங்களுக்கு எப்படி உதவ முடியும்?',
+    'hi-IN': 'नमस्ते! मैं आपका AI वॉइस असिस्टेंट हूं। आज मैं आपकी कैसे मदद कर सकता हूं?',
+    'te-IN': 'నమస్కారం! నేను మీ AI వాయిస్ అసిస్టెంట్. ఈ రోజు నేను మీకు ఎలా సహాయం చేయగలను?',
+    'kn-IN': 'ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ AI ಧ್ವನಿ ಸಹಾಯಕ. ಇಂದು ನಾನು ನಿಮಗೆ ಹೇಗೆ ಸಹಾಯ ಮಾಡಬಹುದು?',
+    'ml-IN': 'നമസ്കാരം! ഞാൻ നിങ്ങളുടെ AI വോയ്സ് അസിസ്റ്റന്റ് ആണ്. ഇന്ന് എനിക്ക് നിങ്ങളെ എങ്ങനെ സഹായിക്കാനാകും?',
+    'bn-IN': 'নমস্কার! আমি আপনার AI ভয়েস অ্যাসিস্ট্যান্ট। আজ আমি আপনাকে কীভাবে সাহায্য করতে পারি?',
+    'mr-IN': 'नमस्कार! मी तुमचा AI व्हॉइस असिस्टंट आहे. आज मी तुम्हाला कशी मदत करू शकतो?',
+    'en-IN': "Hello! I'm your AI voice assistant. How can I help you today?",
+    'en-US': "Hello! I'm your AI voice assistant. How can I help you today?",
+    'multi': "Hello! I'm your AI voice assistant. I can speak in many languages. How can I help you today?",
+  }
+
+  /**
+   * Pick a browser SpeechSynthesis voice that best matches
+   * the target language and gender.
+   */
+  const pickBrowserVoice = (langCode, gender) => {
+    if (browserVoices.length === 0) return null
+    const langPrefix = langCode === 'multi' ? 'en' : langCode.split('-')[0]
+    const fullLang = langCode === 'multi' ? 'en-US' : langCode
+
+    // Filter by language match
+    let candidates = browserVoices.filter(v => v.lang === fullLang)
+    if (candidates.length === 0) {
+      candidates = browserVoices.filter(v => v.lang.startsWith(langPrefix))
+    }
+    if (candidates.length === 0) {
+      candidates = browserVoices.filter(v => v.lang.startsWith('en'))
+    }
+
+    // Try to match gender by name heuristics
+    if (candidates.length > 1 && gender !== 'neutral') {
+      const femaleKeywords = ['female', 'woman', 'zira', 'hazel', 'susan', 'linda', 'heera', 'kalpana', 'neerja', 'pallavi', 'swara', 'priya', 'shruti', 'hemant']
+      const maleKeywords = ['male', 'man', 'david', 'mark', 'james', 'ravi', 'madhur', 'prabhat', 'hemant']
+      const keywords = gender === 'female' ? femaleKeywords : maleKeywords
+      const genderMatch = candidates.filter(v =>
+        keywords.some(kw => v.name.toLowerCase().includes(kw))
+      )
+      if (genderMatch.length > 0) return genderMatch[0]
+    }
+
+    return candidates[0] || null
+  }
+
   const handlePlay = (voiceId) => {
     if (playingId === voiceId) {
-      audioRef.current?.pause()
+      window.speechSynthesis?.cancel()
       setPlayingId(null)
       return
     }
     const voice = VOICES.find(v => v.id === voiceId)
-    if (!voice) return
+    if (!voice || !window.speechSynthesis) return
 
-    // Use Web Speech API as fallback for demo
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel()
-      const utterance = new SpeechSynthesisUtterance(
-        voice.langLabel === 'Tamil' ? 'வணக்கம்! நான் உங்கள் AI உதவியாளர். நான் உங்களுக்கு எப்படி உதவ முடியும்?' :
-        voice.langLabel === 'Hindi' ? 'नमस्ते! मैं आपका AI सहायक हूं। मैं आपकी कैसे मदद कर सकता हूं?' :
-        voice.langLabel === 'Telugu' ? 'నమస్కారం! నేను మీ AI సహాయకుడిని. నేను మీకు ఎలా సహాయం చేయగలను?' :
-        `Hello! I'm ${voice.name}, your AI voice assistant. How can I help you today?`
-      )
-      utterance.lang = voice.language === 'multi' ? 'en-US' : voice.language.replace('-IN', '-IN')
+    window.speechSynthesis.cancel()
+
+    const text = SAMPLE_TEXTS[voice.language] || SAMPLE_TEXTS['en-US']
+    const utterance = new SpeechSynthesisUtterance(text)
+
+    // Set language
+    utterance.lang = voice.language === 'multi' ? 'en-US' : voice.language
+
+    // Pick matching browser voice
+    const browserVoice = pickBrowserVoice(voice.language, voice.gender)
+    if (browserVoice) utterance.voice = browserVoice
+
+    // Differentiate voices using pitch + rate based on gender and provider
+    if (voice.gender === 'female') {
+      utterance.pitch = 1.1 + (voice.id.charCodeAt(3) % 5) * 0.05  // 1.1 - 1.3
+      utterance.rate = 0.9 + (voice.id.charCodeAt(4) % 3) * 0.05   // 0.9 - 1.0
+    } else if (voice.gender === 'male') {
+      utterance.pitch = 0.7 + (voice.id.charCodeAt(3) % 5) * 0.05  // 0.7 - 0.9
+      utterance.rate = 0.85 + (voice.id.charCodeAt(4) % 3) * 0.05  // 0.85 - 0.95
+    } else {
+      utterance.pitch = 1.0
       utterance.rate = 0.9
-      utterance.onend = () => setPlayingId(null)
-      window.speechSynthesis.speak(utterance)
     }
+
+    utterance.onend = () => setPlayingId(null)
+    utterance.onerror = () => setPlayingId(null)
+
+    window.speechSynthesis.speak(utterance)
     setPlayingId(voiceId)
   }
-
-  // Stop playback on unmount
-  useEffect(() => {
-    return () => { window.speechSynthesis?.cancel() }
-  }, [])
 
   const clearFilters = () => {
     setSearch('')
