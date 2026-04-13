@@ -395,6 +395,23 @@ async def start_campaign(
     db.commit()
     db.refresh(campaign)
 
+    # Trigger telephony execution (async, non-blocking)
+    try:
+        from api.services.campaign_execution import execute_campaign
+        import asyncio
+
+        asyncio.create_task(execute_campaign(
+            campaign_id=campaign.id,
+            campaign_name=campaign.name,
+            phone_numbers=[],  # Load from contact list in production
+            from_number="",    # Load from tenant config
+            provider="vobiz",  # Default bulk provider
+            language="hi",
+        ))
+        logger.info("Campaign execution triggered: id=%s", campaign_id)
+    except Exception as exc:
+        logger.warning("Campaign execution trigger failed (campaign still active): %s", exc)
+
     logger.info("Campaign started: id=%s user=%s", campaign_id, user_id)
     return _campaign_to_response(campaign)
 

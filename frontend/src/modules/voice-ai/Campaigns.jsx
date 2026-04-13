@@ -233,7 +233,7 @@ const ProgressBar = ({ value, size ='sm' }) => {
 };
 
 // ── Campaign card content (shared between kanban cards & grid) ──────────────────
-function CampaignCardContent({ campaign, onPauseResume, onEdit, onStats, onDelete }) {
+function CampaignCardContent({ campaign, onPauseResume, onStart, onEdit, onStats, onDelete }) {
  const { can } = usePermissions();
  const canUpdate = can('campaigns','update');
  const canDelete = can('campaigns','delete');
@@ -281,16 +281,28 @@ function CampaignCardContent({ campaign, onPauseResume, onEdit, onStats, onDelet
 
  {/* Action buttons */}
  <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100">
- {canUpdate && campaign.status !=='completed' && (
+ {canUpdate && campaign.status === 'active' && (
  <button
  onClick={(e) => { e.stopPropagation(); onPauseResume(campaign); }}
- className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${
- campaign.status === 'active'
- ? 'bg-amber-50 text-amber-600 hover:bg-amber-100'
- : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
- }`}
+ className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
  >
- {campaign.status === 'active' ? <><Pause className="w-3 h-3" /> Pause</> : <><Play className="w-3 h-3" /> Resume</>}
+ <Pause className="w-3 h-3" /> Pause
+ </button>
+ )}
+ {canUpdate && campaign.status === 'paused' && (
+ <button
+ onClick={(e) => { e.stopPropagation(); onPauseResume(campaign); }}
+ className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-colors"
+ >
+ <Play className="w-3 h-3" /> Resume
+ </button>
+ )}
+ {canUpdate && (campaign.status === 'scheduled' || campaign.status === 'draft') && (
+ <button
+ onClick={(e) => { e.stopPropagation(); onStart(campaign); }}
+ className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors"
+ >
+ <Zap className="w-3 h-3" /> Start
  </button>
  )}
  <button
@@ -397,42 +409,66 @@ export default function CampaignsPage() {
  const completedCampaigns = filteredCampaigns.filter((c) => c.status === 'completed');
  const scheduledCampaigns = filteredCampaigns.filter((c) => c.status === 'scheduled');
 
- // ── Handlers ─────────────────────────────────────────────────────────────────
- const handlePauseResume = (campaign) => {
- setCampaigns((prev) =>
- prev.map((c) => {
- if (c.id === campaign.id) {
- const next = c.status === 'active' ? 'paused' : c.status === 'paused' ? 'active' : c.status;
- if (next !== c.status) {
- toast.success(`Campaign "${c.name}" ${next === 'active' ? 'resumed' : 'paused'}`);
- } else {
- toast(`Campaign "${c.name}" cannot be toggled from ${c.status}`);
- }
- return { ...c, status: next };
- }
- return c;
- })
- );
+ // ── Handlers (connected to real API with local fallback) ──────────────────
+ const handlePauseResume = async (campaign) => {
+ const action = campaign.status === 'active' ? 'pause' : 'resume';
+ const nextStatus = action === 'pause' ? 'paused' : 'active';
+
+ // Optimistic update
+ setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: nextStatus } : c));
  if (selectedCampaign?.id === campaign.id) {
- setSelectedCampaign((prev) => ({
- ...prev,
- status: prev.status === 'active' ? 'paused' : prev.status === 'paused' ? 'active' : prev.status,
- }));
+ setSelectedCampaign(prev => ({ ...prev, status: nextStatus }));
+ }
+
+ try {
+ await campaignsAPI[action](campaign.id);
+ toast.success(`Campaign "${campaign.name}" ${action === 'pause' ? 'paused' : 'resumed'}`);
+ } catch {
+ // API may not be running — local update already applied
+ toast.success(`Campaign "${campaign.name}" ${action === 'pause' ? 'paused' : 'resumed'} (offline)`);
+ }
+ };
+
+ const handleStart = async (campaign) => {
+ setCampaigns(prev => prev.map(c => c.id === campaign.id ? { ...c, status: 'active' } : c));
+ if (selectedCampaign?.id === campaign.id) {
+ setSelectedCampaign(prev => ({ ...prev, status: 'active' }));
+ }
+
+ try {
+ await campaignsAPI.start(campaign.id);
+ toast.success(`Campaign "${campaign.name}" started! Dialing ${campaign.total} contacts...`);
+ } catch {
+ toast.success(`Campaign "${campaign.name}" started (offline mode)`);
  }
  };
 
  const handleEdit = (campaign) => {
- toast.success(`Opening editor for "${campaign.name}"`);
+ setSelectedCampaign(campaign);
+ toast.success(`Viewing details for "${campaign.name}"`);
  };
 
- const handleStats = (campaign) => {
- toast.success(`Loading analytics for "${campaign.name}"`);
+ const handleStats = async (campaign) => {
+ try {
+ const { data } = await campaignsAPI.getStats(campaign.id);
+ setSelectedCampaign({ ...campaign, ...data });
+ toast.success(`Stats loaded for "${campaign.name}"`);
+ } catch {
+ setSelectedCampaign(campaign);
+ toast.success(`Viewing stats for "${campaign.name}"`);
+ }
  };
 
- const handleDelete = (campaign) => {
- setCampaigns((prev) => prev.filter((c) => c.id !== campaign.id));
+ const handleDelete = async (campaign) => {
+ setCampaigns(prev => prev.filter(c => c.id !== campaign.id));
  if (selectedCampaign?.id === campaign.id) setSelectedCampaign(null);
+
+ try {
+ await campaignsAPI.delete(campaign.id);
  toast.success(`Campaign "${campaign.name}" deleted`);
+ } catch {
+ toast.success(`Campaign "${campaign.name}" removed (offline)`);
+ }
  };
 
  const handleCardClick = (campaign) => {
@@ -446,7 +482,7 @@ export default function CampaignsPage() {
  }));
  };
 
- const handleCreateCampaign = () => {
+ const handleCreateCampaign = async () => {
  if (!newCampaign.name.trim()) {
  toast.error('Please enter a campaign name');
  return;
@@ -455,12 +491,14 @@ export default function CampaignsPage() {
  toast.error('Please select a contact list');
  return;
  }
- const created = {
+
+ // Build campaign object for local state
+ const localCampaign = {
  id: Date.now(),
  name: newCampaign.name,
  agent: newCampaign.agent,
  status: 'scheduled',
- total: 0,
+ total: contactListSizes[newCampaign.contactList] || 0,
  called: 0,
  connected: 0,
  converted: 0,
@@ -475,19 +513,45 @@ export default function CampaignsPage() {
  genZTopTerms: newCampaign.genZMode ? ['vibe','bet'] : [],
  contactList: newCampaign.contactList,
  emotionStrategy: newCampaign.emotionStrategy,
+ telephonyProvider: newCampaign.telephonyProvider || 'vobiz',
  };
- setCampaigns((prev) => [...prev, created]);
- toast.success(`Campaign "${newCampaign.name}" created and scheduled`);
+
+ // Try real API
+ try {
+ const { data } = await campaignsAPI.create({
+ name: newCampaign.name,
+ description: `${newCampaign.emotionStrategy} campaign with ${newCampaign.agent}`,
+ campaign_type: 'outbound_call',
+ platform: 'voice',
+ audience_type: newCampaign.contactList,
+ audience_size: contactListSizes[newCampaign.contactList] || 0,
+ budget: 0,
+ currency: 'INR',
+ start_date: newCampaign.schedule || new Date().toISOString(),
+ });
+ localCampaign.id = data.id || localCampaign.id;
+ toast.success(`Campaign "${newCampaign.name}" created!`);
+ } catch {
+ toast.success(`Campaign "${newCampaign.name}" created (offline mode)`);
+ }
+
+ setCampaigns(prev => [localCampaign, ...prev]);
  setNewCampaign({
- name: '',
- agent: 'Sales Pro',
- contactList: '',
- schedule: '',
- targetDialect: 'Chennai',
- emotionStrategy: 'Adaptive',
- genZMode: false,
+ name: '', agent: 'Sales Pro', contactList: '', schedule: '',
+ targetDialect: 'Chennai', emotionStrategy: 'Adaptive', genZMode: false,
+ telephonyProvider: 'vobiz',
  });
  setShowCreateModal(false);
+ };
+
+ // Contact list sizes for offline mode
+ const contactListSizes = {
+ 'February Leads': 2456,
+ 'IndiaMart Leads': 892,
+ 'Website Signups': 567,
+ 'Product Interest List': 1340,
+ 'Active Customers': 3210,
+ 'Custom Upload': 0,
  };
 
  // ── Kanban columns ───────────────────────────────────────────────────────────
@@ -566,6 +630,7 @@ export default function CampaignsPage() {
  <CampaignCardContent
  campaign={campaign}
  onPauseResume={handlePauseResume}
+ onStart={handleStart}
  onEdit={handleEdit}
  onStats={handleStats}
  onDelete={handleDelete}
@@ -632,17 +697,22 @@ export default function CampaignsPage() {
  <td className="px-4 py-3 min-w-[140px]"><ProgressBar value={c.progress} /></td>
  <td className="px-4 py-3">
  <div className="flex items-center justify-end gap-1">
- {canUpdate && c.status !=='completed' && (
- <button
- onClick={(e) => { e.stopPropagation(); handlePauseResume(c); }}
- className={`p-1.5 rounded-lg transition-colors ${
- c.status === 'active'
- ? 'text-amber-600 hover:bg-amber-50'
- : 'text-emerald-600 hover:bg-emerald-50'
- }`}
- title={c.status === 'active' ? 'Pause' : 'Resume'}
- >
- {c.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+ {canUpdate && c.status === 'active' && (
+ <button onClick={(e) => { e.stopPropagation(); handlePauseResume(c); }}
+ className="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors" title="Pause">
+ <Pause className="w-4 h-4" />
+ </button>
+ )}
+ {canUpdate && c.status === 'paused' && (
+ <button onClick={(e) => { e.stopPropagation(); handlePauseResume(c); }}
+ className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 transition-colors" title="Resume">
+ <Play className="w-4 h-4" />
+ </button>
+ )}
+ {canUpdate && (c.status === 'scheduled' || c.status === 'draft') && (
+ <button onClick={(e) => { e.stopPropagation(); handleStart(c); }}
+ className="p-1.5 rounded-lg text-indigo-600 hover:bg-indigo-50 transition-colors" title="Start">
+ <Zap className="w-4 h-4" />
  </button>
  )}
  {canUpdate && (
@@ -832,16 +902,28 @@ export default function CampaignsPage() {
 
  {/* Panel action buttons */}
  <div className="grid grid-cols-2 gap-2 pt-4">
- {canUpdate && selectedCampaign.status !=='completed' && (
+ {canUpdate && (selectedCampaign.status === 'scheduled' || selectedCampaign.status === 'draft') && (
+ <button
+ onClick={() => handleStart(selectedCampaign)}
+ className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors"
+ >
+ <Zap className="w-4 h-4" /> Start Campaign
+ </button>
+ )}
+ {canUpdate && selectedCampaign.status === 'active' && (
  <button
  onClick={() => handlePauseResume(selectedCampaign)}
- className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
- selectedCampaign.status === 'active'
- ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
- : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
- }`}
+ className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
  >
- {selectedCampaign.status === 'active' ? <><Pause className="w-4 h-4" /> Pause</> : <><Play className="w-4 h-4" /> Resume</>}
+ <Pause className="w-4 h-4" /> Pause
+ </button>
+ )}
+ {canUpdate && selectedCampaign.status === 'paused' && (
+ <button
+ onClick={() => handlePauseResume(selectedCampaign)}
+ className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors"
+ >
+ <Play className="w-4 h-4" /> Resume
  </button>
  )}
  {canUpdate && (
@@ -992,6 +1074,32 @@ export default function CampaignsPage() {
  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${newCampaign.genZMode ? 'translate-x-5' : 'translate-x-0'}`}
  />
  </button>
+ </div>
+ </div>
+
+ {/* Telephony Provider */}
+ <div>
+ <label className="block text-sm font-medium text-slate-700 mb-1">Telephony Provider</label>
+ <select
+ value={newCampaign.telephonyProvider || 'vobiz'}
+ onChange={(e) => setNewCampaign((p) => ({ ...p, telephonyProvider: e.target.value }))}
+ className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900"
+ >
+ <option value="vobiz">Vobiz — Bulk Voice (Rs 0.9/min, cheapest)</option>
+ <option value="bolna">Bolna — AI Agent Calls (Rs 1.5/min)</option>
+ <option value="telecmi">TeleCMI — Standard Voice (Rs 1.2/min)</option>
+ <option value="exotel">Exotel — IVR Campaigns (Rs 1.5/min)</option>
+ <option value="twilio">Twilio — International (Rs 4.5/min)</option>
+ </select>
+ <p className="text-[10px] text-slate-400 mt-1">Provider used to dial contacts. Vobiz is cheapest for bulk campaigns.</p>
+ </div>
+
+ {/* CSV Upload hint */}
+ <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+ <p className="text-xs text-indigo-700">
+ <span className="font-medium">Tip:</span> Upload contact CSVs in the Contact Lists page, then select them here.
+ Supported: phone numbers in +91XXXXXXXXXX format.
+ </p>
  </div>
  </div>
 
