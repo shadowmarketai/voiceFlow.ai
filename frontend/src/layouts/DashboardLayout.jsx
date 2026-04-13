@@ -38,7 +38,7 @@ const navSections = [
     label: 'BUILD',
     items: [
       { icon: BookOpen, name: 'Knowledge Base', path: '/voice/knowledge' },
-      { icon: Mic,      name: 'Voice Studio',   path: '/voice/studio' },
+      { icon: Mic,      name: 'Voice Library & Studio', path: '/voice/studio' },
     ],
   },
   {

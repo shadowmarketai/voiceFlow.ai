@@ -2,14 +2,17 @@
  * Voice Studio - Train and customize dialect-aware AI voices
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import toast from 'react-hot-toast';
 import {
- Mic, Play, Settings, Upload, Volume2, Sliders, Sparkles,
+ Mic, Play, Pause, Settings, Upload, Volume2, Sliders, Sparkles,
  Languages, Brain, AudioWaveform, Music, User, UserCircle,
  CheckCircle, UploadCloud, FileAudio, RotateCcw, Save,
- ChevronDown, ToggleLeft, ToggleRight, Palette, Loader2, Square
+ ChevronDown, ToggleLeft, ToggleRight, Palette, Loader2, Square,
+ Search, Filter, Mic2, Globe2, X, AudioLines
 } from 'lucide-react';
+
+const VoiceLibrary = lazy(() => import('./pages/VoiceLibrary'));
 import CollapsibleSection from './components/CollapsibleSection';
 import DialectBadge from './components/DialectBadge';
 import EmotionIndicator from './components/EmotionIndicator';
@@ -77,6 +80,7 @@ function browserSpeak(text, { lang ='en-IN', rate = 1.0, pitch = 1.0, onStart, o
 }
 
 export default function VoiceStudioPage() {
+ const [activeTab, setActiveTab] = useState('library'); // library | studio | train
  const [selectedModel, setSelectedModel] = useState('kongu-m');
  const [speakingSpeed, setSpeakingSpeed] = useState(1.0);
  const [pitch, setPitch] = useState(0);
@@ -261,9 +265,11 @@ export default function VoiceStudioPage() {
  <div className="flex items-center justify-between">
  <div>
  <h1 className="text-2xl font-bold text-slate-900">Voice Studio</h1>
- <p className="text-sm text-slate-500 mt-1">Train and customize dialect-aware AI voices</p>
+ <p className="text-sm text-slate-500 mt-1">Browse voices, generate speech, and train custom models</p>
  </div>
  <div className="flex items-center gap-2">
+ {activeTab !== 'library' && (
+ <>
  <button
  onClick={() => toast('Resetting all settings to defaults...', { icon: '\u{1F504}' })}
  className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
@@ -276,8 +282,45 @@ export default function VoiceStudioPage() {
  >
  <Save className="w-4 h-4" /> Save All
  </button>
+ </>
+ )}
  </div>
  </div>
+
+ {/* Tabs */}
+ <div className="flex items-center gap-1 border-b border-gray-200">
+ {[
+   { key: 'library', label: 'Voice Library', icon: AudioLines, count: '42 voices' },
+   { key: 'studio', label: 'Generate Speech', icon: Volume2, count: 'TTS' },
+   { key: 'train', label: 'Train Custom', icon: Brain, count: 'Advanced' },
+ ].map(tab => (
+   <button
+     key={tab.key}
+     onClick={() => setActiveTab(tab.key)}
+     className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+       activeTab === tab.key
+         ? 'border-indigo-600 text-indigo-600'
+         : 'border-transparent text-gray-500 hover:text-gray-700'
+     }`}
+   >
+     <tab.icon className="w-4 h-4" />
+     {tab.label}
+     <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+       activeTab === tab.key ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-500'
+     }`}>{tab.count}</span>
+   </button>
+ ))}
+ </div>
+
+ {/* Voice Library Tab */}
+ {activeTab === 'library' && (
+   <Suspense fallback={<div className="flex items-center justify-center py-20"><Loader2 className="w-6 h-6 animate-spin text-indigo-500" /></div>}>
+     <VoiceLibrary />
+   </Suspense>
+ )}
+
+ {/* Generate Speech + Dialect Models Tab */}
+ {activeTab === 'studio' && (<div className="space-y-6">
 
  {/* Voice Models + Settings Grid */}
  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -609,7 +652,10 @@ export default function VoiceStudioPage() {
  )}
  </CollapsibleSection>
 
- {/* Train Custom Voice Section */}
+ </div>)}
+
+ {/* Train Custom Voice Tab */}
+ {activeTab === 'train' && (
  <CollapsibleSection title="Train Custom Voice" badge="Advanced">
  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
  {/* Upload Area */}
@@ -705,6 +751,7 @@ export default function VoiceStudioPage() {
  </div>
  </div>
  </CollapsibleSection>
+ )}
  </div>
  );
 }
