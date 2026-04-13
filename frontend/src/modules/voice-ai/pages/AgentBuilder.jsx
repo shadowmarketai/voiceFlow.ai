@@ -413,7 +413,7 @@ export default function AgentBuilder() {
 
   useEffect(() => {
     // Fetch central knowledge base
-    import('../../services/api').then(({ voiceAgentAPI }) => {
+    import('../../../services/api').then(({ voiceAgentAPI }) => {
       voiceAgentAPI.listKnowledge()
         .then(({ data }) => {
           if (Array.isArray(data) && data.length > 0) setKnowledgeLibrary(data);
