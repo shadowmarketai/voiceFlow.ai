@@ -3,7 +3,7 @@
  * Clean white panels, indigo accents, subtle shadows
  */
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -11,7 +11,8 @@ import {
   Play, Pause, Upload, Trash2, Plus, Copy, Check, ChevronDown,
   ChevronRight, Save, Rocket, Eye, Code, X, Volume2, Clock,
   MessageSquare, Shield, Sparkles, Zap, Send, Loader2,
-  Image, FileUp, Link2, HelpCircle
+  Image, FileUp, Link2, HelpCircle, BookOpen, ShoppingBag,
+  ScrollText, Search, CheckCircle2, Library
 } from 'lucide-react';
 
 /* ─── Design Tokens ────────────────────────────────────────────── */
@@ -404,6 +405,48 @@ export default function AgentBuilder() {
   const [apiKeyCopied, setApiKeyCopied] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Knowledge Library — shared docs from central Knowledge Base
+  const [knowledgeLibrary, setKnowledgeLibrary] = useState([]);
+  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState(new Set());
+  const [knowledgeSearch, setKnowledgeSearch] = useState('');
+  const [knowledgeTab, setKnowledgeTab] = useState('library'); // library | upload | faq
+
+  useEffect(() => {
+    // Fetch central knowledge base
+    import('../../services/api').then(({ voiceAgentAPI }) => {
+      voiceAgentAPI.listKnowledge()
+        .then(({ data }) => {
+          if (Array.isArray(data) && data.length > 0) setKnowledgeLibrary(data);
+        })
+        .catch(() => {
+          // Fallback mock data
+          setKnowledgeLibrary([
+            { id: 1, title: 'Company Overview', doc_type: 'document', content: 'Company provides AI-powered voice solutions...', is_active: true },
+            { id: 2, title: 'What services do you offer?', doc_type: 'faq', content: 'We offer Voice AI, CRM integration, and telephony services.', question: 'What services do you offer?', answer: 'We offer Voice AI, CRM integration, and telephony services.', is_active: true },
+            { id: 3, title: 'Product Pricing', doc_type: 'product_catalog', content: 'Starter: Rs 4,999/mo, Professional: Rs 14,999/mo, Enterprise: Rs 39,999/mo', is_active: true },
+            { id: 4, title: 'Sales Opening Script', doc_type: 'script', content: 'Hello! This is [Agent] calling from...', is_active: true },
+            { id: 5, title: 'Refund Policy', doc_type: 'faq', content: 'Full refund within 14 days of purchase.', question: 'What is your refund policy?', answer: 'Full refund within 14 days of purchase.', is_active: true },
+            { id: 6, title: 'Technical Specifications', doc_type: 'document', content: 'API supports REST and WebSocket. Rate limit: 1000 req/min.', is_active: true },
+          ]);
+        });
+    });
+  }, []);
+
+  const toggleKnowledgeDoc = (docId) => {
+    setSelectedKnowledgeIds(prev => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  };
+
+  const filteredLibrary = knowledgeLibrary.filter(doc => {
+    if (!knowledgeSearch.trim()) return true;
+    const q = knowledgeSearch.toLowerCase();
+    return doc.title.toLowerCase().includes(q) || doc.content.toLowerCase().includes(q);
+  });
+
   const handleSaveDraft = () => {
     setSaving(true);
     setTimeout(() => {
@@ -592,52 +635,170 @@ export default function AgentBuilder() {
               />
             </ConfigSection>
 
-            {/* Knowledge Base */}
+            {/* Knowledge Base — Connected to Central Library */}
             <ConfigSection title="Knowledge Base" icon={FileText} iconColor="bg-amber-50 text-amber-500" defaultOpen={false}>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">Upload Documents</label>
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-300 bg-slate-50 text-slate-400 hover:text-indigo-500 transition-all cursor-pointer"
-                >
-                  <FileUp className="w-8 h-8" />
-                  <p className="text-xs font-medium">Drop files or click to upload</p>
-                  <p className="text-[10px] text-slate-400">PDF, TXT, CSV - Max 10MB</p>
-                </button>
-                <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.csv" onChange={handleFileUpload} className="hidden" />
+              {/* Tab Switcher */}
+              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                {[
+                  { key: 'library', label: 'From Library', icon: BookOpen },
+                  { key: 'upload', label: 'Upload New', icon: FileUp },
+                  { key: 'faq', label: 'FAQ Pairs', icon: HelpCircle },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setKnowledgeTab(tab.key)}
+                    className={`flex items-center gap-1.5 flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                      knowledgeTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    <tab.icon className="w-3 h-3" />
+                    {tab.label}
+                  </button>
+                ))}
               </div>
 
-              {documents.length > 0 && (
-                <div className="space-y-2">
-                  {documents.map((doc, i) => (
-                    <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-gray-100">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                        <span className="text-xs text-slate-700 truncate">{doc.name}</span>
+              {/* Library Tab — Pick from Central Knowledge Base */}
+              {knowledgeTab === 'library' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-slate-500">
+                      Select documents from your <a href="/voice/knowledge-base" className="text-indigo-600 hover:underline font-medium">central library</a>
+                    </p>
+                    <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      {selectedKnowledgeIds.size} selected
+                    </span>
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      type="text"
+                      value={knowledgeSearch}
+                      onChange={(e) => setKnowledgeSearch(e.target.value)}
+                      placeholder="Search knowledge base..."
+                      className="w-full pl-8 pr-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-300 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Document List */}
+                  <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
+                    {filteredLibrary.length === 0 ? (
+                      <div className="py-8 text-center">
+                        <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                        <p className="text-xs text-slate-400">No documents in library</p>
+                        <a href="/voice/knowledge-base" className="text-[11px] text-indigo-600 hover:underline mt-1 inline-block">
+                          Go to Knowledge Base to add documents
+                        </a>
                       </div>
-                      <button onClick={() => setDocuments((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    ) : (
+                      filteredLibrary.map(doc => {
+                        const isSelected = selectedKnowledgeIds.has(doc.id);
+                        const typeIcons = { document: FileText, faq: HelpCircle, product_catalog: ShoppingBag, script: ScrollText };
+                        const typeColors = { document: 'text-blue-500', faq: 'text-emerald-500', product_catalog: 'text-amber-500', script: 'text-purple-500' };
+                        const DocIcon = typeIcons[doc.doc_type] || FileText;
+                        return (
+                          <button
+                            key={doc.id}
+                            onClick={() => toggleKnowledgeDoc(doc.id)}
+                            className={`w-full flex items-start gap-2.5 p-2.5 rounded-lg text-left transition-all ${
+                              isSelected
+                                ? 'bg-indigo-50 border border-indigo-200 ring-1 ring-indigo-100'
+                                : 'bg-slate-50 border border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/30'
+                            }`}
+                          >
+                            <div className={`w-7 h-7 rounded-md bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 ${typeColors[doc.doc_type] || 'text-slate-400'}`}>
+                              <DocIcon className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-medium text-slate-800 truncate">{doc.title}</span>
+                                <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500 capitalize shrink-0">
+                                  {doc.doc_type.replace('_', ' ')}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{doc.content}</p>
+                            </div>
+                            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                              isSelected ? 'bg-indigo-500' : 'bg-white border-2 border-gray-200'
+                            }`}>
+                              {isSelected && <Check className="w-3 h-3 text-white" />}
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {/* Selected Summary */}
+                  {selectedKnowledgeIds.size > 0 && (
+                    <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100">
+                      <div className="flex items-center gap-2 text-xs text-indigo-700">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span className="font-medium">{selectedKnowledgeIds.size} document{selectedKnowledgeIds.size !== 1 ? 's' : ''} linked to this agent</span>
+                      </div>
+                      <p className="text-[10px] text-indigo-500 mt-1 ml-5.5">
+                        These will be used as RAG context when the agent responds.
+                      </p>
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs font-medium text-slate-600">FAQ Pairs</label>
-                  <button onClick={addFaq} className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-500 font-medium transition-colors">
-                    <Plus className="w-3 h-3" /> Add
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {faqs.map((faq, i) => (
-                    <FAQPair key={i} faq={faq} index={i} onUpdate={(f) => updateFaq(i, f)} onDelete={() => removeFaq(i)} />
-                  ))}
-                </div>
-              </div>
+              {/* Upload Tab — Direct file upload */}
+              {knowledgeTab === 'upload' && (
+                <div className="space-y-3">
+                  <div>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-300 bg-slate-50 text-slate-400 hover:text-indigo-500 transition-all cursor-pointer"
+                    >
+                      <FileUp className="w-8 h-8" />
+                      <p className="text-xs font-medium">Drop files or click to upload</p>
+                      <p className="text-[10px] text-slate-400">PDF, TXT, CSV - Max 10MB</p>
+                    </button>
+                    <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.csv" onChange={handleFileUpload} className="hidden" />
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      Uploaded files are added to both this agent and the <a href="/voice/knowledge-base" className="text-indigo-600 hover:underline">central library</a>.
+                    </p>
+                  </div>
 
-              <LightInput label="Website URL to Scrape" value={websiteUrl} onChange={setWebsiteUrl} placeholder="https://your-company.com" helpText="We'll extract content from this URL for the knowledge base" />
+                  {documents.length > 0 && (
+                    <div className="space-y-1.5">
+                      {documents.map((doc, i) => (
+                        <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-gray-100">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileText className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                            <span className="text-xs text-slate-700 truncate">{doc.name}</span>
+                          </div>
+                          <button onClick={() => setDocuments(prev => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <LightInput label="Website URL to Scrape" value={websiteUrl} onChange={setWebsiteUrl} placeholder="https://your-company.com" helpText="Extract content from this URL and add to knowledge base" />
+                </div>
+              )}
+
+              {/* FAQ Tab — Inline FAQ pairs */}
+              {knowledgeTab === 'faq' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-slate-500">Add question-answer pairs for quick agent responses</p>
+                    <button onClick={addFaq} className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-500 font-medium transition-colors">
+                      <Plus className="w-3 h-3" /> Add FAQ
+                    </button>
+                  </div>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {faqs.map((faq, i) => (
+                      <FAQPair key={i} faq={faq} index={i} onUpdate={(f) => updateFaq(i, f)} onDelete={() => removeFaq(i)} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </ConfigSection>
 
             {/* Integration Settings */}
