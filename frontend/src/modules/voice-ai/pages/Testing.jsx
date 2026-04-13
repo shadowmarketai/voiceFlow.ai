@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles } from 'lucide-react'
+import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck } from 'lucide-react'
 
 const mockAgents = [
   { id: '1', name: 'Sales Assistant', language: 'English' },
@@ -22,6 +22,7 @@ export default function Testing() {
   const [message, setMessage] = useState('')
   const [isRecording, setIsRecording] = useState(false)
   const [conversation, setConversation] = useState([])
+  const [isWebRTCCall, setIsWebRTCCall] = useState(false)
 
   const handleSend = () => {
     if (!message.trim() || !selectedAgent) return
@@ -260,6 +261,75 @@ export default function Testing() {
                 </div>
               )}
             </div>
+          </motion.div>
+
+          {/* Voice Pipeline Status */}
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="show"
+            transition={{ delay: 0.3 }}
+            className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm"
+          >
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="p-1.5 rounded-lg bg-emerald-50">
+                <AudioLines className="w-4 h-4 text-emerald-600" />
+              </div>
+              <h3 className="text-sm font-semibold text-gray-900">Voice Pipeline</h3>
+            </div>
+            <div className="space-y-2">
+              {[
+                { label: 'Noise Reduction', status: 'Spectral Gate', color: 'emerald' },
+                { label: 'VAD', status: 'Silero / Energy', color: 'blue' },
+                { label: 'STT', status: 'Whisper + Deepgram', color: 'indigo' },
+                { label: 'Emotion', status: 'Transformer', color: 'violet' },
+                { label: 'LLM', status: 'Groq / Claude', color: 'purple' },
+                { label: 'TTS', status: '5 Indic Engines', color: 'pink' },
+                { label: 'EOS', status: 'Smart + Indian', color: 'amber' },
+              ].map(step => (
+                <div key={step.label} className="flex items-center justify-between py-1.5">
+                  <span className="text-xs text-gray-500">{step.label}</span>
+                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md bg-${step.color}-50 text-${step.color}-700 border border-${step.color}-100`}>
+                    {step.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* WebRTC Call Button */}
+          <motion.div
+            variants={fadeUp}
+            initial="hidden"
+            animate="show"
+            transition={{ delay: 0.4 }}
+          >
+            <button
+              onClick={() => setIsWebRTCCall(!isWebRTCCall)}
+              disabled={!selectedAgent}
+              className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl text-sm font-semibold transition-all duration-300 ${
+                isWebRTCCall
+                  ? 'bg-red-500 text-white shadow-lg shadow-red-200 hover:bg-red-600'
+                  : selectedAgent
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200 hover:shadow-xl'
+                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {isWebRTCCall ? (
+                <>
+                  <PhoneOff className="w-5 h-5" />
+                  End WebRTC Call
+                </>
+              ) : (
+                <>
+                  <Phone className="w-5 h-5" />
+                  Start Browser Call (Free)
+                </>
+              )}
+            </button>
+            <p className="text-center text-[11px] text-gray-400 mt-2">
+              {isWebRTCCall ? 'Connected via WebRTC — no charges' : 'Voice call via browser — zero telephony cost'}
+            </p>
           </motion.div>
         </div>
       </div>

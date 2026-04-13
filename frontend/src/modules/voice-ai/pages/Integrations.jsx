@@ -1,41 +1,54 @@
 /**
- * Integrations — Premium marketplace for third-party connections
+ * Integrations — Marketplace for telephony, CRM, and automation connections
  */
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Search, ExternalLink, Check, ArrowUpRight } from 'lucide-react'
+import { Search, ExternalLink, Check, ArrowUpRight, Zap, Shield } from 'lucide-react'
 
-const categories = ['All', 'Telephony', 'CRM', 'Automation', 'Calendar']
+const categories = ['All', 'Telephony', 'CRM', 'Automation', 'Calendar', 'AI']
 
 const categoryColors = {
   Telephony: { bg: 'bg-indigo-50', text: 'text-indigo-600', ring: 'from-indigo-500 to-indigo-600' },
   CRM: { bg: 'bg-blue-50', text: 'text-blue-600', ring: 'from-blue-500 to-blue-600' },
   Automation: { bg: 'bg-amber-50', text: 'text-amber-600', ring: 'from-amber-500 to-amber-600' },
   Calendar: { bg: 'bg-emerald-50', text: 'text-emerald-600', ring: 'from-emerald-500 to-emerald-600' },
+  AI: { bg: 'bg-violet-50', text: 'text-violet-600', ring: 'from-violet-500 to-violet-600' },
 }
 
 const integrations = [
-  { id: 'twilio', name: 'Twilio', category: 'Telephony', description: 'Programmable voice, SMS, and messaging APIs for global reach.', connected: false, logo: 'TW' },
-  { id: 'exotel', name: 'Exotel', category: 'Telephony', description: 'Cloud telephony for Indian businesses with IVR and call tracking.', connected: false, logo: 'EX' },
-  { id: 'knowlarity', name: 'Knowlarity', category: 'Telephony', description: 'Enterprise cloud communication platform with smart IVR.', connected: false, logo: 'KN' },
+  // Telephony — India First
+  { id: 'telecmi', name: 'TeleCMI', category: 'Telephony', description: 'Primary India provider — voice calls at ₹1.2/min, 70% cheaper than Twilio.', connected: false, logo: 'TC', badge: 'Best Value' },
+  { id: 'bolna', name: 'Bolna', category: 'Telephony', description: 'AI-native voice agent platform with built-in STT/LLM/TTS pipeline.', connected: false, logo: 'BN', badge: 'AI Native' },
+  { id: 'vobiz', name: 'Vobiz', category: 'Telephony', description: 'Bulk voice broadcasting & IVR for India — cheapest for campaigns at ₹0.9/min.', connected: false, logo: 'VB', badge: 'Bulk Calls' },
+  { id: 'exotel', name: 'Exotel', category: 'Telephony', description: 'Enterprise IVR with ExoML call flows for Indian businesses.', connected: false, logo: 'EX' },
+  { id: 'twilio', name: 'Twilio', category: 'Telephony', description: 'Global voice API with Media Streams — international calls fallback.', connected: false, logo: 'TW' },
+  { id: 'vonage', name: 'Vonage', category: 'Telephony', description: 'International voice with WebSocket streaming and NCCO call flows.', connected: false, logo: 'VN' },
+  { id: 'sip', name: 'SIP Trunk', category: 'Telephony', description: 'Connect your own Asterisk or FreeSWITCH PBX via SIP trunk.', connected: false, logo: 'SI', badge: 'Self-Hosted' },
+  { id: 'webrtc', name: 'WebRTC', category: 'Telephony', description: 'Zero-cost browser voice calls — no phone number needed.', connected: true, logo: 'WR', badge: 'Free' },
+  // CRM
   { id: 'hubspot', name: 'HubSpot', category: 'CRM', description: 'Sync contacts, deals, and call logs with HubSpot CRM.', connected: true, logo: 'HS' },
   { id: 'salesforce', name: 'Salesforce', category: 'CRM', description: 'Push call outcomes and lead data to Salesforce automatically.', connected: false, logo: 'SF' },
   { id: 'zoho', name: 'Zoho CRM', category: 'CRM', description: 'Bi-directional sync with Zoho CRM for contacts and activities.', connected: false, logo: 'ZO' },
   { id: 'leadsquared', name: 'LeadSquared', category: 'CRM', description: 'Indian CRM integration for lead capture and nurturing.', connected: false, logo: 'LS' },
+  { id: 'freshsales', name: 'Freshsales', category: 'CRM', description: 'AI-powered CRM by Freshworks — built for Indian businesses.', connected: false, logo: 'FS' },
+  // AI
+  { id: 'groq', name: 'Groq', category: 'AI', description: 'Ultra-fast LLM inference (~100ms) with Llama 3 — primary AI provider.', connected: true, logo: 'GQ', badge: 'Primary' },
+  { id: 'anthropic', name: 'Anthropic Claude', category: 'AI', description: 'High-quality AI responses with Claude for complex conversations.', connected: false, logo: 'CL' },
+  { id: 'openai', name: 'OpenAI', category: 'AI', description: 'GPT-4 and Whisper STT for voice transcription and AI responses.', connected: false, logo: 'OA' },
+  { id: 'deepgram', name: 'Deepgram', category: 'AI', description: 'Real-time speech-to-text with streaming WebSocket support.', connected: false, logo: 'DG' },
+  // Automation
   { id: 'zapier', name: 'Zapier', category: 'Automation', description: 'Connect VoiceFlow AI with 5,000+ apps via automated workflows.', connected: false, logo: 'ZP' },
   { id: 'n8n', name: 'n8n', category: 'Automation', description: 'Self-hosted workflow automation with full control over your data.', connected: false, logo: 'N8' },
   { id: 'make', name: 'Make', category: 'Automation', description: 'Visual automation platform for complex multi-step workflows.', connected: false, logo: 'MK' },
+  // Calendar
   { id: 'google-calendar', name: 'Google Calendar', category: 'Calendar', description: 'Schedule and manage appointments directly from voice conversations.', connected: true, logo: 'GC' },
   { id: 'calcom', name: 'Cal.com', category: 'Calendar', description: 'Open-source scheduling infrastructure for booking meetings.', connected: false, logo: 'CC' },
 ]
 
 const container = {
   hidden: { opacity: 0 },
-  show: {
-    opacity: 1,
-    transition: { staggerChildren: 0.06 },
-  },
+  show: { opacity: 1, transition: { staggerChildren: 0.04 } },
 }
 
 const item = {
@@ -55,17 +68,23 @@ export default function Integrations() {
     return matchesCategory && matchesSearch
   })
 
+  const connectedCount = integrations.filter(i => i.connected).length
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Integrations</h1>
-        <p className="text-gray-500 mt-1">Connect your favorite tools and services with VoiceFlow AI</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Integrations</h1>
+          <p className="text-gray-500 mt-1">
+            {integrations.length} integrations available &middot; {connectedCount} connected
+          </p>
+        </div>
       </div>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {categories.map((cat) => (
             <button
               key={cat}
@@ -77,6 +96,11 @@ export default function Integrations() {
               }`}
             >
               {cat}
+              {cat !== 'All' && (
+                <span className="ml-1.5 text-xs opacity-70">
+                  {integrations.filter(i => i.category === cat).length}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -116,7 +140,22 @@ export default function Integrations() {
                     {integration.logo}
                   </div>
                   <div>
-                    <h3 className="text-gray-900 font-semibold text-sm">{integration.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-gray-900 font-semibold text-sm">{integration.name}</h3>
+                      {integration.badge && (
+                        <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${
+                          integration.badge === 'Free'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                            : integration.badge === 'Best Value'
+                              ? 'bg-amber-50 text-amber-700 border border-amber-100'
+                              : integration.badge === 'Primary'
+                                ? 'bg-violet-50 text-violet-700 border border-violet-100'
+                                : 'bg-blue-50 text-blue-700 border border-blue-100'
+                        }`}>
+                          {integration.badge}
+                        </span>
+                      )}
+                    </div>
                     <span className={`text-[11px] font-medium ${colors.text}`}>
                       {integration.category}
                     </span>

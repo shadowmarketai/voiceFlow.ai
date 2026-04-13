@@ -644,4 +644,53 @@ export const platformSupportAPI = {
     api.post(`/api/v1/platform-support/tickets/${ticketId}/reply`, { body }),
 };
 
+// ============================================
+// TELEPHONY API (7 providers)
+// ============================================
+export const telephonyAPI = {
+  // Make call with auto provider selection
+  makeCall: (data) => api.post('/api/v1/telephony/call', data),
+
+  // Get call details
+  getCall: (provider, callId) => api.get(`/api/v1/telephony/call/${provider}/${callId}`),
+
+  // End call
+  endCall: (provider, callId) => api.post(`/api/v1/telephony/call/${provider}/${callId}/end`),
+
+  // Bulk voice broadcast (Vobiz / Bolna)
+  bulkCall: (data) => api.post('/api/v1/telephony/bulk-call', data),
+
+  // List all phone numbers across providers
+  listNumbers: () => api.get('/api/v1/telephony/numbers'),
+
+  // Cost estimation
+  estimateCost: (data) => api.post('/api/v1/telephony/cost-estimate', data),
+
+  // Get all provider statuses
+  getProviders: () => api.get('/api/v1/telephony/providers'),
+};
+
+// ============================================
+// WEBRTC API (browser calls)
+// ============================================
+export const webrtcAPI = {
+  // Create session for browser voice call
+  createSession: (data) => api.post('/api/v1/webrtc/session', data),
+
+  // Send SDP offer
+  sendOffer: (sessionId, sdp) =>
+    api.post(`/api/v1/webrtc/signal/${sessionId}/offer`, { sdp }),
+
+  // Send ICE candidate
+  sendIceCandidate: (sessionId, candidate) =>
+    api.post(`/api/v1/webrtc/signal/${sessionId}/ice`, { candidate }),
+
+  // End session
+  endSession: (sessionId) =>
+    api.post(`/api/v1/webrtc/signal/${sessionId}/end`),
+
+  // Get ICE server config
+  getIceConfig: () => api.get('/api/v1/webrtc/ice-config'),
+};
+
 export default api;
