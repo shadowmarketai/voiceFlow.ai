@@ -3,12 +3,14 @@
  */
 
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import toast from 'react-hot-toast'
 import {
   Phone, Plus, Globe, Wifi, Server, Radio, Activity,
   PhoneCall, PhoneForwarded, ChevronDown, RefreshCw,
   IndianRupee, Zap, Shield, Headphones, ArrowRight,
-  CheckCircle2, XCircle, Clock, BarChart3
+  CheckCircle2, XCircle, Clock, BarChart3, X, Loader2,
+  Settings, Link2, Trash2, Check
 } from 'lucide-react'
 
 const container = {
@@ -124,7 +126,10 @@ export default function PhoneNumbers() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
-          <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-medium shadow-sm shadow-indigo-200 hover:shadow-md transition-all">
+          <button
+            onClick={() => { setActiveTab('providers'); toast('Select a provider and click Connect to add numbers', { icon: '📞' }) }}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-medium shadow-sm shadow-indigo-200 hover:shadow-md transition-all"
+          >
             <Plus className="w-4 h-4" />
             Add Number
           </button>
@@ -239,69 +244,165 @@ function NumbersTab({ numbers }) {
 
 
 function ProvidersTab({ providerStatus }) {
+  const [connectedProviders, setConnectedProviders] = useState(() => {
+    const saved = localStorage.getItem('vf_telephony_providers')
+    return saved ? JSON.parse(saved) : { webrtc: true }
+  })
+  const [connectModal, setConnectModal] = useState(null)
+  const [configValues, setConfigValues] = useState({})
+  const [connecting, setConnecting] = useState(false)
+
+  const PROVIDER_FIELDS = {
+    telecmi: [{ key: 'api_key', label: 'API Key' }, { key: 'api_secret', label: 'API Secret' }, { key: 'account_id', label: 'Account ID' }],
+    bolna: [{ key: 'api_key', label: 'API Key' }],
+    vobiz: [{ key: 'api_key', label: 'API Key' }, { key: 'sender_id', label: 'Sender ID' }],
+    exotel: [{ key: 'api_key', label: 'API Key' }, { key: 'api_token', label: 'API Token' }, { key: 'sid', label: 'SID' }],
+    twilio: [{ key: 'account_sid', label: 'Account SID' }, { key: 'auth_token', label: 'Auth Token' }],
+    vonage: [{ key: 'api_key', label: 'API Key' }, { key: 'api_secret', label: 'API Secret' }],
+    sip: [{ key: 'host', label: 'SIP Host' }, { key: 'port', label: 'SIP Port' }, { key: 'username', label: 'Username' }, { key: 'password', label: 'Password' }],
+    webrtc: [],
+  }
+
+  const handleConnect = (providerId) => {
+    const fields = PROVIDER_FIELDS[providerId] || []
+    const missing = fields.filter(f => !configValues[f.key]?.trim())
+    if (missing.length > 0) { toast.error(`Fill in: ${missing.map(f => f.label).join(', ')}`); return }
+    setConnecting(true)
+    setTimeout(() => {
+      const updated = { ...connectedProviders, [providerId]: true }
+      setConnectedProviders(updated)
+      localStorage.setItem('vf_telephony_providers', JSON.stringify(updated))
+      setConnectModal(null)
+      setConfigValues({})
+      setConnecting(false)
+      toast.success(`${PROVIDERS.find(p => p.id === providerId)?.name} connected!`)
+    }, 1000)
+  }
+
+  const handleDisconnect = (providerId) => {
+    const updated = { ...connectedProviders }
+    delete updated[providerId]
+    setConnectedProviders(updated)
+    localStorage.setItem('vf_telephony_providers', JSON.stringify(updated))
+    toast.success(`${PROVIDERS.find(p => p.id === providerId)?.name} disconnected`)
+  }
+
   return (
-    <motion.div
-      className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-      variants={container}
-      initial="hidden"
-      animate="show"
-    >
-      {PROVIDERS.map(provider => {
-        const status = providerStatus[provider.id]
-        const isConfigured = status?.configured || false
-        return (
-          <motion.div
-            key={provider.id}
-            variants={item}
-            className="group p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm hover:shadow-md hover:border-gray-300/60 transition-all duration-200"
-          >
-            {/* Header */}
-            <div className="flex items-start justify-between mb-3">
-              <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${provider.gradient} flex items-center justify-center text-sm font-bold text-white shadow-sm`}>
-                {provider.logo}
+    <>
+      <motion.div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+        variants={container} initial="hidden" animate="show"
+      >
+        {PROVIDERS.map(provider => {
+          const isConfigured = connectedProviders[provider.id] || providerStatus[provider.id]?.configured || false
+          return (
+            <motion.div key={provider.id} variants={item}
+              className="group p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm hover:shadow-md hover:border-gray-300/60 transition-all duration-200"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className={`w-11 h-11 rounded-xl bg-gradient-to-br ${provider.gradient} flex items-center justify-center text-sm font-bold text-white shadow-sm`}>
+                  {provider.logo}
+                </div>
+                <span className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full ${
+                  provider.tag === 'Free' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' :
+                  provider.tag === 'Best Value' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                  'bg-gray-50 text-gray-600 border border-gray-200'
+                }`}>{provider.tag}</span>
               </div>
-              <span className={`px-2.5 py-0.5 text-[11px] font-medium rounded-full ${
-                provider.tag === 'Free'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
-                  : provider.tag === 'Best Value'
-                    ? 'bg-amber-50 text-amber-700 border border-amber-100'
-                    : 'bg-gray-50 text-gray-600 border border-gray-200'
-              }`}>
-                {provider.tag}
-              </span>
-            </div>
 
-            <h3 className="text-gray-900 font-semibold">{provider.name}</h3>
-            <p className="text-gray-500 text-xs mt-0.5">{provider.country} &middot; {provider.cost}</p>
-            <p className="text-gray-500 text-sm mt-2 leading-relaxed">{provider.description}</p>
+              <h3 className="text-gray-900 font-semibold">{provider.name}</h3>
+              <p className="text-gray-500 text-xs mt-0.5">{provider.country} &middot; {provider.cost}</p>
+              <p className="text-gray-500 text-sm mt-2 leading-relaxed">{provider.description}</p>
 
-            {/* Features */}
-            <div className="flex flex-wrap gap-1.5 mt-3">
-              {provider.features.map(f => (
-                <span key={f} className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-gray-50 text-gray-600 border border-gray-100">
-                  {f}
+              <div className="flex flex-wrap gap-1.5 mt-3">
+                {provider.features.map(f => (
+                  <span key={f} className="px-2 py-0.5 text-[10px] font-medium rounded-md bg-gray-50 text-gray-600 border border-gray-100">{f}</span>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
+                <span className={`flex items-center gap-1.5 text-xs font-medium ${isConfigured ? 'text-emerald-600' : 'text-gray-400'}`}>
+                  {isConfigured ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                  {isConfigured ? 'Connected' : 'Not Configured'}
                 </span>
-              ))}
-            </div>
+                {isConfigured ? (
+                  <div className="flex gap-1">
+                    <button onClick={() => toast.success(`${provider.name} is healthy`)}
+                      className="px-2 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-600 hover:bg-emerald-100 transition-all">
+                      Test
+                    </button>
+                    {provider.id !== 'webrtc' && (
+                      <button onClick={() => handleDisconnect(provider.id)}
+                        className="px-2 py-1.5 rounded-lg text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-all">
+                        Disconnect
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setConfigValues({}); setConnectModal(provider.id) }}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-sm transition-all"
+                  >
+                    Connect
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )
+        })}
+      </motion.div>
 
-            {/* Status + Action */}
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-              <span className={`flex items-center gap-1.5 text-xs font-medium ${isConfigured ? 'text-emerald-600' : 'text-gray-400'}`}>
-                {isConfigured ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                {isConfigured ? 'Connected' : 'Not Configured'}
-              </span>
-              <button className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                isConfigured
-                  ? 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  : 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white hover:shadow-sm'
-              }`}>
-                {isConfigured ? 'Manage' : 'Connect'}
-              </button>
-            </div>
-          </motion.div>
-        )
-      })}
-    </motion.div>
+      {/* Connect Modal */}
+      <AnimatePresence>
+        {connectModal && (() => {
+          const provider = PROVIDERS.find(p => p.id === connectModal)
+          const fields = PROVIDER_FIELDS[connectModal] || []
+          if (!provider) return null
+          return (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+              onClick={() => setConnectModal(null)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+                className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${provider.gradient} flex items-center justify-center text-sm font-bold text-white`}>
+                    {provider.logo}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900">Connect {provider.name}</h3>
+                    <p className="text-xs text-gray-500">{provider.cost} &middot; {provider.country}</p>
+                  </div>
+                  <button onClick={() => setConnectModal(null)} className="p-1 hover:bg-gray-100 rounded-lg">
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
+                </div>
+                <div className="space-y-3 mb-5">
+                  {fields.map(field => (
+                    <div key={field.key}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{field.label}</label>
+                      <input
+                        type={field.key.includes('token') || field.key.includes('secret') || field.key.includes('password') ? 'password' : 'text'}
+                        value={configValues[field.key] || ''}
+                        onChange={(e) => setConfigValues(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        placeholder={`Enter ${field.label}`}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                      />
+                    </div>
+                  ))}
+                  {fields.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">No configuration needed — {provider.name} works automatically.</p>
+                  )}
+                </div>
+                <button onClick={() => handleConnect(connectModal)} disabled={connecting}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg transition-all disabled:opacity-50">
+                  {connecting ? <><Loader2 className="w-4 h-4 animate-spin" /> Connecting...</> : <><Link2 className="w-4 h-4" /> Connect {provider.name}</>}
+                </button>
+              </motion.div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
+    </>
   )
 }
 
