@@ -1075,7 +1075,6 @@ export default function CampaignsPage() {
  />
  </button>
  </div>
- </div>
 
  {/* Telephony Provider */}
  <div>
@@ -1101,7 +1100,7 @@ export default function CampaignsPage() {
  Supported: phone numbers in +91XXXXXXXXXX format.
  </p>
  </div>
- </div>
+ </div>{/* end space-y-4 */}
 
  {/* Modal actions */}
  <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-200">
