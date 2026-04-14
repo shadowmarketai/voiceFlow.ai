@@ -122,9 +122,15 @@ def _mount_frontend(application: FastAPI) -> None:
 
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        if ".." in full_path:
+            return FileResponse(str(index_html))
         file_path = static_dir / full_path
-        if file_path.is_file() and ".." not in full_path:
+        if file_path.is_file():
             return FileResponse(str(file_path))
+        # Don't serve index.html for non-HTML file requests (prevents SW/manifest issues)
+        if "." in full_path.split("/")[-1]:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
         return FileResponse(str(index_html))
 
 

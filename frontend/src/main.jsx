@@ -7,10 +7,10 @@ import { RealtimeProvider } from './contexts/RealtimeContext'
 import App from './App'
 import './styles/globals.css'
 
-// Register PWA Service Worker
+// Unregister stale service workers (no service-worker.js in production)
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js').catch(() => {})
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    regs.forEach(r => r.unregister())
   })
 }
 
