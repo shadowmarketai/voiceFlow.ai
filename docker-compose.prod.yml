@@ -1,0 +1,99 @@
+# ============================================
+# VoiceFlow AI — Production (Coolify)
+# Domain: voice.shadowmarket.ai
+# PostgreSQL + Redis + API (no local storage)
+# ============================================
+
+services:
+  # ── PostgreSQL ─────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: voiceflow
+      POSTGRES_USER: voiceflow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-voiceflow_prod_secret_2026}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U voiceflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── VoiceFlow AI API + Frontend ────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      # ── App ──────────────────────────────────
+      APP_ENV: production
+      APP_NAME: VoiceFlow AI
+      DEBUG: "false"
+
+      # ── Database ─────────────────────────────
+      DATABASE_URL: postgresql+asyncpg://voiceflow:${DB_PASSWORD:-voiceflow_prod_secret_2026}@postgres:5432/voiceflow
+      REDIS_URL: redis://redis:6379/0
+
+      # ── Auth ─────────────────────────────────
+      SECRET_KEY: ${SECRET_KEY:-generate-a-64-char-random-key-here}
+
+      # ── LLM Providers ───────────────────────
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+
+      # ── Voice / TTS ─────────────────────────
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
+
+      # ── Telephony ───────────────────────────
+      TELECMI_API_KEY: ${TELECMI_API_KEY:-}
+      BOLNA_API_KEY: ${BOLNA_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+
+      # ── Payments ─────────────────────────────
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+
+      # ── WebRTC ───────────────────────────────
+      WEBRTC_ENABLED: "true"
+
+      # ── CORS ─────────────────────────────────
+      ALLOWED_ORIGINS: '["https://voice.shadowmarket.ai","http://localhost:5174","http://localhost:3000"]'
+
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  pg_data:
+  redis_data:
+  app_data:

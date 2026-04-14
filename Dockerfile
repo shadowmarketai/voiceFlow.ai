@@ -9,6 +9,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --prefer-offline
 COPY frontend/ ./
+ARG VITE_API_URL=https://voice.shadowmarket.ai
+ENV VITE_API_URL=${VITE_API_URL}
 RUN npm run build
 
 # ── Stage 2: Python backend ─────────────────
