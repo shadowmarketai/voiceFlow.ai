@@ -1,0 +1,48 @@
+[project]
+name = "voiceflow-ai"
+version = "1.0.0"
+description = "Multi-tenant Voice AI SaaS with Indian language support"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print (no print())
+    "SIM",  # flake8-simplify
+]
+ignore = [
+    "S101",   # assert allowed in tests
+    "S104",   # binding to 0.0.0.0 OK for Docker
+    "S603",   # subprocess OK for dev scripts
+    "B008",   # Depends() in function args OK for FastAPI
+    "E501",   # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "T20"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+markers = [
+    "unit: Unit tests (fast, no external deps)",
+    "integration: Integration tests (need DB/API keys)",
+    "slow: Slow tests (model loading)",
+]

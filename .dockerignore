@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+frontend/node_modules
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+venv
+.venv
+*.egg-info
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (mounted as volumes)
+data/
+logs/
+voices/
+
+# Tests
+tests/
+.pytest_cache
+htmlcov
+.coverage
+
+# Docs
+*.md
+!requirements.txt
+
+# Environment
+.env
+.env.local
+
+# Claude
+.claude/

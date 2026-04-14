@@ -137,7 +137,9 @@ docker-compose build
 ### Template Location
 
 ```
-/Users/maczo/work/code-projects/Shadow-market-Template-Private-main/shadow-market-Template-Private-main/
+../shadow-market-Template-Private-main/
+# Windows: D:\Shadow-market-Template-Private-main\shadow-market-Template-Private-main\
+# Mac/Linux: adjust path to your local clone of the template repo
 ```
 
 ### Quality Commands (from template)
