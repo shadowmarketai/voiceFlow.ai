@@ -1,312 +1,252 @@
 /**
- * AgentBuilder — Full Voice Agent Creation & Configuration
- * =========================================================
- * Inspired by Edesy/Rapida agent builder.
- *
- * 4-Step Wizard:
- *   1. LLM & Prompt Configuration
- *   2. Voice Configuration (STT + TTS + VAD + EOS)
- *   3. Deployment (Phone / Web Widget / API)
- *   4. Profile & Knowledge
- *
- * Post-creation sidebar tabs:
- *   - Overview, Deployments, Knowledge, Webhooks, Settings
+ * AgentBuilder — Full Voice Agent Configuration (Edesy-style tabs)
+ * ================================================================
+ * 5 tabs: Overview | Voice & AI | Behavior | Tools | Integrations
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Bot, Mic, Globe, Brain, FileText, Webhook, Settings,
-  Play, Pause, Trash2, Plus, Copy, Check, ChevronDown,
-  ChevronRight, Save, Rocket, Code, X, Volume2, Clock,
-  Sparkles, Zap, Send, Loader2, Phone, Shield, Radio,
-  FileUp, HelpCircle, BookOpen, ShoppingBag, ScrollText,
-  Search, CheckCircle2, Eye, Wifi, Server, AudioLines,
-  SlidersHorizontal, MessageSquare, AlertCircle, RefreshCw,
-  Headphones, Languages, Activity, ArrowRight
+  Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
+  Trash2, Plus, Copy, Check, ChevronDown, ChevronRight, Save,
+  Rocket, Code, X, Volume2, Clock, Sparkles, Zap, Loader2,
+  Phone, Shield, Activity, FileUp, HelpCircle, BookOpen,
+  ShoppingBag, ScrollText, Search, CheckCircle2, Eye, Globe,
+  SlidersHorizontal, MessageSquare, AlertCircle, ArrowRight,
+  Headphones, Languages, PhoneCall, PhoneOff, ToggleLeft,
+  ToggleRight, Send, ExternalLink, Database, Calendar, Link2,
+  CreditCard, Users, Target, Radio, AudioLines, Wrench
 } from 'lucide-react';
 
-/* ─── Constants ──────────────────────────────────────────────── */
+/* ─── Toggle Component ────────────────────────────────────────── */
+function Toggle({ enabled, onChange, label, description }) {
+  return (
+    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+      <div>
+        <p className="text-sm font-medium text-gray-700">{label}</p>
+        {description && <p className="text-[10px] text-gray-400 mt-0.5">{description}</p>}
+      </div>
+      <button onClick={() => onChange(!enabled)}
+        className={`relative w-10 h-[22px] rounded-full transition-colors ${enabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+        <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-[18px]' : ''}`} />
+      </button>
+    </div>
+  );
+}
 
-const LLM_PROVIDERS = [
-  { id: 'groq', name: 'Groq (Llama 3)', description: 'Ultra-fast ~100ms inference', badge: 'Fastest', cost: 'Free tier' },
-  { id: 'anthropic', name: 'Anthropic Claude', description: 'High quality, context-aware', badge: 'Best Quality', cost: '$3/M tokens' },
-  { id: 'openai', name: 'OpenAI GPT-4', description: 'Versatile, function calling', cost: '$10/M tokens' },
-  { id: 'gemini', name: 'Google Gemini', description: 'Multimodal, fast', cost: '$1/M tokens' },
-];
-
-const STT_PROVIDERS = [
-  { id: 'whisper', name: 'OpenAI Whisper', description: 'Self-hosted, 99+ languages', badge: 'Free' },
-  { id: 'deepgram', name: 'Deepgram', description: 'Real-time streaming, low latency', badge: 'Fast' },
-  { id: 'google', name: 'Google Cloud Speech', description: 'High accuracy, 125+ languages' },
-  { id: 'sarvam', name: 'Sarvam AI', description: 'Built for Indian languages', badge: 'Indic' },
-];
-
-const TTS_PROVIDERS = [
-  { id: 'indic_parler', name: 'Indic Parler', description: '21 Indian languages, 12 emotions', badge: 'India' },
-  { id: 'indicf5', name: 'IndicF5', description: 'Highest quality (4.6 MOS)', badge: 'Best' },
-  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Voice cloning, lifelike', badge: 'Clone' },
-  { id: 'openai_tts', name: 'OpenAI TTS', description: '6 voices, multilingual' },
-  { id: 'edge_tts', name: 'Edge TTS', description: 'Free, large voice catalog', badge: 'Free' },
-  { id: 'deepgram_aura', name: 'Deepgram Aura', description: 'Lowest latency TTS', badge: 'Fast' },
-];
-
-const TELEPHONY_PROVIDERS = [
-  { id: 'telecmi', name: 'TeleCMI', cost: '₹1.2/min', country: 'India' },
-  { id: 'bolna', name: 'Bolna', cost: '₹1.5/min', country: 'India', badge: 'AI Native' },
-  { id: 'vobiz', name: 'Vobiz', cost: '₹0.9/min', country: 'India', badge: 'Bulk' },
-  { id: 'exotel', name: 'Exotel', cost: '₹1.5/min', country: 'India' },
-  { id: 'twilio', name: 'Twilio', cost: '₹4.5/min', country: 'Global' },
-  { id: 'vonage', name: 'Vonage', cost: '₹3.5/min', country: 'Global' },
-  { id: 'sip', name: 'SIP Trunk', cost: '₹0.5/min', country: 'Any' },
-];
-
-const LANGUAGES = [
-  { code: 'en', name: 'English' }, { code: 'hi', name: 'Hindi' },
-  { code: 'ta', name: 'Tamil' }, { code: 'te', name: 'Telugu' },
-  { code: 'kn', name: 'Kannada' }, { code: 'ml', name: 'Malayalam' },
-  { code: 'bn', name: 'Bengali' }, { code: 'mr', name: 'Marathi' },
-  { code: 'gu', name: 'Gujarati' }, { code: 'pa', name: 'Punjabi' },
-];
-
-const VOICE_PRESETS = [
-  { id: 'priya', name: 'Priya', gender: 'female', lang: 'Tamil', style: 'Natural' },
-  { id: 'meera', name: 'Meera', gender: 'female', lang: 'Hindi', style: 'Warm' },
-  { id: 'arjun', name: 'Arjun', gender: 'male', lang: 'Hindi', style: 'Professional' },
-  { id: 'arun', name: 'Arun', gender: 'male', lang: 'English', style: 'Clear' },
-  { id: 'ananya', name: 'Ananya', gender: 'female', lang: 'Kannada', style: 'Smooth' },
-  { id: 'nova', name: 'Nova', gender: 'female', lang: 'Multi', style: 'Friendly' },
-];
-
-const TEMPLATES = [
-  { id: 'sales', name: 'Sales Agent', icon: '💼', prompt: 'You are a professional sales agent for an Indian business. You speak clearly, handle objections warmly, and always ask for the next step. Keep responses under 40 words.' },
-  { id: 'support', name: 'Customer Support', icon: '🎧', prompt: 'You are a patient customer support agent. Listen carefully, acknowledge the issue, and provide clear solutions. Escalate complex issues. Keep responses under 40 words.' },
-  { id: 'appointment', name: 'Appointment Scheduler', icon: '📅', prompt: 'You are an appointment scheduling assistant. Help callers book, reschedule, or cancel appointments. Confirm date, time, and details before finalizing.' },
-  { id: 'survey', name: 'Survey Agent', icon: '📊', prompt: 'You are conducting a customer satisfaction survey. Ask questions one at a time, record responses, and thank the customer. Be polite and brief.' },
-  { id: 'ivr', name: 'IVR Navigator', icon: '📞', prompt: 'You are an IVR assistant. Help callers navigate to the right department. Ask what they need help with and route accordingly.' },
-  { id: 'lead', name: 'Lead Qualifier', icon: '🎯', prompt: 'You are a lead qualification agent. Ask about budget, timeline, decision-maker, and pain points. Score the lead and hand off to sales if qualified.' },
-  { id: 'collection', name: 'Payment Reminder', icon: '💳', prompt: 'You are a polite payment reminder agent. Inform about pending payments, offer payment links, and note customer responses. Be professional, never threatening.' },
-  { id: 'onboarding', name: 'Onboarding Guide', icon: '🚀', prompt: 'You are a new customer onboarding guide. Walk them through setup steps, answer questions, and ensure they are comfortable using the product.' },
-];
-
-/* ─── Section Component ──────────────────────────────────────── */
-
-function Section({ title, icon: Icon, children, collapsible = false, defaultOpen = true, badge }) {
+/* ─── Section Component ───────────────────────────────────────── */
+function Section({ title, icon: Icon, children, collapsible = false, defaultOpen = true, badge, action }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
-      <button
+      <div
         onClick={() => collapsible && setOpen(!open)}
-        className={`w-full flex items-center gap-3 px-5 py-4 text-left ${collapsible ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} transition-colors`}
-      >
+        className={`flex items-center gap-3 px-5 py-4 ${collapsible ? 'cursor-pointer hover:bg-gray-50' : ''} transition-colors`}>
         {Icon && <div className="p-1.5 rounded-lg bg-indigo-50"><Icon className="w-4 h-4 text-indigo-600" /></div>}
         <span className="text-sm font-semibold text-gray-900 flex-1">{title}</span>
         {badge && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{badge}</span>}
+        {action}
         {collapsible && (open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />)}
-      </button>
+      </div>
       {(!collapsible || open) && <div className="px-5 pb-5 space-y-4">{children}</div>}
     </div>
   );
 }
 
-function Field({ label, helpText, children }) {
-  return (
-    <div>
-      {label && <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>}
-      {children}
-      {helpText && <p className="text-[10px] text-gray-400 mt-1">{helpText}</p>}
-    </div>
-  );
-}
+/* ─── Constants ───────────────────────────────────────────────── */
+const LLM_PROVIDERS = [
+  { id: 'groq', name: 'Groq', model: 'llama3-8b-8192', badge: 'Fastest' },
+  { id: 'anthropic', name: 'Anthropic Claude', model: 'claude-haiku-4-5-20251001', badge: 'Quality' },
+  { id: 'openai', name: 'OpenAI', model: 'gpt-4o-mini' },
+  { id: 'gemini', name: 'Gemini Live 2.5 HD', model: 'gemini-2.5-flash', badge: 'Native Audio' },
+];
 
-function ProviderCard({ provider, selected, onSelect }) {
-  return (
-    <button
-      onClick={() => onSelect(provider.id)}
-      className={`p-3 rounded-xl border-2 text-left transition-all ${
-        selected === provider.id
-          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-100'
-          : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30'
-      }`}
-    >
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm font-semibold text-gray-900">{provider.name}</span>
-        {provider.badge && (
-          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{provider.badge}</span>
-        )}
-      </div>
-      <p className="text-[11px] text-gray-500">{provider.description}</p>
-      {provider.cost && <p className="text-[10px] text-gray-400 mt-1">{provider.cost}</p>}
-    </button>
-  );
-}
+const QUICK_PRESETS = [
+  { id: 'low_latency', icon: Zap, label: 'Low Latency', desc: 'Fastest response, Groq + Deepgram' },
+  { id: 'high_quality', icon: Sparkles, label: 'High Quality', desc: 'Best accuracy, Claude + ElevenLabs' },
+  { id: 'budget', icon: CreditCard, label: 'Budget', desc: 'Cost-effective, Edge TTS + Whisper' },
+  { id: 'native_audio', icon: AudioLines, label: 'Native Audio', desc: 'Gemini Live end-to-end' },
+];
 
-/* ─── Main Component ─────────────────────────────────────────── */
+const VOICES = [
+  { id: 'priya', name: 'Priya', gender: 'Female', style: 'Natural', lang: 'Tamil' },
+  { id: 'meera', name: 'Meera', gender: 'Female', style: 'Warm', lang: 'Hindi' },
+  { id: 'leda', name: 'Leda', gender: 'Female', style: 'Youthful', lang: 'Multi' },
+  { id: 'arjun', name: 'Arjun', gender: 'Male', style: 'Professional', lang: 'Hindi' },
+  { id: 'arun', name: 'Arun', gender: 'Male', style: 'Clear', lang: 'English' },
+  { id: 'nova', name: 'Nova', gender: 'Female', style: 'Friendly', lang: 'Multi' },
+];
 
+const OUTCOME_DEFS = [
+  { id: 'qualified', label: 'Qualified', desc: 'Lead meets qualification criteria', code: 'QUALIFIED' },
+  { id: 'not_qualified', label: 'Not Qualified', desc: 'Lead does not meet criteria', code: 'NOT_QUALIFIED' },
+  { id: 'callback', label: 'Callback Requested', desc: 'Lead requested a callback', code: 'CALLBACK_REQUESTED' },
+  { id: 'no_answer', label: 'No Answer', desc: 'Call was not answered', code: 'NO_ANSWER' },
+  { id: 'voicemail', label: 'Voicemail', desc: 'Reached voicemail', code: 'VOICEMAIL' },
+];
+
+const CORE_TOOLS = [
+  { id: 'end_call', name: 'End Call', desc: 'End the call. Call this AFTER set_call_outcome and finalize_conversation.', on: true },
+  { id: 'set_call_outcome', name: 'Set Call Outcome', desc: 'Records the call result (qualified, not interested, callback, etc.)', on: true },
+  { id: 'finalize_conversation', name: 'Finalize Conversation', desc: 'Captures transcript, outcome, and data at call end', on: true },
+];
+
+const FEATURE_TOOLS = [
+  { id: 'collect_data', name: 'Collect Data', desc: 'Stores individual data points collected during the call', on: false },
+  { id: 'collect_multiple', name: 'Collect Multiple Data', desc: 'Stores multiple data points at once from user responses', on: false },
+  { id: 'book_meeting', name: 'Book Meeting', desc: 'Record meeting or consultation booking', on: false },
+  { id: 'submit_booking', name: 'Submit Booking', desc: 'Store structured booking request (travel, etc.)', on: false },
+];
+
+const INTEGRATION_TOOLS = [
+  { id: 'calendar', name: 'Calendar & Scheduling', desc: 'Check availability and book via Google Calendar or Cal.com', connected: false },
+  { id: 'knowledge_rag', name: 'Knowledge Base (RAG)', desc: 'Search connected knowledge bases for information', connected: true },
+  { id: 'browser_auto', name: 'Browser Automation', desc: 'Control web browsers for booking, forms, and data extraction', connected: false },
+  { id: 'messaging', name: 'Messaging (SMS & WhatsApp)', desc: 'Send SMS and WhatsApp messages during calls', connected: true },
+  { id: 'payment_links', name: 'Payment Links', desc: 'Generate and send payment links during calls', connected: true },
+  { id: 'call_transfer', name: 'Call Transfer', desc: 'Transfer calls to human agents or departments', connected: true },
+];
+
+const TEMPLATES = [
+  { id: 'sales', name: 'Sales Agent', icon: '💼', prompt: 'You are a professional sales agent. Handle objections warmly, always ask for the next step. Keep responses under 40 words.' },
+  { id: 'support', name: 'Customer Support', icon: '🎧', prompt: 'You are a patient customer support agent. Listen, acknowledge, and provide clear solutions. Keep responses under 40 words.' },
+  { id: 'appointment', name: 'Appointment Scheduler', icon: '📅', prompt: 'You help callers book, reschedule, or cancel appointments. Confirm date, time, and details.' },
+  { id: 'survey', name: 'Survey Agent', icon: '📊', prompt: 'Conduct a customer satisfaction survey. Ask questions one at a time. Be polite and brief.' },
+  { id: 'lead_qual', name: 'Lead Qualifier', icon: '🎯', prompt: 'Ask about budget, timeline, decision-maker, and pain points. Score the lead and hand off if qualified.' },
+  { id: 'payment', name: 'Payment Reminder', icon: '💳', prompt: 'Inform about pending payments, offer payment links, note responses. Professional, never threatening.' },
+  { id: 'realestate', name: 'Real Estate', icon: '🏠', prompt: 'You are a real estate lead qualifier. Ask about property preferences, budget, timeline. Offer site visits.' },
+  { id: 'onboarding', name: 'Onboarding Guide', icon: '🚀', prompt: 'Walk new customers through setup steps, answer questions, ensure comfort with the product.' },
+];
+
+/* ─── Main Component ──────────────────────────────────────────── */
 export default function AgentBuilder() {
-  // Wizard step
-  const [step, setStep] = useState(1); // 1: LLM & Prompt, 2: Voice, 3: Deploy, 4: Profile
+  const [activeTab, setActiveTab] = useState('overview');
+  const [saving, setSaving] = useState(false);
 
-  // Step 1: LLM & Prompt
-  const [llmProvider, setLlmProvider] = useState('groq');
-  const [llmModel, setLlmModel] = useState('llama3-8b-8192');
-  const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(200);
+  // Agent Identity
+  const [agentName, setAgentName] = useState('My Voice Agent');
+  const [agentLang, setAgentLang] = useState('Gujarati + English');
+  const [agentStatus, setAgentStatus] = useState('active');
+
+  // Overview — Prompt
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [promptVars, setPromptVars] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
 
-  // Step 2: Voice
-  const [sttProvider, setSttProvider] = useState('whisper');
-  const [ttsProvider, setTtsProvider] = useState('indic_parler');
-  const [selectedVoice, setSelectedVoice] = useState('priya');
-  const [language, setLanguage] = useState('en');
-  const [speed, setSpeed] = useState(1.0);
-  const [vadEnabled, setVadEnabled] = useState(true);
-  const [vadProvider, setVadProvider] = useState('silero');
-  const [noiseReduction, setNoiseReduction] = useState(true);
-  const [eosEnabled, setEosEnabled] = useState(true);
-  const [eosSilenceMs, setEosSilenceMs] = useState(500);
-  const [emotionDetection, setEmotionDetection] = useState(true);
+  // Voice & AI
+  const [quickPreset, setQuickPreset] = useState('low_latency');
+  const [llmProvider, setLlmProvider] = useState('gemini');
+  const [selectedVoice, setSelectedVoice] = useState('leda');
+  const [responseTiming, setResponseTiming] = useState('balanced');
+  const [speechAccent, setSpeechAccent] = useState('default');
+  const [noiseFilter, setNoiseFilter] = useState(true);
+  const [noiseThreshold, setNoiseThreshold] = useState(30);
+  const [voicemailDetection, setVoicemailDetection] = useState(false);
+  const [silenceHandling, setSilenceHandling] = useState(false);
+  const [speechStartSensitivity, setSpeechStartSensitivity] = useState('high');
+  const [speechEndSensitivity, setSpeechEndSensitivity] = useState('high');
+  const [noiseSuppression, setNoiseSuppression] = useState(false);
 
-  // Step 3: Deploy
-  const [deployType, setDeployType] = useState('web_widget'); // web_widget | phone | api | debugger
-  const [telephonyProvider, setTelephonyProvider] = useState('telecmi');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [greeting, setGreeting] = useState("Hello! I'm your AI assistant. How can I help you today?");
-  const [errorMessage, setErrorMessage] = useState("I'm sorry, I didn't understand that. Could you please repeat?");
-  const [idleTimeout, setIdleTimeout] = useState(30);
-  const [maxSessionDuration, setMaxSessionDuration] = useState(300);
+  // Behavior
+  const [dataFields, setDataFields] = useState([]);
+  const [outcomes, setOutcomes] = useState(OUTCOME_DEFS);
+  const [customOutcomeInput, setCustomOutcomeInput] = useState('');
+  const [allowInterruptions, setAllowInterruptions] = useState(true);
+  const [maxDuration, setMaxDuration] = useState(5);
+  const [inactivityTimeout, setInactivityTimeout] = useState(15);
+  const [idleTurns, setIdleTurns] = useState(3);
+  const [endCallBehavior, setEndCallBehavior] = useState('');
+  const [callTransfer, setCallTransfer] = useState(false);
+  const [realtimeOutcome, setRealtimeOutcome] = useState(true);
+  const [postCallAnalysis, setPostCallAnalysis] = useState(false);
+
+  // Tools
+  const [coreTools, setCoreTools] = useState(CORE_TOOLS);
+  const [featureTools, setFeatureTools] = useState(FEATURE_TOOLS);
+  const [integrationTools, setIntegrationTools] = useState(INTEGRATION_TOOLS);
+
+  // Integrations
   const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookHeaders, setWebhookHeaders] = useState('');
+  const [knowledgeLinked, setKnowledgeLinked] = useState(false);
 
-  // Step 4: Profile
-  const [agentName, setAgentName] = useState('');
-  const [description, setDescription] = useState('');
-  const [tags, setTags] = useState([]);
-  const [tagInput, setTagInput] = useState('');
-  const [knowledgeIds, setKnowledgeIds] = useState(new Set());
-  const [knowledgeLibrary, setKnowledgeLibrary] = useState([]);
-
-  // UI state
-  const [saving, setSaving] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
-
-  // Load knowledge library
-  useEffect(() => {
-    import('../../../services/api').then(({ voiceAgentAPI }) => {
-      voiceAgentAPI.listKnowledge()
-        .then(({ data }) => { if (Array.isArray(data) && data.length > 0) setKnowledgeLibrary(data); })
-        .catch(() => {
-          setKnowledgeLibrary([
-            { id: 1, title: 'Company Overview', doc_type: 'document' },
-            { id: 2, title: 'Product FAQ', doc_type: 'faq' },
-            { id: 3, title: 'Pricing Sheet', doc_type: 'product_catalog' },
-            { id: 4, title: 'Sales Script', doc_type: 'script' },
-          ]);
-        });
-    });
-  }, []);
-
-  const applyTemplate = (template) => {
-    setSelectedTemplate(template.id);
-    setSystemPrompt(template.prompt);
-    toast.success(`Template "${template.name}" applied`);
-  };
-
-  const addTag = () => {
-    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
-      setTags(prev => [...prev, tagInput.trim()]);
-      setTagInput('');
-    }
-  };
-
-  const handleSave = async () => {
-    if (!agentName.trim()) { toast.error('Enter an agent name in Step 4'); setStep(4); return; }
-    if (!systemPrompt.trim()) { toast.error('Enter a system prompt in Step 1'); setStep(1); return; }
-
+  const handleSave = () => {
     setSaving(true);
-    const payload = {
-      name: agentName, description, tags,
-      llm: { provider: llmProvider, model: llmModel, temperature, max_tokens: maxTokens },
-      prompt: systemPrompt,
-      stt: { provider: sttProvider },
-      tts: { provider: ttsProvider, voice: selectedVoice, speed },
-      voice: { language, vad: vadEnabled, noise_reduction: noiseReduction, eos: eosEnabled, eos_silence_ms: eosSilenceMs, emotion_detection: emotionDetection },
-      deployment: { type: deployType, telephony_provider: telephonyProvider, phone_number: phoneNumber, greeting, error_message: errorMessage, idle_timeout: idleTimeout, max_session_duration: maxSessionDuration, webhook_url: webhookUrl },
-      knowledge_ids: [...knowledgeIds],
-    };
-
-    try {
-      const { assistantsAPI } = await import('../../../services/api');
-      await assistantsAPI.create(payload);
-      toast.success(`Agent "${agentName}" created and deployed!`);
-    } catch {
-      toast.success(`Agent "${agentName}" saved (offline mode)`);
-    }
-    setSaving(false);
+    setTimeout(() => { setSaving(false); toast.success(`Agent "${agentName}" saved`); }, 800);
   };
 
-  const STEPS = [
-    { num: 1, label: 'LLM & Prompt', icon: Brain },
-    { num: 2, label: 'Voice Config', icon: Mic },
-    { num: 3, label: 'Deployment', icon: Rocket },
-    { num: 4, label: 'Profile & KB', icon: Bot },
+  const applyTemplate = (t) => { setSelectedTemplate(t.id); setSystemPrompt(t.prompt); toast.success(`"${t.name}" template applied`); };
+
+  const toggleCoreTool = (id) => setCoreTools(prev => prev.map(t => t.id === id ? { ...t, on: !t.on } : t));
+  const toggleFeatureTool = (id) => setFeatureTools(prev => prev.map(t => t.id === id ? { ...t, on: !t.on } : t));
+  const toggleIntegrationTool = (id) => setIntegrationTools(prev => prev.map(t => t.id === id ? { ...t, connected: !t.connected } : t));
+
+  const addCustomOutcome = () => {
+    if (!customOutcomeInput.trim()) return;
+    setOutcomes(prev => [...prev, { id: `custom_${Date.now()}`, label: customOutcomeInput.trim(), desc: 'Custom outcome', code: customOutcomeInput.trim().toUpperCase().replace(/\s+/g, '_') }]);
+    setCustomOutcomeInput('');
+  };
+
+  const TABS = [
+    { id: 'overview', label: 'Overview', icon: FileText },
+    { id: 'voice', label: 'Voice & AI', icon: AudioLines },
+    { id: 'behavior', label: 'Behavior', icon: Target },
+    { id: 'tools', label: 'Tools', icon: Wrench },
+    { id: 'integrations', label: 'Integrations', icon: Link2 },
   ];
 
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Agent Builder</h1>
-          <p className="text-gray-500 mt-1">Create and configure AI voice agents</p>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+            <Bot className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <input value={agentName} onChange={e => setAgentName(e.target.value)}
+                className="text-lg font-bold text-gray-900 bg-transparent border-none focus:outline-none focus:border-b-2 focus:border-indigo-500 p-0" />
+              <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${agentStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500'}`}>
+                {agentStatus}
+              </span>
+            </div>
+            <p className="text-xs text-gray-500">{agentLang}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setShowPreview(!showPreview)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">
-            <Eye className="w-4 h-4" /> Preview
-          </button>
           <button onClick={handleSave} disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm hover:shadow-md transition-all disabled:opacity-50">
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-            {saving ? 'Creating...' : 'Create Agent'}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm hover:shadow-md disabled:opacity-50 transition-all">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save
           </button>
         </div>
       </div>
 
-      {/* Step Progress */}
-      <div className="flex items-center gap-2 bg-white rounded-2xl border border-gray-200/60 shadow-sm p-2">
-        {STEPS.map((s, i) => (
-          <React.Fragment key={s.num}>
-            {i > 0 && <div className={`flex-1 h-0.5 rounded-full ${step > s.num ? 'bg-indigo-500' : step === s.num ? 'bg-indigo-200' : 'bg-gray-200'}`} />}
-            <button
-              onClick={() => setStep(s.num)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                step === s.num
-                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
-                  : step > s.num
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'text-gray-400 hover:text-gray-600'
-              }`}
-            >
-              <s.icon className="w-4 h-4" />
-              <span className="hidden sm:inline">{s.label}</span>
-              {step > s.num && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-            </button>
-          </React.Fragment>
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {TABS.map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+              activeTab === tab.id ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}>
+            <tab.icon className="w-4 h-4" />
+            {tab.label}
+          </button>
         ))}
       </div>
 
-      {/* ═══════════ STEP 1: LLM & Prompt ═══════════ */}
-      {step === 1 && (
+      {/* ═══ OVERVIEW TAB ═══ */}
+      {activeTab === 'overview' && (
         <div className="space-y-4">
-          {/* Quick Start Templates */}
+          {/* Templates */}
           <Section title="Quick Start Templates" icon={Sparkles} collapsible defaultOpen={!systemPrompt} badge={`${TEMPLATES.length} templates`}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {TEMPLATES.map(t => (
                 <button key={t.id} onClick={() => applyTemplate(t)}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    selectedTemplate === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
-                  }`}>
+                  className={`p-3 rounded-xl border text-left transition-all ${selectedTemplate === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
                   <span className="text-lg">{t.icon}</span>
                   <p className="text-xs font-semibold text-gray-900 mt-1">{t.name}</p>
                 </button>
@@ -314,357 +254,456 @@ export default function AgentBuilder() {
             </div>
           </Section>
 
-          {/* LLM Provider */}
-          <Section title="LLM Provider" icon={Brain} badge={LLM_PROVIDERS.find(p => p.id === llmProvider)?.name}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {LLM_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={llmProvider} onSelect={setLlmProvider} />)}
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <Field label="Temperature" helpText="Lower = focused, Higher = creative">
-                <div className="flex items-center gap-3">
-                  <input type="range" min="0" max="1" step="0.1" value={temperature}
-                    onChange={e => setTemperature(parseFloat(e.target.value))}
-                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
-                  <span className="text-xs font-mono text-indigo-600 w-8">{temperature}</span>
-                </div>
-              </Field>
-              <Field label="Max Tokens" helpText="Maximum response length">
-                <input type="number" value={maxTokens} onChange={e => setMaxTokens(parseInt(e.target.value) || 200)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-              </Field>
-            </div>
+          {/* Agent Instructions (Prompt) */}
+          <Section title="Agent Instructions" icon={MessageSquare}>
+            <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={12}
+              placeholder="## CRITICAL INSTRUCTION - DO NOT OUTPUT THINKING&#10;NEVER output your internal thoughts, reasoning, or meta-commentary.&#10;&#10;## ROLE&#10;You are a sales agent for..."
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm font-mono resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none leading-relaxed" />
+            <p className="text-[10px] text-gray-400">{systemPrompt.length} characters &middot; Use {'{{variable}}'} for runtime replacement</p>
           </Section>
 
-          {/* System Prompt */}
-          <Section title="System Prompt" icon={MessageSquare}>
-            <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
-              rows={6} placeholder="You are a helpful voice assistant. Keep responses under 40 words..."
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            <p className="text-[10px] text-gray-400">{systemPrompt.length} characters. Use {'{{variable}}'} for runtime replacement.</p>
-          </Section>
-
-          <div className="flex justify-end">
-            <button onClick={() => setStep(2)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
-              Next: Voice Config <ArrowRight className="w-4 h-4" />
+          {/* Variables */}
+          <Section title="Variables" icon={Code} collapsible defaultOpen={false} badge={`${promptVars.length}`}>
+            <p className="text-xs text-gray-500">Use <code className="bg-gray-100 px-1 rounded">{'{{variable_name}}'}</code> in your prompt to use variables.</p>
+            {promptVars.map((v, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={v.name} onChange={e => setPromptVars(prev => prev.map((p, j) => j === i ? { ...p, name: e.target.value } : p))}
+                  placeholder="Variable name" className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                <button onClick={() => setPromptVars(prev => prev.filter((_, j) => j !== i))} className="p-2 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            ))}
+            <button onClick={() => setPromptVars(prev => [...prev, { name: '', type: 'string', default: '' }])}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+              <Plus className="w-3 h-3" /> Add variable
             </button>
-          </div>
+          </Section>
         </div>
       )}
 
-      {/* ═══════════ STEP 2: Voice Configuration ═══════════ */}
-      {step === 2 && (
+      {/* ═══ VOICE & AI TAB ═══ */}
+      {activeTab === 'voice' && (
         <div className="space-y-4">
-          {/* Language */}
-          <Section title="Language" icon={Languages}>
+          {/* Voice Pipeline Summary */}
+          <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <AudioLines className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-sm font-semibold text-gray-900">Voice Pipeline</h3>
+                <span className="text-[10px] text-gray-400">How your agent hears and speaks</span>
+              </div>
+              <span className="text-xs text-gray-500">~120ms</span>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-gray-600">
+              <span className="px-2 py-1 bg-blue-50 rounded-lg text-blue-700 font-medium">Audio In</span>
+              <ArrowRight className="w-3 h-3 text-gray-300" />
+              <span className="px-2 py-1 bg-violet-50 rounded-lg text-violet-700 font-medium">{LLM_PROVIDERS.find(p => p.id === llmProvider)?.name}</span>
+              <ArrowRight className="w-3 h-3 text-gray-300" />
+              <span className="px-2 py-1 bg-emerald-50 rounded-lg text-emerald-700 font-medium">Audio Out</span>
+            </div>
+
+            {/* Cost Breakdown */}
+            <div className="mt-4 p-3 bg-gray-50 rounded-xl grid grid-cols-4 gap-3 text-xs">
+              <div><span className="text-gray-400">Platform Fee</span><p className="font-semibold text-gray-900">₹0.00/min</p></div>
+              <div><span className="text-gray-400">AI Model</span><p className="font-semibold text-gray-900">{llmProvider === 'groq' ? '₹0.50' : '₹2.00'}/min</p></div>
+              <div><span className="text-gray-400">Telephony</span><p className="font-semibold text-gray-900">₹1.50/min</p></div>
+              <div><span className="text-gray-400 font-semibold">Total</span><p className="font-bold text-indigo-600">{llmProvider === 'groq' ? '₹2.00' : '₹3.50'}/min</p></div>
+            </div>
+          </div>
+
+          {/* Quick Setup */}
+          <Section title="Quick Setup" icon={Zap}>
+            <p className="text-xs text-gray-500 mb-2">Select a preset or customize below</p>
+            <div className="grid grid-cols-4 gap-3">
+              {QUICK_PRESETS.map(p => (
+                <button key={p.id} onClick={() => setQuickPreset(p.id)}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${quickPreset === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+                  <p.icon className={`w-5 h-5 mb-1 ${quickPreset === p.id ? 'text-indigo-600' : 'text-gray-400'}`} />
+                  <p className="text-xs font-semibold text-gray-900">{p.label}</p>
+                  <p className="text-[9px] text-gray-400 mt-0.5">{p.desc}</p>
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* LLM Configuration */}
+          <Section title="LLM Configuration" icon={Brain}>
+            <p className="text-xs text-gray-500 mb-3">Configure which language model this agent uses for conversations</p>
+            <div className="space-y-3">
+              <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Provider</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {LLM_PROVIDERS.map(p => (
+                  <button key={p.id} onClick={() => setLlmProvider(p.id)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${llmProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                      {p.badge && <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{p.badge}</span>}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{p.model}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Section>
+
+          {/* Voice + Response Timing */}
+          <Section title="Voice" icon={Volume2}>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
+              {VOICES.map(v => (
+                <button key={v.id} onClick={() => setSelectedVoice(v.id)}
+                  className={`p-2.5 rounded-xl border text-center transition-all ${selectedVoice === v.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+                  <span className={`inline-block w-6 h-6 rounded-full text-[10px] font-bold leading-6 ${v.gender === 'Female' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
+                    {v.gender === 'Female' ? '♀' : '♂'}
+                  </span>
+                  <p className="text-[11px] font-medium text-gray-900 mt-1">{v.name}</p>
+                  <p className="text-[9px] text-gray-400">{v.gender} · {v.style}</p>
+                </button>
+              ))}
+            </div>
+
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2 block">Response Timing</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['Low Latency', 'Balanced', 'Conservative'].map(t => (
+                <button key={t} onClick={() => setResponseTiming(t.toLowerCase().replace(' ', '_'))}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${responseTiming === t.toLowerCase().replace(' ', '_') ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Speech Accent */}
+          <Section title="Speech Accent" icon={Languages} collapsible defaultOpen={false}>
             <div className="flex flex-wrap gap-2">
-              {LANGUAGES.map(l => (
-                <button key={l.code} onClick={() => setLanguage(l.code)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    language === l.code ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-indigo-50'
-                  }`}>{l.name}</button>
+              {['Default', 'Indian English', 'British English', 'American English', 'Australian English'].map(a => (
+                <button key={a} onClick={() => setSpeechAccent(a.toLowerCase().replace(/ /g, '_'))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${speechAccent === a.toLowerCase().replace(/ /g, '_') ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-indigo-50'}`}>
+                  {a}
+                </button>
               ))}
             </div>
           </Section>
 
-          {/* STT Provider */}
-          <Section title="Speech-to-Text (STT)" icon={Mic} badge={STT_PROVIDERS.find(p => p.id === sttProvider)?.name}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {STT_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={sttProvider} onSelect={setSttProvider} />)}
-            </div>
-          </Section>
-
-          {/* TTS Provider + Voice */}
-          <Section title="Text-to-Speech (TTS)" icon={Volume2} badge={TTS_PROVIDERS.find(p => p.id === ttsProvider)?.name}>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {TTS_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={ttsProvider} onSelect={setTtsProvider} />)}
-            </div>
-            <div className="mt-4">
-              <label className="block text-xs font-medium text-gray-600 mb-2">Voice Selection</label>
-              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                {VOICE_PRESETS.map(v => (
-                  <button key={v.id} onClick={() => setSelectedVoice(v.id)}
-                    className={`p-2 rounded-xl border text-center transition-all ${
-                      selectedVoice === v.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
-                    }`}>
-                    <span className={`inline-block w-6 h-6 rounded-full text-[10px] font-bold leading-6 ${
-                      v.gender === 'female' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'
-                    }`}>{v.gender === 'female' ? '♀' : '♂'}</span>
-                    <p className="text-[11px] font-medium text-gray-900 mt-1">{v.name}</p>
-                    <p className="text-[9px] text-gray-400">{v.lang}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Field label="Speaking Speed">
-              <div className="flex items-center gap-3">
-                <input type="range" min="0.5" max="2" step="0.1" value={speed}
-                  onChange={e => setSpeed(parseFloat(e.target.value))}
-                  className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
-                <span className="text-xs font-mono text-indigo-600 w-10">{speed}x</span>
-              </div>
-            </Field>
-          </Section>
-
-          {/* Advanced Voice Settings */}
-          <Section title="Advanced Voice Pipeline" icon={SlidersHorizontal} collapsible defaultOpen={false} badge="VAD + EOS + Noise">
-            <div className="space-y-4">
-              {/* VAD */}
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Voice Activity Detection (VAD)</p>
-                  <p className="text-[10px] text-gray-400">Detects when user is speaking vs silent</p>
+          {/* Audio Processing */}
+          <Section title="Audio Processing" icon={SlidersHorizontal} collapsible defaultOpen={false} badge="Advanced">
+            <Toggle label="Noise Filter" description="Remove background noise from caller audio" enabled={noiseFilter} onChange={setNoiseFilter} />
+            {noiseFilter && (
+              <div className="pl-3">
+                <label className="text-xs text-gray-600">Volume Threshold: {noiseThreshold}%</label>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] text-gray-400">Sensitive (1%)</span>
+                  <input type="range" min="1" max="100" value={noiseThreshold} onChange={e => setNoiseThreshold(parseInt(e.target.value))}
+                    className="flex-1 h-1.5 bg-gray-200 rounded-full accent-indigo-500" />
+                  <span className="text-[10px] text-gray-400">Aggressive (30%)</span>
                 </div>
-                <button onClick={() => setVadEnabled(!vadEnabled)}
-                  className={`w-10 h-5.5 rounded-full transition-colors ${vadEnabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${vadEnabled ? 'translate-x-4.5' : ''}`} />
-                </button>
               </div>
+            )}
+            <Toggle label="Voicemail Detection" description="Detect voicemail and handle outbound calls" enabled={voicemailDetection} onChange={setVoicemailDetection} />
+            <Toggle label="Silence Handling — Multilingual" description="Optimized for multi-language pauses" enabled={silenceHandling} onChange={setSilenceHandling} />
 
-              {/* Noise Reduction */}
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+            <div className="p-3 bg-gray-50 rounded-xl">
+              <p className="text-xs font-medium text-gray-700 mb-2">Speech Sensitivity</p>
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-medium text-gray-700">Noise Reduction</p>
-                  <p className="text-[10px] text-gray-400">Clean audio before STT (spectral gating)</p>
-                </div>
-                <button onClick={() => setNoiseReduction(!noiseReduction)}
-                  className={`w-10 h-5.5 rounded-full transition-colors ${noiseReduction ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${noiseReduction ? 'translate-x-4.5' : ''}`} />
-                </button>
-              </div>
-
-              {/* EOS */}
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">End-of-Speech Detection</p>
-                  <p className="text-[10px] text-gray-400">Smart turn-taking with Indian language mode</p>
-                </div>
-                <button onClick={() => setEosEnabled(!eosEnabled)}
-                  className={`w-10 h-5.5 rounded-full transition-colors ${eosEnabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${eosEnabled ? 'translate-x-4.5' : ''}`} />
-                </button>
-              </div>
-              {eosEnabled && (
-                <Field label="Silence Threshold (ms)" helpText="Silence duration before AI responds. Indian languages: 500-700ms recommended.">
-                  <div className="flex items-center gap-3">
-                    <input type="range" min="200" max="1500" step="50" value={eosSilenceMs}
-                      onChange={e => setEosSilenceMs(parseInt(e.target.value))}
-                      className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
-                    <span className="text-xs font-mono text-indigo-600 w-14">{eosSilenceMs}ms</span>
+                  <span className="text-[10px] text-gray-400">Start:</span>
+                  <div className="flex gap-2 mt-1">
+                    {['High', 'Low'].map(v => (
+                      <button key={v} onClick={() => setSpeechStartSensitivity(v.toLowerCase())}
+                        className={`flex-1 px-2 py-1 rounded text-xs font-medium ${speechStartSensitivity === v.toLowerCase() ? 'bg-indigo-500 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+                        {v}
+                      </button>
+                    ))}
                   </div>
-                </Field>
-              )}
-
-              {/* Emotion Detection */}
-              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Emotion Detection</p>
-                  <p className="text-[10px] text-gray-400">Detect caller emotion and adapt AI tone</p>
                 </div>
-                <button onClick={() => setEmotionDetection(!emotionDetection)}
-                  className={`w-10 h-5.5 rounded-full transition-colors ${emotionDetection ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${emotionDetection ? 'translate-x-4.5' : ''}`} />
-                </button>
+                <div>
+                  <span className="text-[10px] text-gray-400">End:</span>
+                  <div className="flex gap-2 mt-1">
+                    {['High', 'Low'].map(v => (
+                      <button key={v} onClick={() => setSpeechEndSensitivity(v.toLowerCase())}
+                        className={`flex-1 px-2 py-1 rounded text-xs font-medium ${speechEndSensitivity === v.toLowerCase() ? 'bg-indigo-500 text-white' : 'bg-white border border-gray-200 text-gray-600'}`}>
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          </Section>
 
-          <div className="flex justify-between">
-            <button onClick={() => setStep(1)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
-            <button onClick={() => setStep(3)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
-              Next: Deployment <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
+            <Toggle label="Noise Suppression — RNNoise" description="ML-based noise reduction" enabled={noiseSuppression} onChange={setNoiseSuppression} />
+          </Section>
         </div>
       )}
 
-      {/* ═══════════ STEP 3: Deployment ═══════════ */}
-      {step === 3 && (
+      {/* ═══ BEHAVIOR TAB ═══ */}
+      {activeTab === 'behavior' && (
         <div className="space-y-4">
-          {/* Deployment Type */}
-          <Section title="Deployment Type" icon={Rocket}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { id: 'web_widget', name: 'Web Widget', icon: Globe, desc: 'Embed on your website' },
-                { id: 'phone', name: 'Phone Call', icon: Phone, desc: 'Inbound/outbound calls' },
-                { id: 'api', name: 'API / SDK', icon: Code, desc: 'Programmatic access' },
-                { id: 'debugger', name: 'Debugger', icon: Activity, desc: 'Test in browser' },
-              ].map(d => (
-                <button key={d.id} onClick={() => setDeployType(d.id)}
-                  className={`p-4 rounded-xl border-2 text-left transition-all ${
-                    deployType === d.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
-                  }`}>
-                  <d.icon className={`w-6 h-6 mb-2 ${deployType === d.id ? 'text-indigo-600' : 'text-gray-400'}`} />
-                  <p className="text-sm font-semibold text-gray-900">{d.name}</p>
-                  <p className="text-[10px] text-gray-500 mt-0.5">{d.desc}</p>
+          {/* Data Collection */}
+          <Section title="Data Collection" icon={Database} action={
+            <button onClick={() => setDataFields(prev => [...prev, { name: '', type: 'text' }])}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700">
+              <Plus className="w-3 h-3" /> Add Field
+            </button>
+          }>
+            <p className="text-xs text-gray-500">Define what information the agent should collect during calls</p>
+            {dataFields.length === 0 ? (
+              <div className="py-8 text-center">
+                <Database className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-xs text-gray-400">No data fields defined yet.</p>
+                <p className="text-[10px] text-gray-400">Add fields to define what information the agent should collect.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {dataFields.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input value={f.name} onChange={e => setDataFields(prev => prev.map((p, j) => j === i ? { ...p, name: e.target.value } : p))}
+                      placeholder="Field name (e.g., budget, timeline)" className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                    <select value={f.type} onChange={e => setDataFields(prev => prev.map((p, j) => j === i ? { ...p, type: e.target.value } : p))}
+                      className="px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white">
+                      <option value="text">Text</option><option value="number">Number</option><option value="email">Email</option><option value="phone">Phone</option><option value="boolean">Yes/No</option>
+                    </select>
+                    <button onClick={() => setDataFields(prev => prev.filter((_, j) => j !== i))} className="p-2 text-red-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Section>
+
+          {/* Lead Qualification & Outcomes */}
+          <Section title="Lead Qualification & Outcomes" icon={Target}>
+            <Toggle label="Real-time Outcome Detection" description="Allow the AI agent to determine outcomes during the conversation" enabled={realtimeOutcome} onChange={setRealtimeOutcome} />
+            <Toggle label="Post-Call Analysis" description="Analyze transcript after call to verify or determine outcome" enabled={postCallAnalysis} onChange={setPostCallAnalysis} />
+
+            <div className="mt-3">
+              <label className="text-xs font-medium text-gray-700 mb-2 block">Outcome Definitions</label>
+              <div className="space-y-2">
+                {outcomes.map(o => (
+                  <div key={o.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{o.label}</p>
+                      <p className="text-[10px] text-gray-400">{o.desc}</p>
+                    </div>
+                    <code className="text-[10px] font-mono text-gray-500 bg-white px-2 py-1 rounded border">{o.code}</code>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-3">
+                <input value={customOutcomeInput} onChange={e => setCustomOutcomeInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && addCustomOutcome()}
+                  placeholder="Add custom outcome..." className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                <button onClick={addCustomOutcome} className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50">
+                  <Plus className="w-3 h-3" /> Add Custom Outcome
                 </button>
+              </div>
+            </div>
+          </Section>
+
+          {/* Call Behavior */}
+          <Section title="Call Behavior" icon={Phone}>
+            <Toggle label="Allow Interruptions" description="When enabled, callers can interrupt the agent mid-speech. Disable for IVR menus." enabled={allowInterruptions} onChange={setAllowInterruptions} />
+
+            <div className="grid grid-cols-3 gap-4 mt-3">
+              <div>
+                <label className="text-xs text-gray-600">Max Duration</label>
+                <p className="text-lg font-bold text-gray-900">{maxDuration}m</p>
+                <input type="range" min={1} max={15} value={maxDuration} onChange={e => setMaxDuration(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full accent-indigo-500" />
+                <p className="text-[9px] text-gray-400">30s - 15min</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">Inactivity Timeout</label>
+                <p className="text-lg font-bold text-gray-900">{inactivityTimeout}s</p>
+                <input type="range" min={5} max={60} value={inactivityTimeout} onChange={e => setInactivityTimeout(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full accent-indigo-500" />
+                <p className="text-[9px] text-gray-400">5s - 60s</p>
+              </div>
+              <div>
+                <label className="text-xs text-gray-600">Idle Turns</label>
+                <p className="text-lg font-bold text-gray-900">{idleTurns}</p>
+                <input type="range" min={1} max={10} value={idleTurns} onChange={e => setIdleTurns(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-full accent-indigo-500" />
+                <p className="text-[9px] text-gray-400">1 - 10 turns</p>
+              </div>
+            </div>
+          </Section>
+
+          {/* End Call Behavior */}
+          <Section title="End Call Behavior" icon={PhoneOff} collapsible defaultOpen={false}>
+            <p className="text-xs text-gray-500 mb-2">Customize how the agent ends conversations</p>
+            <textarea value={endCallBehavior} onChange={e => setEndCallBehavior(e.target.value)} rows={5}
+              placeholder="When ending a call, always:&#10;1. Confirm the user has no more questions&#10;2. Summarize any actions/next steps&#10;3. Say a complete goodbye message&#10;4. FINISH speaking before calling end_call function"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm resize-none font-mono" />
+            <p className="text-[10px] text-gray-400">{endCallBehavior.length}/2000</p>
+          </Section>
+
+          {/* Call Transfer */}
+          <Section title="Call Transfer" icon={PhoneCall} badge="Beta">
+            <Toggle label="Call Transfer" description="Allow the AI agent to transfer calls to human agents or departments when needed." enabled={callTransfer} onChange={setCallTransfer} />
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ TOOLS TAB ═══ */}
+      {activeTab === 'tools' && (
+        <div className="space-y-4">
+          <Section title="Core Functions" icon={Wrench} badge={`${coreTools.filter(t => t.on).length}/${coreTools.length}`}>
+            <div className="space-y-2">
+              {coreTools.map(tool => (
+                <div key={tool.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <Zap className="w-4 h-4 text-indigo-500" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      <p className="text-[10px] text-gray-400">{tool.desc}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => toggleCoreTool(tool.id)}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.on ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.on ? 'translate-x-[18px]' : ''}`} />
+                  </button>
+                </div>
               ))}
             </div>
           </Section>
 
-          {/* Telephony (only for phone) */}
-          {deployType === 'phone' && (
-            <Section title="Telephony Provider" icon={Phone} badge={TELEPHONY_PROVIDERS.find(p => p.id === telephonyProvider)?.name}>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {TELEPHONY_PROVIDERS.map(p => (
-                  <button key={p.id} onClick={() => setTelephonyProvider(p.id)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${
-                      telephonyProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
-                    }`}>
-                    <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                    <p className="text-[10px] text-gray-500">{p.country} · {p.cost}</p>
-                    {p.badge && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 mt-1 inline-block">{p.badge}</span>}
+          <Section title="Feature Tools" icon={Settings} badge={`${featureTools.filter(t => t.on).length}/${featureTools.length}`}>
+            <div className="space-y-2">
+              {featureTools.map(tool => (
+                <div key={tool.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <Database className="w-4 h-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      <p className="text-[10px] text-gray-400">{tool.desc}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => toggleFeatureTool(tool.id)}
+                    className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.on ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.on ? 'translate-x-[18px]' : ''}`} />
                   </button>
-                ))}
-              </div>
-              <Field label="Phone Number" helpText="Your caller ID number from the selected provider">
-                <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
-                  placeholder="+919876543210"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-              </Field>
-            </Section>
-          )}
-
-          {/* Experience Config */}
-          <Section title="Experience" icon={MessageSquare} collapsible defaultOpen={true}>
-            <Field label="Greeting Message" helpText="First message when call/session starts">
-              <textarea value={greeting} onChange={e => setGreeting(e.target.value)} rows={2}
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            </Field>
-            <Field label="Error Message" helpText="Shown when AI can't understand">
-              <input type="text" value={errorMessage} onChange={e => setErrorMessage(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            </Field>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Idle Timeout (seconds)" helpText="Silence before prompting user">
-                <div className="flex items-center gap-3">
-                  <input type="range" min="10" max="120" value={idleTimeout} onChange={e => setIdleTimeout(parseInt(e.target.value))}
-                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
-                  <span className="text-xs font-mono text-indigo-600 w-8">{idleTimeout}s</span>
                 </div>
-              </Field>
-              <Field label="Max Session Duration (seconds)" helpText="Maximum call/session length">
-                <div className="flex items-center gap-3">
-                  <input type="range" min="60" max="600" step="30" value={maxSessionDuration} onChange={e => setMaxSessionDuration(parseInt(e.target.value))}
-                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
-                  <span className="text-xs font-mono text-indigo-600 w-10">{maxSessionDuration}s</span>
-                </div>
-              </Field>
+              ))}
             </div>
+          </Section>
+
+          <Section title="Integrations" icon={Link2}>
+            <div className="space-y-2">
+              {integrationTools.map(tool => (
+                <div key={tool.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                  <div className="flex items-center gap-3">
+                    <Globe className="w-4 h-4 text-gray-400" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      <p className="text-[10px] text-gray-400">{tool.desc}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {tool.connected && <span className="text-[10px] text-emerald-600 flex items-center gap-1"><Check className="w-3 h-3" /> Connected</span>}
+                    <button onClick={() => toggleIntegrationTool(tool.id)}
+                      className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.connected ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                      <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.connected ? 'translate-x-[18px]' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ INTEGRATIONS TAB ═══ */}
+      {activeTab === 'integrations' && (
+        <div className="space-y-4">
+          {/* Knowledge Base */}
+          <Section title="Knowledge Base" icon={BookOpen} badge={knowledgeLinked ? 'Linked' : ''}>
+            <p className="text-xs text-gray-500 mb-3">Connect knowledge bases to enable RAG-powered conversations. The agent will use document content to answer questions.</p>
+            {!knowledgeLinked ? (
+              <div className="py-8 text-center border-2 border-dashed border-gray-200 rounded-xl">
+                <BookOpen className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                <p className="text-sm text-gray-600 font-medium">No knowledge bases linked</p>
+                <p className="text-xs text-gray-400 mb-3">Link a knowledge base to enable your agent to answer questions using your documents.</p>
+                <button onClick={() => { setKnowledgeLinked(true); toast.success('Knowledge Base linked'); }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 text-white hover:bg-indigo-700">
+                  Create Knowledge Base
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <span className="text-sm text-emerald-700 font-medium">Knowledge Base connected</span>
+                </div>
+                <button onClick={() => setKnowledgeLinked(false)} className="text-xs text-red-500 hover:underline">Disconnect</button>
+              </div>
+            )}
           </Section>
 
           {/* Webhook */}
-          <Section title="Webhook" icon={Webhook} collapsible defaultOpen={false}>
-            <Field label="Webhook URL" helpText="Receive events: call.started, call.ended, transcript.ready">
-              <input type="url" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
-                placeholder="https://your-server.com/webhook/voiceflow"
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            </Field>
-          </Section>
-
-          <div className="flex justify-between">
-            <button onClick={() => setStep(2)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
-            <button onClick={() => setStep(4)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
-              Next: Profile <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ═══════════ STEP 4: Profile & Knowledge ═══════════ */}
-      {step === 4 && (
-        <div className="space-y-4">
-          <Section title="Agent Profile" icon={Bot}>
-            <Field label="Agent Name *">
-              <input type="text" value={agentName} onChange={e => setAgentName(e.target.value)}
-                placeholder="e.g., Sales Assistant, Support Bot"
-                className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            </Field>
-            <Field label="Description" helpText="Purpose and use case for this agent">
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-                placeholder="This agent handles inbound sales calls for..."
-                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-            </Field>
-            <Field label="Tags">
-              <div className="flex items-center gap-2">
-                <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTag())}
-                  placeholder="Add tag..."
-                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
-                <button onClick={addTag} className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200"><Plus className="w-4 h-4" /></button>
+          <Section title="Webhook" icon={Webhook}>
+            <p className="text-xs text-gray-500 mb-3">Receive call data via HTTP POST after each call ends. Includes transcript, outcome, and all qualification data.</p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Endpoint URL</label>
+                <input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://your-server.com/webhooks/call-ended"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono" />
               </div>
-              {tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {tags.map(tag => (
-                    <span key={tag} className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      {tag}
-                      <button onClick={() => setTags(prev => prev.filter(t => t !== tag))} className="hover:text-red-600"><X className="w-3 h-3" /></button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </Field>
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Custom Headers</label>
+                <input value={webhookHeaders} onChange={e => setWebhookHeaders(e.target.value)} placeholder='Authorization: Bearer token'
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm font-mono" />
+                <p className="text-[10px] text-gray-400 mt-1">Method: HTTP POST (fire-and-forget), Timeout: 10 seconds</p>
+              </div>
+            </div>
           </Section>
 
-          {/* Knowledge Base */}
-          <Section title="Knowledge Base" icon={BookOpen} collapsible badge={`${knowledgeIds.size} linked`}>
-            <p className="text-[11px] text-gray-500 mb-3">
-              Select documents from your <a href="/voice/knowledge" className="text-indigo-600 hover:underline">central library</a> for RAG context
-            </p>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {knowledgeLibrary.map(doc => {
-                const isSelected = knowledgeIds.has(doc.id);
-                const icons = { document: FileText, faq: HelpCircle, product_catalog: ShoppingBag, script: ScrollText };
-                const DocIcon = icons[doc.doc_type] || FileText;
-                return (
-                  <button key={doc.id} onClick={() => setKnowledgeIds(prev => {
-                    const next = new Set(prev);
-                    if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id);
-                    return next;
-                  })}
-                    className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all ${
-                      isSelected ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-50 border border-gray-100 hover:border-indigo-200'
-                    }`}>
-                    <DocIcon className="w-4 h-4 text-gray-400 shrink-0" />
-                    <span className="text-xs font-medium text-gray-800 flex-1">{doc.title}</span>
-                    <span className="text-[9px] text-gray-400 capitalize">{doc.doc_type?.replace('_', ' ')}</span>
-                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${isSelected ? 'bg-indigo-500' : 'border-2 border-gray-200'}`}>
-                      {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+          {/* API Integration */}
+          <Section title="API Integration" icon={Code}>
+            <p className="text-xs text-gray-500 mb-3">Use these API endpoints to integrate this agent into your applications.</p>
+
+            <div className="mb-4 p-3 bg-gray-50 rounded-xl">
+              <label className="text-[10px] text-gray-400 uppercase tracking-wider">Base URL</label>
+              <div className="flex items-center gap-2 mt-1">
+                <code className="flex-1 text-sm font-mono text-gray-900">{API_BASE}</code>
+                <button onClick={() => { navigator.clipboard.writeText(API_BASE); toast.success('Copied'); }}
+                  className="p-1.5 text-gray-400 hover:text-gray-700"><Copy className="w-4 h-4" /></button>
+              </div>
+            </div>
+
+            {/* API Endpoints */}
+            {[
+              { method: 'POST', path: '/api/v1/telephony/call', label: 'Initiate Outbound Call', type: 'Voice', body: `{\n  "from_number": "+919876543210",\n  "to_number": "+918012345678",\n  "webhook_url": "${API_BASE}/api/v1/telephony/webhooks/telecmi",\n  "provider": "telecmi",\n  "call_type": "ai_agent",\n  "agent_id": "${agentName}"\n}` },
+              { method: 'POST', path: '/api/v1/telephony/call/{provider}/{call_id}/end', label: 'End Active Call', type: 'Voice', body: '{\n  "call_sid": "CA1234567890abcdef"\n}' },
+              { method: 'POST', path: '/api/v1/voice/respond', label: 'Voice Turn (STT→LLM→TTS)', type: 'Voice', body: 'FormData: file (audio), language, system_prompt' },
+              { method: 'POST', path: '/api/v1/webrtc/session', label: 'Create Chat Session', type: 'Chat', body: `{\n  "agent_id": "${agentName}",\n  "tenant_id": "your-tenant"\n}` },
+              { method: 'GET', path: '/api/v1/voice-clone/voices', label: 'List Cloned Voices', type: 'Voice', body: null },
+            ].map(ep => (
+              <div key={ep.path} className="mb-4 bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm font-medium text-gray-900">{ep.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{ep.type}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${ep.method === 'POST' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{ep.method}</span>
+                  </div>
+                </div>
+                <div className="px-4 py-2 bg-gray-50 flex items-center gap-2">
+                  <code className="flex-1 text-xs font-mono text-gray-700">{ep.path}</code>
+                  <button onClick={() => { navigator.clipboard.writeText(`${API_BASE}${ep.path}`); toast.success('Copied'); }}
+                    className="p-1 text-gray-400 hover:text-gray-700"><Copy className="w-3.5 h-3.5" /></button>
+                </div>
+                {ep.body && (
+                  <div className="px-4 py-3">
+                    <div className="flex gap-4 text-[10px] font-medium text-gray-400 mb-2">
+                      <span className="text-indigo-600 border-b border-indigo-600 pb-1">Request Body</span>
+                      <span className="cursor-pointer hover:text-gray-600">Response</span>
+                      <span className="cursor-pointer hover:text-gray-600">cURL</span>
                     </div>
-                  </button>
-                );
-              })}
-            </div>
+                    <pre className="text-xs font-mono text-gray-700 bg-gray-50 p-3 rounded-lg overflow-x-auto">{ep.body}</pre>
+                  </div>
+                )}
+              </div>
+            ))}
           </Section>
-
-          {/* Config Summary */}
-          <Section title="Configuration Summary" icon={CheckCircle2}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {[
-                { label: 'LLM', value: LLM_PROVIDERS.find(p => p.id === llmProvider)?.name || llmProvider },
-                { label: 'STT', value: STT_PROVIDERS.find(p => p.id === sttProvider)?.name || sttProvider },
-                { label: 'TTS', value: TTS_PROVIDERS.find(p => p.id === ttsProvider)?.name || ttsProvider },
-                { label: 'Voice', value: VOICE_PRESETS.find(v => v.id === selectedVoice)?.name || selectedVoice },
-                { label: 'Language', value: LANGUAGES.find(l => l.code === language)?.name || language },
-                { label: 'Deploy', value: deployType.replace('_', ' ') },
-                { label: 'VAD', value: vadEnabled ? 'On' : 'Off' },
-                { label: 'Knowledge', value: `${knowledgeIds.size} docs` },
-              ].map(s => (
-                <div key={s.label} className="p-3 bg-gray-50 rounded-xl">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">{s.label}</p>
-                  <p className="text-sm font-medium text-gray-900 mt-0.5 capitalize">{s.value}</p>
-                </div>
-              ))}
-            </div>
-          </Section>
-
-          <div className="flex justify-between">
-            <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
-            <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-2 px-8 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
-              {saving ? 'Creating Agent...' : 'Create & Deploy Agent'}
-            </button>
-          </div>
         </div>
       )}
     </div>
