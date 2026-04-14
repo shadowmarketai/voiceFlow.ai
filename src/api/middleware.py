@@ -103,7 +103,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                 headers={"Retry-After": "60"},
             )
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Middleware caught exception on %s %s", request.method, request.url.path)
+            return JSONResponse(status_code=500, content={"error": True, "detail": str(exc)[:200], "status_code": 500})
         # Add rate limit headers
         response.headers["X-RateLimit-Limit"] = str(limits["general"])
         response.headers["X-RateLimit-Plan"] = plan

@@ -15,8 +15,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import bcrypt
 import jwt
-from passlib.context import CryptContext
 
 from api.config import settings
 from api.database import db
@@ -24,24 +24,38 @@ from api.exceptions import ConflictError, NotFoundError, UnauthorizedError
 
 logger = logging.getLogger(__name__)
 
-# Use bcrypt for password hashing (pin bcrypt<4.1 in requirements.txt for passlib compat)
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 class AuthService:
     """Handles all authentication operations."""
 
-    # ── Password Hashing ─────────────────────────────────────────
+    # ── Password Hashing (bcrypt directly, no passlib) ────────────
 
     @staticmethod
     def hash_password(password: str) -> str:
-        """Hash a plaintext password using sha256_crypt."""
-        return pwd_context.hash(password)
+        """Hash a plaintext password using bcrypt."""
+        password_bytes = password.encode("utf-8")
+        salt = bcrypt.gensalt(rounds=12)
+        return bcrypt.hashpw(password_bytes, salt).decode("utf-8")
 
     @staticmethod
     def verify_password(plain_password: str, hashed_password: str) -> bool:
-        """Verify a plaintext password against a hash."""
-        return pwd_context.verify(plain_password, hashed_password)
+        """Verify a plaintext password against a hash.
+
+        Supports both bcrypt ($2b$) and legacy sha256_crypt ($5$) hashes.
+        """
+        try:
+            if hashed_password.startswith("$2b$") or hashed_password.startswith("$2a$"):
+                return bcrypt.checkpw(
+                    plain_password.encode("utf-8"),
+                    hashed_password.encode("utf-8"),
+                )
+            elif hashed_password.startswith("$5$"):
+                # Legacy sha256_crypt from passlib seeder
+                from passlib.hash import sha256_crypt
+                return sha256_crypt.verify(plain_password, hashed_password)
+            return False
+        except Exception:
+            return False
 
     # ── Token Creation (KB-004: PyJWT only) ──────────────────────
 
