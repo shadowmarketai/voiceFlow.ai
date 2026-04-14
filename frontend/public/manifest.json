@@ -1,0 +1,10 @@
+{
+  "name": "VoiceFlow AI",
+  "short_name": "VoiceFlow",
+  "description": "Multi-tenant Voice AI Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fafbfe",
+  "theme_color": "#6366f1",
+  "icons": []
+}

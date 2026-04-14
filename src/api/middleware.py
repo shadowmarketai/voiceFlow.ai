@@ -128,17 +128,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(), payment=(self)"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         if APP_ENV == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            # CSP: allow external resources needed by the frontend
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' https://checkout.razorpay.com; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com; "
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
                 "font-src 'self' https://fonts.gstatic.com; "
-                "img-src 'self' data: https:; "
-                "connect-src 'self' https://api.razorpay.com https://*.groq.com https://api.anthropic.com; "
+                "img-src 'self' data: blob: https:; "
+                "connect-src 'self' https: wss:; "
+                "worker-src 'self' blob:; "
                 "frame-src https://api.razorpay.com;"
             )
         return response
