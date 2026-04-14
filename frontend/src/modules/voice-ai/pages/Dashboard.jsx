@@ -448,6 +448,49 @@ function RatingStars({ rating, max = 5 }) {
 /* ─── Main Dashboard ──────────────────────────────────────────── */
 
 export default function VoiceAIDashboard() {
+  const [stats, setStats] = useState(null);
+  const [liveCalls, setLiveCalls] = useState(LIVE_CALLS);
+
+  // Try to load real stats from API, fall back to mock data
+  useEffect(() => {
+    fetch('/api/v1/voice/analyses/stats')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && data.total_analyses > 0) {
+          setStats(data);
+        }
+      })
+      .catch(() => {}); // Keep mock data
+
+    // Poll live calls every 10s
+    const fetchLive = () => {
+      fetch('/api/v1/voice/analyses?status=active&limit=5')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && Array.isArray(data) && data.length > 0) {
+            setLiveCalls(data.map(c => ({
+              caller: c.phone || c.caller || 'Unknown',
+              agent: c.agent || 'AI Agent',
+              status: c.status || 'completed',
+              duration: c.duration || 0,
+              language: c.language || 'English',
+            })));
+          }
+        })
+        .catch(() => {});
+    };
+    const interval = setInterval(fetchLive, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Use API stats if available, otherwise mock
+  const heroStats = stats ? [
+    { ...HERO_STATS[0], value: stats.total_analyses || HERO_STATS[0].value },
+    { ...HERO_STATS[1], value: stats.active_agents || HERO_STATS[1].value },
+    { ...HERO_STATS[2], value: stats.total_minutes || HERO_STATS[2].value },
+    { ...HERO_STATS[3], value: stats.avg_satisfaction || HERO_STATS[3].value },
+  ] : HERO_STATS;
+
   const totalLanguageCalls = LANGUAGE_DATA.reduce((a, b) => a + b.value, 0);
 
   return (
@@ -486,7 +529,7 @@ export default function VoiceAIDashboard() {
           animate="show"
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8"
         >
-          {HERO_STATS.map((stat, i) => (
+          {heroStats.map((stat, i) => (
             <StatCard key={stat.label} stat={stat} index={i} />
           ))}
         </motion.div>
@@ -538,7 +581,7 @@ export default function VoiceAIDashboard() {
               </span>
             </div>
             <div className="max-h-[380px] overflow-y-auto divide-y" style={{ borderColor: PALETTE.border }}>
-              {LIVE_CALLS.map((call, i) => (
+              {liveCalls.map((call, i) => (
                 <LiveCallRow key={call.id} call={call} index={i} />
               ))}
             </div>
