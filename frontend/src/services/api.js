@@ -734,4 +734,17 @@ export const livekitAPI = {
   agentToken: (data) => api.post('/api/v1/livekit/agent-token', data),
 };
 
+// ============================================
+// QUALITY & TESTING METRICS API
+// ============================================
+export const qualityAPI = {
+  providers: () => api.get('/api/v1/quality/providers'),
+  pipeline: () => api.get('/api/v1/quality/pipeline-latency'),
+  uptime: () => api.get('/api/v1/quality/uptime'),
+  accuracy: () => api.get('/api/v1/quality/accuracy'),
+  competitors: () => api.get('/api/v1/quality/competitors'),
+  trends: () => api.get('/api/v1/quality/trends'),
+  summary: () => api.get('/api/v1/quality/summary'),
+};
+
 export default api;

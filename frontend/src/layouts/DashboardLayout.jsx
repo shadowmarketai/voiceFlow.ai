@@ -17,7 +17,7 @@ import { defaultTheme } from '../config/theme';
 import {
   LayoutDashboard, Bot, Wand2, BookOpen, Mic, Phone, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
-  FlaskConical, Puzzle, Code, CreditCard, Settings,
+  FlaskConical, Gauge, Puzzle, Code, CreditCard, Settings,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
   Bell, X,
@@ -56,6 +56,7 @@ const navSections = [
       { icon: BarChart3,     name: 'Analytics',      path: '/voice/analytics-dashboard' },
       { icon: FileAudio,     name: 'Recordings',     path: '/voice/recordings' },
       { icon: FlaskConical,  name: 'Testing',        path: '/voice/testing' },
+      { icon: Gauge,         name: 'Quality',        path: '/voice/quality' },
     ],
   },
   {

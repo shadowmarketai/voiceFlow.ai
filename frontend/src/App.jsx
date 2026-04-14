@@ -29,6 +29,7 @@ const LiveCallsPage = lazy(() => import('./modules/voice-ai/LiveCalls'))
 const VoiceAnalyticsDashboardPage = lazy(() => import('./modules/voice-ai/pages/AnalyticsDashboard'))
 const RecordingsPage = lazy(() => import('./modules/voice-ai/Recordings'))
 const TestingPage = lazy(() => import('./modules/voice-ai/pages/Testing'))
+const QualityDashboardPage = lazy(() => import('./modules/voice-ai/pages/QualityDashboard'))
 const IntegrationsPage = lazy(() => import('./modules/voice-ai/pages/Integrations'))
 const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDeveloper'))
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
@@ -126,6 +127,7 @@ function App() {
           <Route path="voice/analytics-dashboard" element={<S><VoiceAnalyticsDashboardPage /></S>} />
           <Route path="voice/recordings" element={<S><RecordingsPage /></S>} />
           <Route path="voice/testing" element={<S><TestingPage /></S>} />
+          <Route path="voice/quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="voice/integrations" element={<S><IntegrationsPage /></S>} />
           <Route path="voice/api" element={<S><ApiDeveloperPage /></S>} />
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />

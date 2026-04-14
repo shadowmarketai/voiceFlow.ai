@@ -239,6 +239,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Quality & Testing Metrics ────────────────────────────
+    try:
+        from api.routers.quality import router as quality_router
+        application.include_router(quality_router)
+        logger.info("Quality router loaded")
+    except Exception as exc:
+        logger.warning("Quality router not available: %s", exc)
+
     # ── Webhooks & API Keys ──────────────────────────────────
     try:
         from api.routers.webhooks import router as webhooks_router
