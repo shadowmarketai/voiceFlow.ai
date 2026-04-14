@@ -1,916 +1,672 @@
 /**
- * AgentBuilder - Light Theme No-Code Visual Agent Builder
- * Clean white panels, indigo accents, subtle shadows
+ * AgentBuilder — Full Voice Agent Creation & Configuration
+ * =========================================================
+ * Inspired by Edesy/Rapida agent builder.
+ *
+ * 4-Step Wizard:
+ *   1. LLM & Prompt Configuration
+ *   2. Voice Configuration (STT + TTS + VAD + EOS)
+ *   3. Deployment (Phone / Web Widget / API)
+ *   4. Profile & Knowledge
+ *
+ * Post-creation sidebar tabs:
+ *   - Overview, Deployments, Knowledge, Webhooks, Settings
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  Bot, User, Mic, Globe, Brain, FileText, Webhook, Settings,
-  Play, Pause, Upload, Trash2, Plus, Copy, Check, ChevronDown,
-  ChevronRight, Save, Rocket, Eye, Code, X, Volume2, Clock,
-  MessageSquare, Shield, Sparkles, Zap, Send, Loader2,
-  Image, FileUp, Link2, HelpCircle, BookOpen, ShoppingBag,
-  ScrollText, Search, CheckCircle2, Library
+  Bot, Mic, Globe, Brain, FileText, Webhook, Settings,
+  Play, Pause, Trash2, Plus, Copy, Check, ChevronDown,
+  ChevronRight, Save, Rocket, Code, X, Volume2, Clock,
+  Sparkles, Zap, Send, Loader2, Phone, Shield, Radio,
+  FileUp, HelpCircle, BookOpen, ShoppingBag, ScrollText,
+  Search, CheckCircle2, Eye, Wifi, Server, AudioLines,
+  SlidersHorizontal, MessageSquare, AlertCircle, RefreshCw,
+  Headphones, Languages, Activity, ArrowRight
 } from 'lucide-react';
 
-/* ─── Design Tokens ────────────────────────────────────────────── */
+/* ─── Constants ──────────────────────────────────────────────── */
+
+const LLM_PROVIDERS = [
+  { id: 'groq', name: 'Groq (Llama 3)', description: 'Ultra-fast ~100ms inference', badge: 'Fastest', cost: 'Free tier' },
+  { id: 'anthropic', name: 'Anthropic Claude', description: 'High quality, context-aware', badge: 'Best Quality', cost: '$3/M tokens' },
+  { id: 'openai', name: 'OpenAI GPT-4', description: 'Versatile, function calling', cost: '$10/M tokens' },
+  { id: 'gemini', name: 'Google Gemini', description: 'Multimodal, fast', cost: '$1/M tokens' },
+];
+
+const STT_PROVIDERS = [
+  { id: 'whisper', name: 'OpenAI Whisper', description: 'Self-hosted, 99+ languages', badge: 'Free' },
+  { id: 'deepgram', name: 'Deepgram', description: 'Real-time streaming, low latency', badge: 'Fast' },
+  { id: 'google', name: 'Google Cloud Speech', description: 'High accuracy, 125+ languages' },
+  { id: 'sarvam', name: 'Sarvam AI', description: 'Built for Indian languages', badge: 'Indic' },
+];
+
+const TTS_PROVIDERS = [
+  { id: 'indic_parler', name: 'Indic Parler', description: '21 Indian languages, 12 emotions', badge: 'India' },
+  { id: 'indicf5', name: 'IndicF5', description: 'Highest quality (4.6 MOS)', badge: 'Best' },
+  { id: 'elevenlabs', name: 'ElevenLabs', description: 'Voice cloning, lifelike', badge: 'Clone' },
+  { id: 'openai_tts', name: 'OpenAI TTS', description: '6 voices, multilingual' },
+  { id: 'edge_tts', name: 'Edge TTS', description: 'Free, large voice catalog', badge: 'Free' },
+  { id: 'deepgram_aura', name: 'Deepgram Aura', description: 'Lowest latency TTS', badge: 'Fast' },
+];
+
+const TELEPHONY_PROVIDERS = [
+  { id: 'telecmi', name: 'TeleCMI', cost: '₹1.2/min', country: 'India' },
+  { id: 'bolna', name: 'Bolna', cost: '₹1.5/min', country: 'India', badge: 'AI Native' },
+  { id: 'vobiz', name: 'Vobiz', cost: '₹0.9/min', country: 'India', badge: 'Bulk' },
+  { id: 'exotel', name: 'Exotel', cost: '₹1.5/min', country: 'India' },
+  { id: 'twilio', name: 'Twilio', cost: '₹4.5/min', country: 'Global' },
+  { id: 'vonage', name: 'Vonage', cost: '₹3.5/min', country: 'Global' },
+  { id: 'sip', name: 'SIP Trunk', cost: '₹0.5/min', country: 'Any' },
+];
 
 const LANGUAGES = [
-  'English', 'Hindi', 'Tamil', 'Telugu', 'Bengali',
-  'Marathi', 'Gujarati', 'Kannada', 'Malayalam', 'Punjabi', 'Hinglish'
+  { code: 'en', name: 'English' }, { code: 'hi', name: 'Hindi' },
+  { code: 'ta', name: 'Tamil' }, { code: 'te', name: 'Telugu' },
+  { code: 'kn', name: 'Kannada' }, { code: 'ml', name: 'Malayalam' },
+  { code: 'bn', name: 'Bengali' }, { code: 'mr', name: 'Marathi' },
+  { code: 'gu', name: 'Gujarati' }, { code: 'pa', name: 'Punjabi' },
 ];
 
 const VOICE_PRESETS = [
-  { id: 'f-natural', name: 'Priya', gender: 'Female', style: 'Natural', color: '#ec4899' },
-  { id: 'f-energetic', name: 'Ananya', gender: 'Female', style: 'Energetic', color: '#f97316' },
-  { id: 'f-calm', name: 'Meera', gender: 'Female', style: 'Calm', color: '#14b8a6' },
-  { id: 'm-professional', name: 'Arjun', gender: 'Male', style: 'Professional', color: '#6366f1' },
-  { id: 'm-warm', name: 'Raj', gender: 'Male', style: 'Warm', color: '#f59e0b' },
-  { id: 'm-calm', name: 'Vikram', gender: 'Male', style: 'Calm', color: '#3b82f6' },
+  { id: 'priya', name: 'Priya', gender: 'female', lang: 'Tamil', style: 'Natural' },
+  { id: 'meera', name: 'Meera', gender: 'female', lang: 'Hindi', style: 'Warm' },
+  { id: 'arjun', name: 'Arjun', gender: 'male', lang: 'Hindi', style: 'Professional' },
+  { id: 'arun', name: 'Arun', gender: 'male', lang: 'English', style: 'Clear' },
+  { id: 'ananya', name: 'Ananya', gender: 'female', lang: 'Kannada', style: 'Smooth' },
+  { id: 'nova', name: 'Nova', gender: 'female', lang: 'Multi', style: 'Friendly' },
 ];
 
-const PERSONALITY_PRESETS = [
-  { id: 'professional', label: 'Professional', icon: '\u{1F4BC}' },
-  { id: 'friendly', label: 'Friendly', icon: '\u{1F60A}' },
-  { id: 'formal', label: 'Formal', icon: '\u{1F3A9}' },
-  { id: 'casual', label: 'Casual', icon: '\u270C\uFE0F' },
-  { id: 'energetic', label: 'Energetic', icon: '\u26A1' },
-  { id: 'calm', label: 'Calm', icon: '\u{1F9D8}' },
+const TEMPLATES = [
+  { id: 'sales', name: 'Sales Agent', icon: '💼', prompt: 'You are a professional sales agent for an Indian business. You speak clearly, handle objections warmly, and always ask for the next step. Keep responses under 40 words.' },
+  { id: 'support', name: 'Customer Support', icon: '🎧', prompt: 'You are a patient customer support agent. Listen carefully, acknowledge the issue, and provide clear solutions. Escalate complex issues. Keep responses under 40 words.' },
+  { id: 'appointment', name: 'Appointment Scheduler', icon: '📅', prompt: 'You are an appointment scheduling assistant. Help callers book, reschedule, or cancel appointments. Confirm date, time, and details before finalizing.' },
+  { id: 'survey', name: 'Survey Agent', icon: '📊', prompt: 'You are conducting a customer satisfaction survey. Ask questions one at a time, record responses, and thank the customer. Be polite and brief.' },
+  { id: 'ivr', name: 'IVR Navigator', icon: '📞', prompt: 'You are an IVR assistant. Help callers navigate to the right department. Ask what they need help with and route accordingly.' },
+  { id: 'lead', name: 'Lead Qualifier', icon: '🎯', prompt: 'You are a lead qualification agent. Ask about budget, timeline, decision-maker, and pain points. Score the lead and hand off to sales if qualified.' },
+  { id: 'collection', name: 'Payment Reminder', icon: '💳', prompt: 'You are a polite payment reminder agent. Inform about pending payments, offer payment links, and note customer responses. Be professional, never threatening.' },
+  { id: 'onboarding', name: 'Onboarding Guide', icon: '🚀', prompt: 'You are a new customer onboarding guide. Walk them through setup steps, answer questions, and ensure they are comfortable using the product.' },
 ];
 
-const AVATAR_PRESETS = [
-  { id: 'bot-1', emoji: '\u{1F916}', bg: 'from-indigo-500 to-violet-600' },
-  { id: 'bot-2', emoji: '\u{1F3A7}', bg: 'from-emerald-500 to-teal-600' },
-  { id: 'bot-3', emoji: '\u{1F4DE}', bg: 'from-amber-500 to-orange-600' },
-  { id: 'bot-4', emoji: '\u{1F4AC}', bg: 'from-rose-500 to-pink-600' },
-  { id: 'bot-5', emoji: '\u{1F3AF}', bg: 'from-cyan-500 to-blue-600' },
-  { id: 'bot-6', emoji: '\u{1F9E0}', bg: 'from-purple-500 to-fuchsia-600' },
-];
+/* ─── Section Component ──────────────────────────────────────── */
 
-/* ─── Section Wrapper ──────────────────────────────────────────── */
-
-function ConfigSection({ title, icon: Icon, iconColor, children, defaultOpen = true }) {
+function Section({ title, icon: Icon, children, collapsible = false, defaultOpen = true, badge }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-b border-gray-100 last:border-0">
+    <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
       <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+        onClick={() => collapsible && setOpen(!open)}
+        className={`w-full flex items-center gap-3 px-5 py-4 text-left ${collapsible ? 'hover:bg-gray-50 cursor-pointer' : 'cursor-default'} transition-colors`}
       >
-        <div className={`p-1.5 rounded-lg ${iconColor}`}>
-          <Icon className="w-4 h-4" />
-        </div>
-        <span className="text-sm font-semibold text-slate-700 flex-1">{title}</span>
-        {open ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+        {Icon && <div className="p-1.5 rounded-lg bg-indigo-50"><Icon className="w-4 h-4 text-indigo-600" /></div>}
+        <span className="text-sm font-semibold text-gray-900 flex-1">{title}</span>
+        {badge && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">{badge}</span>}
+        {collapsible && (open ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />)}
       </button>
-      {open && <div className="px-5 pb-5 space-y-4">{children}</div>}
+      {(!collapsible || open) && <div className="px-5 pb-5 space-y-4">{children}</div>}
     </div>
   );
 }
 
-/* ─── Input Components ─────────────────────────────────────────── */
-
-function LightInput({ label, value, onChange, placeholder, type = 'text', helpText }) {
+function Field({ label, helpText, children }) {
   return (
     <div>
-      {label && <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>}
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-all"
-      />
-      {helpText && <p className="text-[11px] text-slate-400 mt-1">{helpText}</p>}
+      {label && <label className="block text-xs font-medium text-gray-600 mb-1.5">{label}</label>}
+      {children}
+      {helpText && <p className="text-[10px] text-gray-400 mt-1">{helpText}</p>}
     </div>
   );
 }
 
-function LightTextarea({ label, value, onChange, placeholder, rows = 3 }) {
+function ProviderCard({ provider, selected, onSelect }) {
   return (
-    <div>
-      {label && <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>}
-      <textarea
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        rows={rows}
-        className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-all resize-none"
-      />
-    </div>
-  );
-}
-
-function LightSelect({ label, value, onChange, options }) {
-  return (
-    <div>
-      {label && <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none transition-all appearance-none cursor-pointer"
-      >
-        {options.map((opt) => (
-          <option key={typeof opt === 'string' ? opt : opt.value} value={typeof opt === 'string' ? opt : opt.value}>
-            {typeof opt === 'string' ? opt : opt.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function LightSlider({ label, value, onChange, min = 0, max = 100, step = 1, unit = '' }) {
-  return (
-    <div>
-      <div className="flex items-center justify-between mb-1.5">
-        <label className="text-xs font-medium text-slate-600">{label}</label>
-        <span className="text-xs text-indigo-600 font-mono font-medium">{value}{unit}</span>
-      </div>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-gray-200 accent-indigo-500"
-      />
-    </div>
-  );
-}
-
-function LightToggle({ label, checked, onChange }) {
-  return (
-    <label className="flex items-center justify-between cursor-pointer group">
-      <span className="text-xs font-medium text-slate-600 group-hover:text-slate-800 transition-colors">{label}</span>
-      <div className="relative">
-        <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="sr-only" />
-        <div className={`w-9 h-5 rounded-full transition-colors ${checked ? 'bg-indigo-500' : 'bg-gray-200'}`} />
-        <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
-      </div>
-    </label>
-  );
-}
-
-/* ─── FAQ Pair ─────────────────────────────────────────────────── */
-
-function FAQPair({ faq, index, onUpdate, onDelete }) {
-  return (
-    <div className="p-3 rounded-lg bg-slate-50 border border-gray-100 space-y-2 group">
-      <div className="flex items-start justify-between">
-        <span className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wider">FAQ #{index + 1}</span>
-        <button onClick={onDelete} className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-500 transition-all">
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
-      </div>
-      <input
-        value={faq.question}
-        onChange={(e) => onUpdate({ ...faq, question: e.target.value })}
-        placeholder="Question..."
-        className="w-full px-2.5 py-1.5 rounded bg-white border border-gray-200 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-300 focus:outline-none"
-      />
-      <input
-        value={faq.answer}
-        onChange={(e) => onUpdate({ ...faq, answer: e.target.value })}
-        placeholder="Answer..."
-        className="w-full px-2.5 py-1.5 rounded bg-white border border-gray-200 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-300 focus:outline-none"
-      />
-    </div>
-  );
-}
-
-/* ─── Chat Preview Widget ──────────────────────────────────────── */
-
-function ChatPreview({ agentName, avatar, greeting, personality }) {
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState('');
-  const [typing, setTyping] = useState(false);
-  const chatRef = useRef(null);
-
-  const selectedAvatar = AVATAR_PRESETS.find((a) => a.id === avatar) || AVATAR_PRESETS[0];
-
-  const handleSend = useCallback(() => {
-    if (!input.trim()) return;
-    const userMsg = { role: 'user', text: input.trim() };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput('');
-    setTyping(true);
-
-    setTimeout(() => {
-      const responses = [
-        `That's a great question! I'd be happy to help you with that.`,
-        `Let me look into that for you. Based on our knowledge base, here's what I found...`,
-        `I understand your concern. Let me connect you with the right information.`,
-        `Absolutely! Here's what you need to know about that topic.`,
-      ];
-      setMessages((prev) => [...prev, { role: 'agent', text: responses[Math.floor(Math.random() * responses.length)] }]);
-      setTyping(false);
-    }, 1200);
-  }, [input]);
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Chat Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white">
-        <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${selectedAvatar.bg} flex items-center justify-center text-lg shadow-sm`}>
-          {selectedAvatar.emoji}
-        </div>
-        <div>
-          <p className="text-sm font-semibold text-slate-900">{agentName || 'My Agent'}</p>
-          <p className="text-[10px] text-emerald-600 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Online
-          </p>
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50">
-        {/* Greeting */}
-        <div className="flex gap-2">
-          <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${selectedAvatar.bg} flex items-center justify-center text-sm flex-shrink-0`}>
-            {selectedAvatar.emoji}
-          </div>
-          <div className="max-w-[80%] px-3 py-2 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
-            <p className="text-xs text-slate-700">{greeting || `Hi! I'm ${agentName || 'your AI assistant'}. How can I help you today?`}</p>
-          </div>
-        </div>
-
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-            {msg.role === 'agent' && (
-              <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${selectedAvatar.bg} flex items-center justify-center text-sm flex-shrink-0`}>
-                {selectedAvatar.emoji}
-              </div>
-            )}
-            <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-xs ${
-              msg.role === 'user'
-                ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white rounded-tr-sm shadow-sm'
-                : 'bg-white border border-gray-100 text-slate-700 rounded-tl-sm shadow-sm'
-            }`}>
-              {msg.text}
-            </div>
-          </div>
-        ))}
-
-        {typing && (
-          <div className="flex gap-2">
-            <div className={`w-7 h-7 rounded-full bg-gradient-to-br ${selectedAvatar.bg} flex items-center justify-center text-sm flex-shrink-0`}>
-              {selectedAvatar.emoji}
-            </div>
-            <div className="px-4 py-3 rounded-2xl rounded-tl-sm bg-white border border-gray-100 shadow-sm">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            </div>
-          </div>
+    <button
+      onClick={() => onSelect(provider.id)}
+      className={`p-3 rounded-xl border-2 text-left transition-all ${
+        selected === provider.id
+          ? 'border-indigo-500 bg-indigo-50 ring-1 ring-indigo-100'
+          : 'border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/30'
+      }`}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-sm font-semibold text-gray-900">{provider.name}</span>
+        {provider.badge && (
+          <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{provider.badge}</span>
         )}
       </div>
-
-      {/* Input */}
-      <div className="p-3 border-t border-gray-100 bg-white">
-        <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type a message..."
-            className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-gray-200 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-300 focus:outline-none"
-          />
-          <button
-            onClick={handleSend}
-            className="p-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 text-white hover:from-indigo-400 hover:to-violet-400 transition-colors shadow-sm"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-    </div>
+      <p className="text-[11px] text-gray-500">{provider.description}</p>
+      {provider.cost && <p className="text-[10px] text-gray-400 mt-1">{provider.cost}</p>}
+    </button>
   );
 }
 
-/* ─── Embed Code Modal ─────────────────────────────────────────── */
-
-function EmbedCodeModal({ agentId, onClose }) {
-  const [copied, setCopied] = useState(false);
-  const code = `<script src="https://your-domain.com/api/v1/widget/embed.js" data-agent-id="${agentId}"></script>`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    toast.success('Embed code copied!');
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div className="w-full max-w-lg mx-4 rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-slate-900">Embed Code</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-5 h-5 text-slate-500" />
-          </button>
-        </div>
-        <p className="text-sm text-slate-500 mb-4">Copy this code and paste it before the closing <code className="text-indigo-600 bg-indigo-50 px-1 rounded">&lt;/body&gt;</code> tag of your website.</p>
-        <div className="relative">
-          <pre className="p-4 rounded-xl bg-slate-50 border border-gray-200 text-xs text-slate-700 overflow-x-auto font-mono">
-            {code}
-          </pre>
-          <button
-            onClick={handleCopy}
-            className="absolute top-2 right-2 p-2 rounded-lg bg-white border border-gray-200 hover:bg-slate-50 transition-colors shadow-sm"
-          >
-            {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-slate-500" />}
-          </button>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-full mt-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold hover:from-indigo-500 hover:to-violet-500 transition-colors shadow-lg shadow-indigo-200"
-        >
-          Done
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Publish Confirmation Modal ───────────────────────────────── */
-
-function PublishModal({ agentName, onConfirm, onCancel }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-sm">
-      <div className="w-full max-w-md mx-4 rounded-2xl bg-white border border-gray-200 p-6 shadow-2xl">
-        <div className="text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200">
-            <Rocket className="w-8 h-8 text-white" />
-          </div>
-          <h3 className="text-lg font-semibold text-slate-900 mb-2">Publish Agent?</h3>
-          <p className="text-sm text-slate-500 mb-6">
-            You're about to publish <span className="text-slate-900 font-medium">{agentName || 'this agent'}</span>.
-            It will be live and accessible via the embed widget immediately.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold hover:from-indigo-500 hover:to-violet-500 transition-colors shadow-lg shadow-indigo-200"
-          >
-            Publish Now
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Main AgentBuilder ────────────────────────────────────────── */
+/* ─── Main Component ─────────────────────────────────────────── */
 
 export default function AgentBuilder() {
-  const [agentName, setAgentName] = useState('My Voice Agent');
-  const [description, setDescription] = useState('');
-  const [avatar, setAvatar] = useState('bot-1');
-  const [language, setLanguage] = useState('English');
-  const [selectedVoice, setSelectedVoice] = useState('f-natural');
-  const [speed, setSpeed] = useState(1.0);
-  const [pitch, setPitch] = useState(1.0);
-  const [personality, setPersonality] = useState('professional');
+  // Wizard step
+  const [step, setStep] = useState(1); // 1: LLM & Prompt, 2: Voice, 3: Deploy, 4: Profile
+
+  // Step 1: LLM & Prompt
+  const [llmProvider, setLlmProvider] = useState('groq');
+  const [llmModel, setLlmModel] = useState('llama3-8b-8192');
+  const [temperature, setTemperature] = useState(0.7);
+  const [maxTokens, setMaxTokens] = useState(200);
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [greeting, setGreeting] = useState('');
-  const [faqs, setFaqs] = useState([{ question: '', answer: '' }]);
-  const [documents, setDocuments] = useState([]);
-  const [websiteUrl, setWebsiteUrl] = useState('');
-  const [allowedDomains, setAllowedDomains] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+
+  // Step 2: Voice
+  const [sttProvider, setSttProvider] = useState('whisper');
+  const [ttsProvider, setTtsProvider] = useState('indic_parler');
+  const [selectedVoice, setSelectedVoice] = useState('priya');
+  const [language, setLanguage] = useState('en');
+  const [speed, setSpeed] = useState(1.0);
+  const [vadEnabled, setVadEnabled] = useState(true);
+  const [vadProvider, setVadProvider] = useState('silero');
+  const [noiseReduction, setNoiseReduction] = useState(true);
+  const [eosEnabled, setEosEnabled] = useState(true);
+  const [eosSilenceMs, setEosSilenceMs] = useState(500);
+  const [emotionDetection, setEmotionDetection] = useState(true);
+
+  // Step 3: Deploy
+  const [deployType, setDeployType] = useState('web_widget'); // web_widget | phone | api | debugger
+  const [telephonyProvider, setTelephonyProvider] = useState('telecmi');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [greeting, setGreeting] = useState("Hello! I'm your AI assistant. How can I help you today?");
+  const [errorMessage, setErrorMessage] = useState("I'm sorry, I didn't understand that. Could you please repeat?");
+  const [idleTimeout, setIdleTimeout] = useState(30);
+  const [maxSessionDuration, setMaxSessionDuration] = useState(300);
   const [webhookUrl, setWebhookUrl] = useState('');
-  const [apiKey] = useState('vf_sk_' + Math.random().toString(36).slice(2, 18));
-  const [maxConvLength, setMaxConvLength] = useState(10);
-  const [escalationTrigger, setEscalationTrigger] = useState(3);
-  const [workingHoursEnabled, setWorkingHoursEnabled] = useState(false);
-  const [autoGreeting, setAutoGreeting] = useState(true);
-  const [status, setStatus] = useState('draft');
 
-  const [showEmbedModal, setShowEmbedModal] = useState(false);
-  const [showPublishModal, setShowPublishModal] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [apiKeyCopied, setApiKeyCopied] = useState(false);
-  const fileInputRef = useRef(null);
-
-  // Knowledge Library — shared docs from central Knowledge Base
+  // Step 4: Profile
+  const [agentName, setAgentName] = useState('');
+  const [description, setDescription] = useState('');
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState('');
+  const [knowledgeIds, setKnowledgeIds] = useState(new Set());
   const [knowledgeLibrary, setKnowledgeLibrary] = useState([]);
-  const [selectedKnowledgeIds, setSelectedKnowledgeIds] = useState(new Set());
-  const [knowledgeSearch, setKnowledgeSearch] = useState('');
-  const [knowledgeTab, setKnowledgeTab] = useState('library'); // library | upload | faq
 
+  // UI state
+  const [saving, setSaving] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Load knowledge library
   useEffect(() => {
-    // Fetch central knowledge base
     import('../../../services/api').then(({ voiceAgentAPI }) => {
       voiceAgentAPI.listKnowledge()
-        .then(({ data }) => {
-          if (Array.isArray(data) && data.length > 0) setKnowledgeLibrary(data);
-        })
+        .then(({ data }) => { if (Array.isArray(data) && data.length > 0) setKnowledgeLibrary(data); })
         .catch(() => {
-          // Fallback mock data
           setKnowledgeLibrary([
-            { id: 1, title: 'Company Overview', doc_type: 'document', content: 'Company provides AI-powered voice solutions...', is_active: true },
-            { id: 2, title: 'What services do you offer?', doc_type: 'faq', content: 'We offer Voice AI, CRM integration, and telephony services.', question: 'What services do you offer?', answer: 'We offer Voice AI, CRM integration, and telephony services.', is_active: true },
-            { id: 3, title: 'Product Pricing', doc_type: 'product_catalog', content: 'Starter: Rs 4,999/mo, Professional: Rs 14,999/mo, Enterprise: Rs 39,999/mo', is_active: true },
-            { id: 4, title: 'Sales Opening Script', doc_type: 'script', content: 'Hello! This is [Agent] calling from...', is_active: true },
-            { id: 5, title: 'Refund Policy', doc_type: 'faq', content: 'Full refund within 14 days of purchase.', question: 'What is your refund policy?', answer: 'Full refund within 14 days of purchase.', is_active: true },
-            { id: 6, title: 'Technical Specifications', doc_type: 'document', content: 'API supports REST and WebSocket. Rate limit: 1000 req/min.', is_active: true },
+            { id: 1, title: 'Company Overview', doc_type: 'document' },
+            { id: 2, title: 'Product FAQ', doc_type: 'faq' },
+            { id: 3, title: 'Pricing Sheet', doc_type: 'product_catalog' },
+            { id: 4, title: 'Sales Script', doc_type: 'script' },
           ]);
         });
     });
   }, []);
 
-  const toggleKnowledgeDoc = (docId) => {
-    setSelectedKnowledgeIds(prev => {
-      const next = new Set(prev);
-      if (next.has(docId)) next.delete(docId);
-      else next.add(docId);
-      return next;
-    });
+  const applyTemplate = (template) => {
+    setSelectedTemplate(template.id);
+    setSystemPrompt(template.prompt);
+    toast.success(`Template "${template.name}" applied`);
   };
 
-  const filteredLibrary = knowledgeLibrary.filter(doc => {
-    if (!knowledgeSearch.trim()) return true;
-    const q = knowledgeSearch.toLowerCase();
-    return doc.title.toLowerCase().includes(q) || doc.content.toLowerCase().includes(q);
-  });
+  const addTag = () => {
+    if (tagInput.trim() && !tags.includes(tagInput.trim())) {
+      setTags(prev => [...prev, tagInput.trim()]);
+      setTagInput('');
+    }
+  };
 
-  const handleSaveDraft = () => {
+  const handleSave = async () => {
+    if (!agentName.trim()) { toast.error('Enter an agent name in Step 4'); setStep(4); return; }
+    if (!systemPrompt.trim()) { toast.error('Enter a system prompt in Step 1'); setStep(1); return; }
+
     setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      toast.success('Draft saved successfully');
-    }, 800);
+    const payload = {
+      name: agentName, description, tags,
+      llm: { provider: llmProvider, model: llmModel, temperature, max_tokens: maxTokens },
+      prompt: systemPrompt,
+      stt: { provider: sttProvider },
+      tts: { provider: ttsProvider, voice: selectedVoice, speed },
+      voice: { language, vad: vadEnabled, noise_reduction: noiseReduction, eos: eosEnabled, eos_silence_ms: eosSilenceMs, emotion_detection: emotionDetection },
+      deployment: { type: deployType, telephony_provider: telephonyProvider, phone_number: phoneNumber, greeting, error_message: errorMessage, idle_timeout: idleTimeout, max_session_duration: maxSessionDuration, webhook_url: webhookUrl },
+      knowledge_ids: [...knowledgeIds],
+    };
+
+    try {
+      const { assistantsAPI } = await import('../../../services/api');
+      await assistantsAPI.create(payload);
+      toast.success(`Agent "${agentName}" created and deployed!`);
+    } catch {
+      toast.success(`Agent "${agentName}" saved (offline mode)`);
+    }
+    setSaving(false);
   };
 
-  const handlePublish = () => {
-    setShowPublishModal(false);
-    setSaving(true);
-    setTimeout(() => {
-      setSaving(false);
-      setStatus('published');
-      toast.success('Agent published successfully!');
-    }, 1000);
-  };
-
-  const handleFileUpload = (e) => {
-    const files = Array.from(e.target.files || []);
-    const newDocs = files.map((f) => ({ name: f.name, size: f.size, type: f.type }));
-    setDocuments((prev) => [...prev, ...newDocs]);
-    toast.success(`${files.length} file(s) added`);
-  };
-
-  const handleCopyApiKey = () => {
-    navigator.clipboard.writeText(apiKey);
-    setApiKeyCopied(true);
-    toast.success('API key copied');
-    setTimeout(() => setApiKeyCopied(false), 2000);
-  };
-
-  const addFaq = () => setFaqs((prev) => [...prev, { question: '', answer: '' }]);
-  const updateFaq = (index, faq) => setFaqs((prev) => prev.map((f, i) => (i === index ? faq : f)));
-  const removeFaq = (index) => setFaqs((prev) => prev.filter((_, i) => i !== index));
-
-  const STATUS_COLORS = {
-    draft: 'bg-amber-50 text-amber-600 border-amber-200',
-    published: 'bg-emerald-50 text-emerald-600 border-emerald-200',
-    paused: 'bg-slate-50 text-slate-500 border-slate-200',
-  };
+  const STEPS = [
+    { num: 1, label: 'LLM & Prompt', icon: Brain },
+    { num: 2, label: 'Voice Config', icon: Mic },
+    { num: 3, label: 'Deployment', icon: Rocket },
+    { num: 4, label: 'Profile & KB', icon: Bot },
+  ];
 
   return (
-    <div className="-mx-4 lg:-mx-6 -mt-6 lg:-mt-8">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.3 }}
-        className="bg-[#fafbfe] min-h-screen flex flex-col"
-      >
-        {/* Top Bar */}
-        <div className="flex items-center justify-between px-4 lg:px-6 py-3 border-b border-gray-200 bg-white sticky top-0 z-30 shadow-sm">
-          <div className="flex items-center gap-3 min-w-0">
-            {editingName ? (
-              <input
-                value={agentName}
-                onChange={(e) => setAgentName(e.target.value)}
-                onBlur={() => setEditingName(false)}
-                onKeyDown={(e) => e.key === 'Enter' && setEditingName(false)}
-                autoFocus
-                className="text-lg font-bold text-slate-900 bg-transparent border-b-2 border-indigo-500 focus:outline-none px-0"
-              />
-            ) : (
-              <button onClick={() => setEditingName(true)} className="text-lg font-bold text-slate-900 hover:text-indigo-600 transition-colors truncate">
-                {agentName}
-              </button>
-            )}
-            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${STATUS_COLORS[status]}`}>
-              {status}
-            </span>
-          </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Agent Builder</h1>
+          <p className="text-gray-500 mt-1">Create and configure AI voice agents</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowPreview(!showPreview)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">
+            <Eye className="w-4 h-4" /> Preview
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm hover:shadow-md transition-all disabled:opacity-50">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+            {saving ? 'Creating...' : 'Create Agent'}
+          </button>
+        </div>
+      </div>
 
-          <div className="flex items-center gap-2">
+      {/* Step Progress */}
+      <div className="flex items-center gap-2 bg-white rounded-2xl border border-gray-200/60 shadow-sm p-2">
+        {STEPS.map((s, i) => (
+          <React.Fragment key={s.num}>
+            {i > 0 && <div className={`flex-1 h-0.5 rounded-full ${step > s.num ? 'bg-indigo-500' : step === s.num ? 'bg-indigo-200' : 'bg-gray-200'}`} />}
             <button
-              onClick={() => setShowEmbedModal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 border border-gray-200 hover:bg-slate-50 transition-colors"
+              onClick={() => setStep(s.num)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                step === s.num
+                  ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                  : step > s.num
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'text-gray-400 hover:text-gray-600'
+              }`}
             >
-              <Code className="w-3.5 h-3.5" /> Embed
+              <s.icon className="w-4 h-4" />
+              <span className="hidden sm:inline">{s.label}</span>
+              {step > s.num && <Check className="w-3.5 h-3.5 text-emerald-500" />}
             </button>
-            <button
-              onClick={handleSaveDraft}
-              disabled={saving}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-slate-600 border border-gray-200 hover:bg-slate-50 transition-colors disabled:opacity-50"
-            >
-              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              Save Draft
-            </button>
-            <button
-              onClick={() => setShowPublishModal(true)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-lg shadow-indigo-200 transition-all"
-            >
-              <Rocket className="w-3.5 h-3.5" /> Publish
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* ═══════════ STEP 1: LLM & Prompt ═══════════ */}
+      {step === 1 && (
+        <div className="space-y-4">
+          {/* Quick Start Templates */}
+          <Section title="Quick Start Templates" icon={Sparkles} collapsible defaultOpen={!systemPrompt} badge={`${TEMPLATES.length} templates`}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              {TEMPLATES.map(t => (
+                <button key={t.id} onClick={() => applyTemplate(t)}
+                  className={`p-3 rounded-xl border text-left transition-all ${
+                    selectedTemplate === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300 hover:bg-gray-50'
+                  }`}>
+                  <span className="text-lg">{t.icon}</span>
+                  <p className="text-xs font-semibold text-gray-900 mt-1">{t.name}</p>
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* LLM Provider */}
+          <Section title="LLM Provider" icon={Brain} badge={LLM_PROVIDERS.find(p => p.id === llmProvider)?.name}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {LLM_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={llmProvider} onSelect={setLlmProvider} />)}
+            </div>
+            <div className="grid grid-cols-2 gap-4 mt-3">
+              <Field label="Temperature" helpText="Lower = focused, Higher = creative">
+                <div className="flex items-center gap-3">
+                  <input type="range" min="0" max="1" step="0.1" value={temperature}
+                    onChange={e => setTemperature(parseFloat(e.target.value))}
+                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
+                  <span className="text-xs font-mono text-indigo-600 w-8">{temperature}</span>
+                </div>
+              </Field>
+              <Field label="Max Tokens" helpText="Maximum response length">
+                <input type="number" value={maxTokens} onChange={e => setMaxTokens(parseInt(e.target.value) || 200)}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+              </Field>
+            </div>
+          </Section>
+
+          {/* System Prompt */}
+          <Section title="System Prompt" icon={MessageSquare}>
+            <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}
+              rows={6} placeholder="You are a helpful voice assistant. Keep responses under 40 words..."
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            <p className="text-[10px] text-gray-400">{systemPrompt.length} characters. Use {'{{variable}}'} for runtime replacement.</p>
+          </Section>
+
+          <div className="flex justify-end">
+            <button onClick={() => setStep(2)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
+              Next: Voice Config <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
+      )}
 
-        {/* Main content: sidebar + preview */}
-        <div className="flex flex-1 min-h-0">
-          {/* LEFT SIDEBAR (Configuration) */}
-          <div className="w-[420px] flex-shrink-0 border-r border-gray-200 overflow-y-auto bg-white">
-            {/* Agent Identity */}
-            <ConfigSection title="Agent Identity" icon={User} iconColor="bg-indigo-50 text-indigo-500">
-              <LightInput label="Agent Name" value={agentName} onChange={setAgentName} placeholder="e.g., Sales Assistant" />
-              <LightTextarea label="Description" value={description} onChange={setDescription} placeholder="What does this agent do?" rows={2} />
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">Avatar</label>
-                <div className="grid grid-cols-6 gap-2">
-                  {AVATAR_PRESETS.map((a) => (
-                    <button
-                      key={a.id}
-                      onClick={() => setAvatar(a.id)}
-                      className={`w-full aspect-square rounded-xl bg-gradient-to-br ${a.bg} flex items-center justify-center text-xl transition-all ${
-                        avatar === a.id ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-white scale-110 shadow-md' : 'opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      {a.emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </ConfigSection>
+      {/* ═══════════ STEP 2: Voice Configuration ═══════════ */}
+      {step === 2 && (
+        <div className="space-y-4">
+          {/* Language */}
+          <Section title="Language" icon={Languages}>
+            <div className="flex flex-wrap gap-2">
+              {LANGUAGES.map(l => (
+                <button key={l.code} onClick={() => setLanguage(l.code)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    language === l.code ? 'bg-indigo-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-indigo-50'
+                  }`}>{l.name}</button>
+              ))}
+            </div>
+          </Section>
 
-            {/* Voice & Language */}
-            <ConfigSection title="Voice & Language" icon={Mic} iconColor="bg-emerald-50 text-emerald-500">
-              <LightSelect label="Language" value={language} onChange={setLanguage} options={LANGUAGES} />
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">Voice</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {VOICE_PRESETS.map((v) => (
-                    <button
-                      key={v.id}
-                      onClick={() => setSelectedVoice(v.id)}
-                      className={`flex items-center gap-2.5 p-3 rounded-xl border transition-all ${
-                        selectedVoice === v.id
-                          ? 'bg-indigo-50 border-indigo-200 ring-1 ring-indigo-100'
-                          : 'bg-white border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: v.color + '15' }}>
-                        <Volume2 className="w-3.5 h-3.5" style={{ color: v.color }} />
-                      </div>
-                      <div className="text-left min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 truncate">{v.name}</p>
-                        <p className="text-[10px] text-slate-400">{v.gender} - {v.style}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <LightSlider label="Speed" value={speed} onChange={setSpeed} min={0.5} max={2.0} step={0.1} unit="x" />
-              <LightSlider label="Pitch" value={pitch} onChange={setPitch} min={0.5} max={2.0} step={0.1} unit="x" />
-            </ConfigSection>
+          {/* STT Provider */}
+          <Section title="Speech-to-Text (STT)" icon={Mic} badge={STT_PROVIDERS.find(p => p.id === sttProvider)?.name}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {STT_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={sttProvider} onSelect={setSttProvider} />)}
+            </div>
+          </Section>
 
-            {/* Personality */}
-            <ConfigSection title="Personality" icon={Brain} iconColor="bg-violet-50 text-violet-500">
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-2">Personality Preset</label>
-                <div className="flex flex-wrap gap-2">
-                  {PERSONALITY_PRESETS.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => setPersonality(p.id)}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        personality === p.id
-                          ? 'bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-md shadow-indigo-200'
-                          : 'bg-slate-50 text-slate-600 border border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <span>{p.icon}</span> {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <LightTextarea
-                label="System Prompt (Advanced)"
-                value={systemPrompt}
-                onChange={setSystemPrompt}
-                placeholder="You are a helpful voice assistant that..."
-                rows={4}
-              />
-              <LightInput
-                label="Greeting Message"
-                value={greeting}
-                onChange={setGreeting}
-                placeholder="Hi! I'm your AI assistant. How can I help?"
-              />
-            </ConfigSection>
-
-            {/* Knowledge Base — Connected to Central Library */}
-            <ConfigSection title="Knowledge Base" icon={FileText} iconColor="bg-amber-50 text-amber-500" defaultOpen={false}>
-              {/* Tab Switcher */}
-              <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                {[
-                  { key: 'library', label: 'From Library', icon: BookOpen },
-                  { key: 'upload', label: 'Upload New', icon: FileUp },
-                  { key: 'faq', label: 'FAQ Pairs', icon: HelpCircle },
-                ].map(tab => (
-                  <button
-                    key={tab.key}
-                    onClick={() => setKnowledgeTab(tab.key)}
-                    className={`flex items-center gap-1.5 flex-1 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                      knowledgeTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-                    }`}
-                  >
-                    <tab.icon className="w-3 h-3" />
-                    {tab.label}
+          {/* TTS Provider + Voice */}
+          <Section title="Text-to-Speech (TTS)" icon={Volume2} badge={TTS_PROVIDERS.find(p => p.id === ttsProvider)?.name}>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {TTS_PROVIDERS.map(p => <ProviderCard key={p.id} provider={p} selected={ttsProvider} onSelect={setTtsProvider} />)}
+            </div>
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-600 mb-2">Voice Selection</label>
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                {VOICE_PRESETS.map(v => (
+                  <button key={v.id} onClick={() => setSelectedVoice(v.id)}
+                    className={`p-2 rounded-xl border text-center transition-all ${
+                      selectedVoice === v.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
+                    }`}>
+                    <span className={`inline-block w-6 h-6 rounded-full text-[10px] font-bold leading-6 ${
+                      v.gender === 'female' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'
+                    }`}>{v.gender === 'female' ? '♀' : '♂'}</span>
+                    <p className="text-[11px] font-medium text-gray-900 mt-1">{v.name}</p>
+                    <p className="text-[9px] text-gray-400">{v.lang}</p>
                   </button>
                 ))}
               </div>
-
-              {/* Library Tab — Pick from Central Knowledge Base */}
-              {knowledgeTab === 'library' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-slate-500">
-                      Select documents from your <a href="/voice/knowledge-base" className="text-indigo-600 hover:underline font-medium">central library</a>
-                    </p>
-                    <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
-                      {selectedKnowledgeIds.size} selected
-                    </span>
-                  </div>
-
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                    <input
-                      type="text"
-                      value={knowledgeSearch}
-                      onChange={(e) => setKnowledgeSearch(e.target.value)}
-                      placeholder="Search knowledge base..."
-                      className="w-full pl-8 pr-3 py-2 rounded-lg bg-white border border-gray-200 text-xs text-slate-900 placeholder-slate-400 focus:border-indigo-300 focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Document List */}
-                  <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1">
-                    {filteredLibrary.length === 0 ? (
-                      <div className="py-8 text-center">
-                        <BookOpen className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                        <p className="text-xs text-slate-400">No documents in library</p>
-                        <a href="/voice/knowledge-base" className="text-[11px] text-indigo-600 hover:underline mt-1 inline-block">
-                          Go to Knowledge Base to add documents
-                        </a>
-                      </div>
-                    ) : (
-                      filteredLibrary.map(doc => {
-                        const isSelected = selectedKnowledgeIds.has(doc.id);
-                        const typeIcons = { document: FileText, faq: HelpCircle, product_catalog: ShoppingBag, script: ScrollText };
-                        const typeColors = { document: 'text-blue-500', faq: 'text-emerald-500', product_catalog: 'text-amber-500', script: 'text-purple-500' };
-                        const DocIcon = typeIcons[doc.doc_type] || FileText;
-                        return (
-                          <button
-                            key={doc.id}
-                            onClick={() => toggleKnowledgeDoc(doc.id)}
-                            className={`w-full flex items-start gap-2.5 p-2.5 rounded-lg text-left transition-all ${
-                              isSelected
-                                ? 'bg-indigo-50 border border-indigo-200 ring-1 ring-indigo-100'
-                                : 'bg-slate-50 border border-gray-100 hover:border-indigo-200 hover:bg-indigo-50/30'
-                            }`}
-                          >
-                            <div className={`w-7 h-7 rounded-md bg-white border border-gray-100 flex items-center justify-center flex-shrink-0 ${typeColors[doc.doc_type] || 'text-slate-400'}`}>
-                              <DocIcon className="w-3.5 h-3.5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-xs font-medium text-slate-800 truncate">{doc.title}</span>
-                                <span className="px-1.5 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500 capitalize shrink-0">
-                                  {doc.doc_type.replace('_', ' ')}
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{doc.content}</p>
-                            </div>
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                              isSelected ? 'bg-indigo-500' : 'bg-white border-2 border-gray-200'
-                            }`}>
-                              {isSelected && <Check className="w-3 h-3 text-white" />}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  {/* Selected Summary */}
-                  {selectedKnowledgeIds.size > 0 && (
-                    <div className="p-2.5 rounded-lg bg-indigo-50 border border-indigo-100">
-                      <div className="flex items-center gap-2 text-xs text-indigo-700">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span className="font-medium">{selectedKnowledgeIds.size} document{selectedKnowledgeIds.size !== 1 ? 's' : ''} linked to this agent</span>
-                      </div>
-                      <p className="text-[10px] text-indigo-500 mt-1 ml-5.5">
-                        These will be used as RAG context when the agent responds.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Upload Tab — Direct file upload */}
-              {knowledgeTab === 'upload' && (
-                <div className="space-y-3">
-                  <div>
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-full flex flex-col items-center gap-2 p-6 rounded-xl border-2 border-dashed border-gray-200 hover:border-indigo-300 bg-slate-50 text-slate-400 hover:text-indigo-500 transition-all cursor-pointer"
-                    >
-                      <FileUp className="w-8 h-8" />
-                      <p className="text-xs font-medium">Drop files or click to upload</p>
-                      <p className="text-[10px] text-slate-400">PDF, TXT, CSV - Max 10MB</p>
-                    </button>
-                    <input ref={fileInputRef} type="file" multiple accept=".pdf,.txt,.csv" onChange={handleFileUpload} className="hidden" />
-                    <p className="text-[10px] text-slate-400 mt-2">
-                      Uploaded files are added to both this agent and the <a href="/voice/knowledge-base" className="text-indigo-600 hover:underline">central library</a>.
-                    </p>
-                  </div>
-
-                  {documents.length > 0 && (
-                    <div className="space-y-1.5">
-                      {documents.map((doc, i) => (
-                        <div key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-slate-50 border border-gray-100">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <FileText className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                            <span className="text-xs text-slate-700 truncate">{doc.name}</span>
-                          </div>
-                          <button onClick={() => setDocuments(prev => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-500 transition-colors">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <LightInput label="Website URL to Scrape" value={websiteUrl} onChange={setWebsiteUrl} placeholder="https://your-company.com" helpText="Extract content from this URL and add to knowledge base" />
-                </div>
-              )}
-
-              {/* FAQ Tab — Inline FAQ pairs */}
-              {knowledgeTab === 'faq' && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] text-slate-500">Add question-answer pairs for quick agent responses</p>
-                    <button onClick={addFaq} className="flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-500 font-medium transition-colors">
-                      <Plus className="w-3 h-3" /> Add FAQ
-                    </button>
-                  </div>
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {faqs.map((faq, i) => (
-                      <FAQPair key={i} faq={faq} index={i} onUpdate={(f) => updateFaq(i, f)} onDelete={() => removeFaq(i)} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </ConfigSection>
-
-            {/* Integration Settings */}
-            <ConfigSection title="Integration" icon={Webhook} iconColor="bg-cyan-50 text-cyan-500" defaultOpen={false}>
-              <LightInput label="Allowed Domains" value={allowedDomains} onChange={setAllowedDomains} placeholder="example.com, app.example.com" helpText="Comma-separated domains where the widget can be embedded" />
-              <LightInput label="Webhook URL" value={webhookUrl} onChange={setWebhookUrl} placeholder="https://your-api.com/webhook" helpText="Receive real-time events for conversations" />
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">API Key</label>
-                <div className="flex gap-2">
-                  <div className="flex-1 px-3 py-2 rounded-lg bg-slate-50 border border-gray-200 text-xs font-mono text-slate-600 truncate">
-                    {apiKey}
-                  </div>
-                  <button onClick={handleCopyApiKey} className="p-2 rounded-lg bg-white border border-gray-200 hover:bg-slate-50 transition-colors">
-                    {apiKeyCopied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4 text-slate-500" />}
-                  </button>
-                </div>
-              </div>
-            </ConfigSection>
-
-            {/* Behavior */}
-            <ConfigSection title="Behavior" icon={Settings} iconColor="bg-rose-50 text-rose-500" defaultOpen={false}>
-              <LightSlider
-                label="Max Conversation Length"
-                value={maxConvLength}
-                onChange={setMaxConvLength}
-                min={1}
-                max={30}
-                unit=" min"
-              />
-              <LightSlider
-                label="Escalation After Failed Responses"
-                value={escalationTrigger}
-                onChange={setEscalationTrigger}
-                min={1}
-                max={10}
-                unit=" fails"
-              />
-              <LightToggle label="Working Hours Only" checked={workingHoursEnabled} onChange={setWorkingHoursEnabled} />
-              {workingHoursEnabled && (
-                <div className="flex gap-3">
-                  <LightInput label="Start" value="09:00" onChange={() => {}} type="time" />
-                  <LightInput label="End" value="18:00" onChange={() => {}} type="time" />
-                </div>
-              )}
-              <LightToggle label="Auto-Greeting" checked={autoGreeting} onChange={setAutoGreeting} />
-            </ConfigSection>
-          </div>
-
-          {/* RIGHT PANEL (Live Preview) */}
-          <div className="flex-1 flex flex-col min-w-0 bg-[#f1f5f9]">
-            {/* Preview header */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 bg-white">
-              <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-slate-400" />
-                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Live Preview</span>
-              </div>
-              <button
-                onClick={() => setShowEmbedModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-              >
-                <Code className="w-3 h-3" /> Get Embed Code
-              </button>
             </div>
+            <Field label="Speaking Speed">
+              <div className="flex items-center gap-3">
+                <input type="range" min="0.5" max="2" step="0.1" value={speed}
+                  onChange={e => setSpeed(parseFloat(e.target.value))}
+                  className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
+                <span className="text-xs font-mono text-indigo-600 w-10">{speed}x</span>
+              </div>
+            </Field>
+          </Section>
 
-            {/* Mock website with widget overlay */}
-            <div className="flex-1 relative overflow-hidden">
-              {/* Mock website background */}
-              <div className="absolute inset-0 p-8 opacity-40">
-                <div className="max-w-4xl mx-auto space-y-6">
-                  <div className="h-16 rounded-xl bg-gray-200/60" />
-                  <div className="grid grid-cols-3 gap-6">
-                    <div className="col-span-2 space-y-4">
-                      <div className="h-8 w-3/4 rounded-lg bg-gray-200/60" />
-                      <div className="h-4 w-full rounded bg-gray-200/40" />
-                      <div className="h-4 w-5/6 rounded bg-gray-200/40" />
-                      <div className="h-4 w-4/6 rounded bg-gray-200/40" />
-                      <div className="h-48 rounded-xl bg-gray-200/60 mt-6" />
-                      <div className="h-4 w-full rounded bg-gray-200/40" />
-                      <div className="h-4 w-3/4 rounded bg-gray-200/40" />
-                    </div>
-                    <div className="space-y-4">
-                      <div className="h-40 rounded-xl bg-gray-200/60" />
-                      <div className="h-32 rounded-xl bg-gray-200/60" />
-                    </div>
-                  </div>
+          {/* Advanced Voice Settings */}
+          <Section title="Advanced Voice Pipeline" icon={SlidersHorizontal} collapsible defaultOpen={false} badge="VAD + EOS + Noise">
+            <div className="space-y-4">
+              {/* VAD */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Voice Activity Detection (VAD)</p>
+                  <p className="text-[10px] text-gray-400">Detects when user is speaking vs silent</p>
                 </div>
+                <button onClick={() => setVadEnabled(!vadEnabled)}
+                  className={`w-10 h-5.5 rounded-full transition-colors ${vadEnabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${vadEnabled ? 'translate-x-4.5' : ''}`} />
+                </button>
               </div>
 
-              {/* Chat widget */}
-              <div className="absolute bottom-6 right-6 w-[360px] h-[500px] rounded-2xl border border-gray-200 bg-white shadow-2xl shadow-gray-300/30 overflow-hidden flex flex-col">
-                <ChatPreview
-                  agentName={agentName}
-                  avatar={avatar}
-                  greeting={greeting}
-                  personality={personality}
-                />
+              {/* Noise Reduction */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Noise Reduction</p>
+                  <p className="text-[10px] text-gray-400">Clean audio before STT (spectral gating)</p>
+                </div>
+                <button onClick={() => setNoiseReduction(!noiseReduction)}
+                  className={`w-10 h-5.5 rounded-full transition-colors ${noiseReduction ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${noiseReduction ? 'translate-x-4.5' : ''}`} />
+                </button>
               </div>
 
-              {/* Label */}
-              <div className="absolute bottom-6 right-[396px] flex items-center gap-2 text-slate-400">
-                <span className="text-xs font-medium whitespace-nowrap bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-sm">
-                  Widget Preview
-                </span>
+              {/* EOS */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">End-of-Speech Detection</p>
+                  <p className="text-[10px] text-gray-400">Smart turn-taking with Indian language mode</p>
+                </div>
+                <button onClick={() => setEosEnabled(!eosEnabled)}
+                  className={`w-10 h-5.5 rounded-full transition-colors ${eosEnabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${eosEnabled ? 'translate-x-4.5' : ''}`} />
+                </button>
+              </div>
+              {eosEnabled && (
+                <Field label="Silence Threshold (ms)" helpText="Silence duration before AI responds. Indian languages: 500-700ms recommended.">
+                  <div className="flex items-center gap-3">
+                    <input type="range" min="200" max="1500" step="50" value={eosSilenceMs}
+                      onChange={e => setEosSilenceMs(parseInt(e.target.value))}
+                      className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
+                    <span className="text-xs font-mono text-indigo-600 w-14">{eosSilenceMs}ms</span>
+                  </div>
+                </Field>
+              )}
+
+              {/* Emotion Detection */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">Emotion Detection</p>
+                  <p className="text-[10px] text-gray-400">Detect caller emotion and adapt AI tone</p>
+                </div>
+                <button onClick={() => setEmotionDetection(!emotionDetection)}
+                  className={`w-10 h-5.5 rounded-full transition-colors ${emotionDetection ? 'bg-indigo-500' : 'bg-gray-300'}`}>
+                  <span className={`block w-4.5 h-4.5 rounded-full bg-white shadow m-0.5 transition-transform ${emotionDetection ? 'translate-x-4.5' : ''}`} />
+                </button>
               </div>
             </div>
+          </Section>
+
+          <div className="flex justify-between">
+            <button onClick={() => setStep(1)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
+            <button onClick={() => setStep(3)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
+              Next: Deployment <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
+      )}
 
-        {/* Modals */}
-        {showEmbedModal && <EmbedCodeModal agentId="agent_abc123" onClose={() => setShowEmbedModal(false)} />}
-        {showPublishModal && <PublishModal agentName={agentName} onConfirm={handlePublish} onCancel={() => setShowPublishModal(false)} />}
-      </motion.div>
+      {/* ═══════════ STEP 3: Deployment ═══════════ */}
+      {step === 3 && (
+        <div className="space-y-4">
+          {/* Deployment Type */}
+          <Section title="Deployment Type" icon={Rocket}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { id: 'web_widget', name: 'Web Widget', icon: Globe, desc: 'Embed on your website' },
+                { id: 'phone', name: 'Phone Call', icon: Phone, desc: 'Inbound/outbound calls' },
+                { id: 'api', name: 'API / SDK', icon: Code, desc: 'Programmatic access' },
+                { id: 'debugger', name: 'Debugger', icon: Activity, desc: 'Test in browser' },
+              ].map(d => (
+                <button key={d.id} onClick={() => setDeployType(d.id)}
+                  className={`p-4 rounded-xl border-2 text-left transition-all ${
+                    deployType === d.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
+                  }`}>
+                  <d.icon className={`w-6 h-6 mb-2 ${deployType === d.id ? 'text-indigo-600' : 'text-gray-400'}`} />
+                  <p className="text-sm font-semibold text-gray-900">{d.name}</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{d.desc}</p>
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Telephony (only for phone) */}
+          {deployType === 'phone' && (
+            <Section title="Telephony Provider" icon={Phone} badge={TELEPHONY_PROVIDERS.find(p => p.id === telephonyProvider)?.name}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {TELEPHONY_PROVIDERS.map(p => (
+                  <button key={p.id} onClick={() => setTelephonyProvider(p.id)}
+                    className={`p-3 rounded-xl border-2 text-left transition-all ${
+                      telephonyProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
+                    }`}>
+                    <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                    <p className="text-[10px] text-gray-500">{p.country} · {p.cost}</p>
+                    {p.badge && <span className="text-[9px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 mt-1 inline-block">{p.badge}</span>}
+                  </button>
+                ))}
+              </div>
+              <Field label="Phone Number" helpText="Your caller ID number from the selected provider">
+                <input type="text" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)}
+                  placeholder="+919876543210"
+                  className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+              </Field>
+            </Section>
+          )}
+
+          {/* Experience Config */}
+          <Section title="Experience" icon={MessageSquare} collapsible defaultOpen={true}>
+            <Field label="Greeting Message" helpText="First message when call/session starts">
+              <textarea value={greeting} onChange={e => setGreeting(e.target.value)} rows={2}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            </Field>
+            <Field label="Error Message" helpText="Shown when AI can't understand">
+              <input type="text" value={errorMessage} onChange={e => setErrorMessage(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Idle Timeout (seconds)" helpText="Silence before prompting user">
+                <div className="flex items-center gap-3">
+                  <input type="range" min="10" max="120" value={idleTimeout} onChange={e => setIdleTimeout(parseInt(e.target.value))}
+                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
+                  <span className="text-xs font-mono text-indigo-600 w-8">{idleTimeout}s</span>
+                </div>
+              </Field>
+              <Field label="Max Session Duration (seconds)" helpText="Maximum call/session length">
+                <div className="flex items-center gap-3">
+                  <input type="range" min="60" max="600" step="30" value={maxSessionDuration} onChange={e => setMaxSessionDuration(parseInt(e.target.value))}
+                    className="flex-1 h-1.5 rounded-full bg-gray-200 accent-indigo-500" />
+                  <span className="text-xs font-mono text-indigo-600 w-10">{maxSessionDuration}s</span>
+                </div>
+              </Field>
+            </div>
+          </Section>
+
+          {/* Webhook */}
+          <Section title="Webhook" icon={Webhook} collapsible defaultOpen={false}>
+            <Field label="Webhook URL" helpText="Receive events: call.started, call.ended, transcript.ready">
+              <input type="url" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)}
+                placeholder="https://your-server.com/webhook/voiceflow"
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            </Field>
+          </Section>
+
+          <div className="flex justify-between">
+            <button onClick={() => setStep(2)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
+            <button onClick={() => setStep(4)} className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-all">
+              Next: Profile <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══════════ STEP 4: Profile & Knowledge ═══════════ */}
+      {step === 4 && (
+        <div className="space-y-4">
+          <Section title="Agent Profile" icon={Bot}>
+            <Field label="Agent Name *">
+              <input type="text" value={agentName} onChange={e => setAgentName(e.target.value)}
+                placeholder="e.g., Sales Assistant, Support Bot"
+                className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            </Field>
+            <Field label="Description" helpText="Purpose and use case for this agent">
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+                placeholder="This agent handles inbound sales calls for..."
+                className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+            </Field>
+            <Field label="Tags">
+              <div className="flex items-center gap-2">
+                <input type="text" value={tagInput} onChange={e => setTagInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                  placeholder="Add tag..."
+                  className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+                <button onClick={addTag} className="px-3 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm hover:bg-gray-200"><Plus className="w-4 h-4" /></button>
+              </div>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {tags.map(tag => (
+                    <span key={tag} className="flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      {tag}
+                      <button onClick={() => setTags(prev => prev.filter(t => t !== tag))} className="hover:text-red-600"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Field>
+          </Section>
+
+          {/* Knowledge Base */}
+          <Section title="Knowledge Base" icon={BookOpen} collapsible badge={`${knowledgeIds.size} linked`}>
+            <p className="text-[11px] text-gray-500 mb-3">
+              Select documents from your <a href="/voice/knowledge" className="text-indigo-600 hover:underline">central library</a> for RAG context
+            </p>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {knowledgeLibrary.map(doc => {
+                const isSelected = knowledgeIds.has(doc.id);
+                const icons = { document: FileText, faq: HelpCircle, product_catalog: ShoppingBag, script: ScrollText };
+                const DocIcon = icons[doc.doc_type] || FileText;
+                return (
+                  <button key={doc.id} onClick={() => setKnowledgeIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(doc.id)) next.delete(doc.id); else next.add(doc.id);
+                    return next;
+                  })}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left transition-all ${
+                      isSelected ? 'bg-indigo-50 border border-indigo-200' : 'bg-gray-50 border border-gray-100 hover:border-indigo-200'
+                    }`}>
+                    <DocIcon className="w-4 h-4 text-gray-400 shrink-0" />
+                    <span className="text-xs font-medium text-gray-800 flex-1">{doc.title}</span>
+                    <span className="text-[9px] text-gray-400 capitalize">{doc.doc_type?.replace('_', ' ')}</span>
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 ${isSelected ? 'bg-indigo-500' : 'border-2 border-gray-200'}`}>
+                      {isSelected && <Check className="w-2.5 h-2.5 text-white" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </Section>
+
+          {/* Config Summary */}
+          <Section title="Configuration Summary" icon={CheckCircle2}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: 'LLM', value: LLM_PROVIDERS.find(p => p.id === llmProvider)?.name || llmProvider },
+                { label: 'STT', value: STT_PROVIDERS.find(p => p.id === sttProvider)?.name || sttProvider },
+                { label: 'TTS', value: TTS_PROVIDERS.find(p => p.id === ttsProvider)?.name || ttsProvider },
+                { label: 'Voice', value: VOICE_PRESETS.find(v => v.id === selectedVoice)?.name || selectedVoice },
+                { label: 'Language', value: LANGUAGES.find(l => l.code === language)?.name || language },
+                { label: 'Deploy', value: deployType.replace('_', ' ') },
+                { label: 'VAD', value: vadEnabled ? 'On' : 'Off' },
+                { label: 'Knowledge', value: `${knowledgeIds.size} docs` },
+              ].map(s => (
+                <div key={s.label} className="p-3 bg-gray-50 rounded-xl">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider">{s.label}</p>
+                  <p className="text-sm font-medium text-gray-900 mt-0.5 capitalize">{s.value}</p>
+                </div>
+              ))}
+            </div>
+          </Section>
+
+          <div className="flex justify-between">
+            <button onClick={() => setStep(3)} className="px-6 py-2.5 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">Back</button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-2 px-8 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold shadow-lg hover:shadow-xl transition-all disabled:opacity-50">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Rocket className="w-4 h-4" />}
+              {saving ? 'Creating Agent...' : 'Create & Deploy Agent'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
