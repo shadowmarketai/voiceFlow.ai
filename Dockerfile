@@ -30,9 +30,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install build tools first, then Python dependencies
+# Install build tools + dependencies in stages to avoid wheel build failures
 COPY requirements.txt .
-RUN pip install --no-cache-dir setuptools-rust wheel && \
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel setuptools-rust && \
+    pip install --no-cache-dir tiktoken && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
