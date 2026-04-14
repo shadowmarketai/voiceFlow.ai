@@ -262,39 +262,72 @@ class VoiceAIService:
     async def transcribe_and_analyze(self, audio_bytes: bytes, language: Optional[str] = None) -> Dict[str, Any]:
         """
         Step 1: STT + emotion + intent analysis.
-        Returns serialisable dict.
+
+        Tries local Whisper engine first (dev/GPU mode).
+        Falls back to API providers in production (Deepgram → OpenAI → Groq).
         """
-        engine = self._get_voice_engine()
+        t_start = time.time()
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
-            f.write(audio_bytes)
-            tmp_path = f.name
-
+        # Try local engine first (available in dev with torch installed)
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: engine.process_audio(audio_path=tmp_path, language=language)
-            )
-        finally:
-            os.unlink(tmp_path)
+            engine = self._get_voice_engine()
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
+                f.write(audio_bytes)
+                tmp_path = f.name
+
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    lambda: engine.process_audio(audio_path=tmp_path, language=language)
+                )
+            finally:
+                os.unlink(tmp_path)
+
+            return {
+                "transcription": result.transcription,
+                "language": result.language,
+                "dialect": result.dialect.value,
+                "emotion": result.emotion.value,
+                "emotion_confidence": result.emotion_confidence,
+                "emotion_scores": result.emotion_scores,
+                "intent": result.intent.value,
+                "intent_confidence": result.intent_confidence,
+                "lead_score": result.lead_score,
+                "sentiment": result.sentiment,
+                "gen_z_score": result.gen_z_score,
+                "slang_detected": result.slang_detected,
+                "keywords": result.keywords,
+                "audio_duration_s": result.audio_duration_s,
+                "processing_time_ms": result.processing_time_ms,
+            }
+        except Exception as e:
+            logger.info("Local STT not available (%s), using API providers", e)
+
+        # Fallback: API-based STT (production mode)
+        from voice_engine.api_providers import transcribe_audio_api
+        stt_result = await transcribe_audio_api(audio_bytes, language=language)
+        elapsed_ms = (time.time() - t_start) * 1000
 
         return {
-            "transcription": result.transcription,
-            "language": result.language,
-            "dialect": result.dialect.value,
-            "emotion": result.emotion.value,
-            "emotion_confidence": result.emotion_confidence,
-            "emotion_scores": result.emotion_scores,
-            "intent": result.intent.value,
-            "intent_confidence": result.intent_confidence,
-            "lead_score": result.lead_score,
-            "sentiment": result.sentiment,
-            "gen_z_score": result.gen_z_score,
-            "slang_detected": result.slang_detected,
-            "keywords": result.keywords,
-            "audio_duration_s": result.audio_duration_s,
-            "processing_time_ms": result.processing_time_ms,
+            "transcription": stt_result.get("text", ""),
+            "language": stt_result.get("language", language or "en"),
+            "dialect": "unknown",
+            "emotion": "neutral",
+            "emotion_confidence": 0.0,
+            "emotion_scores": {},
+            "intent": "inquiry",
+            "intent_confidence": 0.5,
+            "lead_score": 0.0,
+            "sentiment": 0.0,
+            "gen_z_score": 0.0,
+            "slang_detected": [],
+            "keywords": [],
+            "audio_duration_s": len(audio_bytes) / 32000,
+            "processing_time_ms": elapsed_ms,
+            "stt_provider": stt_result.get("provider", "unknown"),
+            "stt_confidence": stt_result.get("confidence", 0.0),
         }
 
     async def generate_response_audio(
@@ -308,44 +341,55 @@ class VoiceAIService:
     ) -> Dict[str, Any]:
         """
         Step 3: TTS — convert AI text response to audio.
-        Returns dict with audio_base64, engine_used, etc.
+
+        Tries local TTS engines first (dev/GPU mode).
+        Falls back to API providers (ElevenLabs → OpenAI → Edge TTS).
         """
-        from tts.config import TTSRequest, Language, EmotionType
+        # Try local TTS engines first
+        try:
+            from tts.config import TTSRequest, Language, EmotionType
 
-        # Map language code to TTS Language enum
-        lang_map = {
-            "en": Language.ENGLISH,
-            "ta": Language.TAMIL,
-            "hi": Language.HINDI,
-            "te": Language.TELUGU,
-            "kn": Language.KANNADA,
-            "ml": Language.MALAYALAM,
-        }
-        tts_language = lang_map.get(language, Language.ENGLISH)
+            lang_map = {
+                "en": Language.ENGLISH, "ta": Language.TAMIL, "hi": Language.HINDI,
+                "te": Language.TELUGU, "kn": Language.KANNADA, "ml": Language.MALAYALAM,
+            }
+            tts_language = lang_map.get(language, Language.ENGLISH)
+            emotion_map = {v.value: v for v in EmotionType}
+            tts_emotion = emotion_map.get(emotion) if emotion else None
 
-        # Map emotion string
-        emotion_map = {v.value: v for v in EmotionType}
-        tts_emotion = emotion_map.get(emotion) if emotion else None
+            tts_req = TTSRequest(
+                text=text, language=tts_language, emotion=tts_emotion,
+                detected_customer_emotion=detected_customer_emotion,
+                voice_id=voice_id, use_case=use_case,
+            )
 
-        tts_req = TTSRequest(
-            text=text,
-            language=tts_language,
-            emotion=tts_emotion,
-            detected_customer_emotion=detected_customer_emotion,
-            voice_id=voice_id,
-            use_case=use_case,
+            svc = self._get_tts_service()
+            tts_resp = await svc.synthesize(tts_req)
+
+            return {
+                "audio_base64": tts_resp.audio_base64,
+                "audio_format": tts_resp.format,
+                "sample_rate": tts_resp.sample_rate,
+                "duration_seconds": tts_resp.duration_seconds,
+                "engine_used": tts_resp.engine_used.value if tts_resp.engine_used else "unknown",
+                "latency_ms": tts_resp.latency_ms,
+            }
+        except Exception as e:
+            logger.info("Local TTS not available (%s), using API providers", e)
+
+        # Fallback: API-based TTS (production mode)
+        from voice_engine.api_providers import synthesize_speech_api
+        tts_result = await synthesize_speech_api(
+            text=text, language=language, voice_id=voice_id,
         )
 
-        svc = self._get_tts_service()
-        tts_resp = await svc.synthesize(tts_req)
-
         return {
-            "audio_base64": tts_resp.audio_base64,
-            "audio_format": tts_resp.format,
-            "sample_rate": tts_resp.sample_rate,
-            "duration_seconds": tts_resp.duration_seconds,
-            "engine_used": tts_resp.engine_used.value if tts_resp.engine_used else "unknown",
-            "latency_ms": tts_resp.latency_ms,
+            "audio_base64": tts_result.get("audio_base64", ""),
+            "audio_format": tts_result.get("format", "mp3"),
+            "sample_rate": tts_result.get("sample_rate", 24000),
+            "duration_seconds": 0,
+            "engine_used": tts_result.get("provider", "unknown"),
+            "latency_ms": tts_result.get("latency_ms", 0),
         }
 
     async def handle_turn(self, request: VoiceTurnRequest) -> VoiceTurnResponse:
