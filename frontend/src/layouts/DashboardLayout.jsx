@@ -31,7 +31,6 @@ const navSections = [
     items: [
       { icon: LayoutDashboard, name: 'Dashboard',    path: '/voice/dashboard-v2' },
       { icon: Bot,             name: 'Agents',        path: '/voice/agents-list' },
-      { icon: Wand2,           name: 'Agent Builder', path: '/voice/agent-builder' },
     ],
   },
   {
