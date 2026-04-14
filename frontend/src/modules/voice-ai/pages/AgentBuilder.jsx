@@ -638,6 +638,15 @@ export default function AgentBuilder() {
       {/* ═══ INTEGRATIONS TAB ═══ */}
       {activeTab === 'integrations' && (
         <div className="space-y-4">
+          {/* Scope note */}
+          <div className="flex items-center gap-2 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
+            <AlertCircle className="w-4 h-4 text-indigo-500 shrink-0" />
+            <p className="text-xs text-indigo-700">
+              These settings apply to <span className="font-semibold">this agent only</span>. To manage account-wide API keys and provider connections, go to{' '}
+              <a href="/voice/integrations" className="underline font-medium hover:text-indigo-900">Integrations</a>.
+            </p>
+          </div>
+
           {/* Knowledge Base */}
           <Section title="Knowledge Base" icon={BookOpen} badge={knowledgeLinked ? 'Linked' : ''}>
             <p className="text-xs text-gray-500 mb-3">Connect knowledge bases to enable RAG-powered conversations. The agent will use document content to answer questions.</p>
