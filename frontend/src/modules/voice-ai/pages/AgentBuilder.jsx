@@ -280,19 +280,6 @@ export default function AgentBuilder() {
       {/* ═══ OVERVIEW TAB ═══ */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          {/* Templates */}
-          <Section title="Quick Start Templates" icon={Sparkles} collapsible defaultOpen={!systemPrompt} badge={`${TEMPLATES.length} templates`}>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              {TEMPLATES.map(t => (
-                <button key={t.id} onClick={() => applyTemplate(t)}
-                  className={`p-3 rounded-xl border text-left transition-all ${selectedTemplate === t.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
-                  <span className="text-lg">{t.icon}</span>
-                  <p className="text-xs font-semibold text-gray-900 mt-1">{t.name}</p>
-                </button>
-              ))}
-            </div>
-          </Section>
-
           {/* Agent Instructions (Prompt) */}
           <Section title="Agent Instructions" icon={MessageSquare}>
             <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={12}
