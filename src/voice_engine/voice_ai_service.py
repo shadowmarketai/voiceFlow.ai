@@ -46,7 +46,7 @@ async def _call_llm(
             api_key = os.environ.get("GROQ_API_KEY", "")
             if not api_key:
                 raise ValueError("GROQ_API_KEY not set")
-            chosen_model = model or "llama3-8b-8192"
+            chosen_model = model or "llama-3.1-8b-instant"
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
                     "https://api.groq.com/openai/v1/chat/completions",
