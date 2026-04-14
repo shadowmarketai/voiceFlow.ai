@@ -1,19 +1,22 @@
 """
-API-based Voice Providers — Production Pipeline
-=================================================
-Works without local ML models (no torch, whisper, transformers).
-Uses cloud APIs: Deepgram (STT), ElevenLabs (TTS), Groq/Claude (LLM).
+API-based Voice Providers — Full Production Pipeline
+=====================================================
+All cloud-based — no local ML models, no GPU needed.
 
-Provider chain (tries in order, falls through on failure):
-  STT: Deepgram → OpenAI Whisper API → (error)
-  LLM: Groq → Anthropic Claude → OpenAI GPT-4 → stub
-  TTS: ElevenLabs → Edge TTS → (error)
+STT chain: Deepgram → Sarvam AI → Groq Whisper → OpenAI Whisper
+LLM chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub
+TTS chain: ElevenLabs → Sarvam AI → OpenAI TTS → Deepgram Aura → Google Cloud → Edge TTS (free)
+
+Env vars needed:
+  DEEPGRAM_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY,
+  ANTHROPIC_API_KEY, GOOGLE_API_KEY, SARVAM_API_KEY, DEEPSEEK_API_KEY
 """
 
 import base64
 import logging
 import os
 import tempfile
+import time
 from typing import Any, Dict, Optional
 
 import httpx
@@ -21,101 +24,82 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# ── STT (Speech-to-Text) ────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════
+# STT (Speech-to-Text) — 4 providers
+# ═════════════════════════════════════════════════════════════════
 
 async def transcribe_audio_api(
     audio_bytes: bytes,
     language: Optional[str] = None,
     provider: str = "auto",
 ) -> Dict[str, Any]:
-    """Transcribe audio using cloud API.
+    """Transcribe audio. Chain: Deepgram → Sarvam → Groq Whisper → OpenAI Whisper."""
 
-    Returns: {"text": str, "language": str, "provider": str, "confidence": float}
-    """
-    # --- Deepgram ---
-    if provider in ("auto", "deepgram"):
-        api_key = os.environ.get("DEEPGRAM_API_KEY", "")
-        if api_key:
-            try:
-                result = await _deepgram_stt(audio_bytes, api_key, language)
-                return result
-            except Exception as e:
-                logger.warning("Deepgram STT failed: %s", e)
+    providers = [
+        ("deepgram", "DEEPGRAM_API_KEY", _deepgram_stt),
+        ("sarvam", "SARVAM_API_KEY", _sarvam_stt),
+        ("groq", "GROQ_API_KEY", _groq_stt),
+        ("openai", "OPENAI_API_KEY", _openai_stt),
+    ]
 
-    # --- OpenAI Whisper API ---
-    if provider in ("auto", "openai"):
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if api_key:
-            try:
-                result = await _openai_stt(audio_bytes, api_key, language)
-                return result
-            except Exception as e:
-                logger.warning("OpenAI Whisper API failed: %s", e)
-
-    # --- Groq Whisper API ---
-    if provider in ("auto", "groq"):
-        api_key = os.environ.get("GROQ_API_KEY", "")
-        if api_key:
-            try:
-                result = await _groq_stt(audio_bytes, api_key, language)
-                return result
-            except Exception as e:
-                logger.warning("Groq STT failed: %s", e)
+    for name, env_key, func in providers:
+        if provider not in ("auto", name):
+            continue
+        api_key = os.environ.get(env_key, "")
+        if not api_key:
+            continue
+        try:
+            return await func(audio_bytes, api_key, language)
+        except Exception as e:
+            logger.warning("%s STT failed: %s", name, e)
 
     return {"text": "", "language": language or "en", "provider": "none", "confidence": 0.0,
-            "error": "No STT provider available — set DEEPGRAM_API_KEY or OPENAI_API_KEY"}
+            "error": "No STT provider available"}
 
 
 async def _deepgram_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
-    """Deepgram Nova-2 STT — fastest, best for real-time."""
-    params = {
-        "model": "nova-2",
-        "smart_format": "true",
-        "punctuate": "true",
-        "diarize": "false",
-    }
+    """Deepgram Nova-2 — fastest, real-time streaming capable."""
+    params = {"model": "nova-2", "smart_format": "true", "punctuate": "true"}
     if language:
         params["language"] = language
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.deepgram.com/v1/listen",
-            headers={
-                "Authorization": f"Token {api_key}",
-                "Content-Type": "audio/wav",
-            },
-            params=params,
-            content=audio_bytes,
+            headers={"Authorization": f"Token {api_key}", "Content-Type": "audio/wav"},
+            params=params, content=audio_bytes,
         )
         resp.raise_for_status()
         data = resp.json()
 
-    channels = data.get("results", {}).get("channels", [{}])
-    alt = channels[0].get("alternatives", [{}])[0] if channels else {}
-
+    ch = data.get("results", {}).get("channels", [{}])
+    alt = ch[0].get("alternatives", [{}])[0] if ch else {}
     return {
         "text": alt.get("transcript", ""),
-        "language": data.get("results", {}).get("channels", [{}])[0].get("detected_language", language or "en"),
-        "provider": "deepgram",
-        "confidence": alt.get("confidence", 0.0),
+        "language": ch[0].get("detected_language", language or "en") if ch else language or "en",
+        "provider": "deepgram", "confidence": alt.get("confidence", 0.0),
     }
 
 
-async def _openai_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
-    """OpenAI Whisper API."""
+async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
+    """Sarvam AI — built for Indian languages (Tamil, Hindi, Telugu, etc.)."""
+    lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
+                "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
+                "en": "en-IN", "pa": "pa-IN", "or": "or-IN"}
+    sarvam_lang = lang_map.get(language, "hi-IN")
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
-        f.flush()
         tmp_path = f.name
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             with open(tmp_path, "rb") as audio_file:
                 resp = await client.post(
-                    "https://api.openai.com/v1/audio/transcriptions",
-                    headers={"Authorization": f"Bearer {api_key}"},
+                    "https://api.sarvam.ai/speech-to-text",
+                    headers={"API-Subscription-Key": api_key},
                     files={"file": ("audio.wav", audio_file, "audio/wav")},
-                    data={"model": "whisper-1", "language": language or ""},
+                    data={"language_code": sarvam_lang, "model": "saarika:v2"},
                 )
             resp.raise_for_status()
             data = resp.json()
@@ -123,18 +107,16 @@ async def _openai_stt(audio_bytes: bytes, api_key: str, language: Optional[str])
         os.unlink(tmp_path)
 
     return {
-        "text": data.get("text", ""),
-        "language": language or "en",
-        "provider": "openai_whisper",
-        "confidence": 0.9,
+        "text": data.get("transcript", ""),
+        "language": language or "hi",
+        "provider": "sarvam", "confidence": data.get("confidence", 0.85),
     }
 
 
 async def _groq_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
-    """Groq Whisper API — fast inference."""
+    """Groq Whisper Large v3 — fast + free tier."""
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
-        f.flush()
         tmp_path = f.name
 
     try:
@@ -151,15 +133,147 @@ async def _groq_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -
     finally:
         os.unlink(tmp_path)
 
-    return {
-        "text": data.get("text", ""),
-        "language": language or "en",
-        "provider": "groq_whisper",
-        "confidence": 0.95,
-    }
+    return {"text": data.get("text", ""), "language": language or "en",
+            "provider": "groq_whisper", "confidence": 0.95}
 
 
-# ── TTS (Text-to-Speech) ────────────────────────────────────────
+async def _openai_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
+    """OpenAI Whisper-1 — highest accuracy."""
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        f.write(audio_bytes)
+        tmp_path = f.name
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            with open(tmp_path, "rb") as audio_file:
+                resp = await client.post(
+                    "https://api.openai.com/v1/audio/transcriptions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    files={"file": ("audio.wav", audio_file, "audio/wav")},
+                    data={"model": "whisper-1", "language": language or ""},
+                )
+            resp.raise_for_status()
+            data = resp.json()
+    finally:
+        os.unlink(tmp_path)
+
+    return {"text": data.get("text", ""), "language": language or "en",
+            "provider": "openai_whisper", "confidence": 0.9}
+
+
+# ═════════════════════════════════════════════════════════════════
+# LLM (Language Model) — 5 providers
+# ═════════════════════════════════════════════════════════════════
+
+async def call_llm_api(
+    system_prompt: str,
+    user_message: str,
+    provider: str = "auto",
+    model: str = None,
+) -> Dict[str, Any]:
+    """Call LLM. Chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub."""
+
+    providers_list = [
+        ("groq", "GROQ_API_KEY", _groq_llm),
+        ("gemini", "GOOGLE_API_KEY", _gemini_llm),
+        ("openai", "OPENAI_API_KEY", _openai_llm),
+        ("anthropic", "ANTHROPIC_API_KEY", _anthropic_llm),
+        ("deepseek", "DEEPSEEK_API_KEY", _deepseek_llm),
+    ]
+
+    for name, env_key, func in providers_list:
+        if provider not in ("auto", name):
+            continue
+        api_key = os.environ.get(env_key, "")
+        if not api_key:
+            continue
+        try:
+            t = time.time()
+            text = await func(system_prompt, user_message, api_key, model)
+            return {"text": text, "provider": name, "latency_ms": (time.time() - t) * 1000}
+        except Exception as e:
+            logger.warning("%s LLM failed: %s", name, e)
+
+    return {"text": "Thank you for calling. Could you please share more details?",
+            "provider": "stub", "latency_ms": 0}
+
+
+async def _groq_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """Groq — Llama 3.1, ~100ms latency."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model or "llama-3.1-8b-instant",
+                  "messages": [{"role": "system", "content": system_prompt},
+                               {"role": "user", "content": user_message}],
+                  "max_tokens": 200, "temperature": 0.7},
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+async def _gemini_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """Google Gemini 2.5 Flash — fast, free tier."""
+    chosen = model or "gemini-2.5-flash"
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{chosen}:generateContent?key={api_key}",
+            json={"contents": [{"parts": [{"text": f"{system_prompt}\n\nUser: {user_message}"}]}],
+                  "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7}},
+        )
+        resp.raise_for_status()
+        return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+async def _openai_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """OpenAI GPT-4o-mini."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model or "gpt-4o-mini",
+                  "messages": [{"role": "system", "content": system_prompt},
+                               {"role": "user", "content": user_message}],
+                  "max_tokens": 200, "temperature": 0.7},
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+async def _anthropic_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """Anthropic Claude Haiku."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={"x-api-key": api_key, "content-type": "application/json",
+                     "anthropic-version": "2023-06-01"},
+            json={"model": model or "claude-haiku-4-5-20251001", "max_tokens": 200,
+                  "system": system_prompt,
+                  "messages": [{"role": "user", "content": user_message}]},
+        )
+        resp.raise_for_status()
+        return resp.json()["content"][0]["text"].strip()
+
+
+async def _deepseek_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """Deepseek — cheap, good for code/reasoning."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model or "deepseek-chat",
+                  "messages": [{"role": "system", "content": system_prompt},
+                               {"role": "user", "content": user_message}],
+                  "max_tokens": 200, "temperature": 0.7},
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+# ═════════════════════════════════════════════════════════════════
+# TTS (Text-to-Speech) — 6 providers
+# ═════════════════════════════════════════════════════════════════
 
 async def synthesize_speech_api(
     text: str,
@@ -168,36 +282,30 @@ async def synthesize_speech_api(
     provider: str = "auto",
     speed: float = 1.0,
 ) -> Dict[str, Any]:
-    """Synthesize speech using cloud API.
-
-    Returns: {"audio_base64": str, "format": str, "provider": str, "latency_ms": float}
-    """
-    import time
+    """Synthesize speech. Chain: ElevenLabs → Sarvam → OpenAI → Deepgram Aura → Google Cloud → Edge TTS."""
     t_start = time.time()
 
-    # --- ElevenLabs ---
-    if provider in ("auto", "elevenlabs"):
-        api_key = os.environ.get("ELEVENLABS_API_KEY", "")
-        if api_key:
-            try:
-                result = await _elevenlabs_tts(text, api_key, voice_id, speed)
-                result["latency_ms"] = (time.time() - t_start) * 1000
-                return result
-            except Exception as e:
-                logger.warning("ElevenLabs TTS failed: %s", e)
+    providers_list = [
+        ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], voice_id, speed)),
+        ("sarvam", "SARVAM_API_KEY", lambda: _sarvam_tts(text, os.environ["SARVAM_API_KEY"], language, speed)),
+        ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
+        ("deepgram", "DEEPGRAM_API_KEY", lambda: _deepgram_tts(text, os.environ["DEEPGRAM_API_KEY"], voice_id)),
+        ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
+    ]
 
-    # --- OpenAI TTS ---
-    if provider in ("auto", "openai"):
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if api_key:
-            try:
-                result = await _openai_tts(text, api_key, voice_id, speed)
-                result["latency_ms"] = (time.time() - t_start) * 1000
-                return result
-            except Exception as e:
-                logger.warning("OpenAI TTS failed: %s", e)
+    for name, env_key, func in providers_list:
+        if provider not in ("auto", name):
+            continue
+        if not os.environ.get(env_key):
+            continue
+        try:
+            result = await func()
+            result["latency_ms"] = (time.time() - t_start) * 1000
+            return result
+        except Exception as e:
+            logger.warning("%s TTS failed: %s", name, e)
 
-    # --- Edge TTS (free, no API key needed) ---
+    # Edge TTS — always available, free, no API key
     try:
         result = await _edge_tts(text, language, speed)
         result["latency_ms"] = (time.time() - t_start) * 1000
@@ -210,89 +318,117 @@ async def synthesize_speech_api(
 
 
 async def _elevenlabs_tts(text: str, api_key: str, voice_id: Optional[str], speed: float) -> Dict[str, Any]:
-    """ElevenLabs TTS — highest quality voice synthesis."""
-    # Default voices: Rachel (calm female), Drew (warm male)
+    """ElevenLabs — highest quality, voice cloning, 29+ languages."""
     vid = voice_id or "21m00Tcm4TlvDq8ikWAM"  # Rachel
-
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{vid}",
-            headers={
-                "xi-api-key": api_key,
-                "Content-Type": "application/json",
-            },
-            json={
-                "text": text,
-                "model_id": "eleven_flash_v2_5",
-                "voice_settings": {
-                    "stability": 0.5,
-                    "similarity_boost": 0.75,
-                    "speed": speed,
-                },
-            },
+            headers={"xi-api-key": api_key, "Content-Type": "application/json"},
+            json={"text": text, "model_id": "eleven_flash_v2_5",
+                  "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": speed}},
         )
         resp.raise_for_status()
-        audio_bytes = resp.content
-
-    return {
-        "audio_base64": base64.b64encode(audio_bytes).decode(),
-        "format": "mp3",
-        "provider": "elevenlabs",
-        "sample_rate": 44100,
-    }
+    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "mp3",
+            "provider": "elevenlabs", "sample_rate": 44100}
 
 
-async def _openai_tts(text: str, api_key: str, voice_id: Optional[str], speed: float) -> Dict[str, Any]:
-    """OpenAI TTS — 6 voices, multilingual."""
-    voice = voice_id or "nova"  # nova = friendly female
+async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> Dict[str, Any]:
+    """Sarvam AI — native Indian language TTS (Tamil, Hindi, Telugu, etc.)."""
+    lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
+                "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
+                "en": "en-IN", "pa": "pa-IN", "or": "or-IN"}
+    sarvam_lang = lang_map.get(language, "hi-IN")
+
+    # Sarvam voice IDs per language
+    voice_map = {"ta-IN": "meera", "hi-IN": "arvind", "te-IN": "suresh",
+                 "kn-IN": "suresh", "en-IN": "arvind"}
+    speaker = voice_map.get(sarvam_lang, "arvind")
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
+            "https://api.sarvam.ai/text-to-speech",
+            headers={"API-Subscription-Key": api_key, "Content-Type": "application/json"},
+            json={"inputs": [text], "target_language_code": sarvam_lang,
+                  "speaker": speaker, "model": "bulbul:v1",
+                  "pace": speed, "loudness": 1.0, "enable_preprocessing": True},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    audio_b64 = data.get("audios", [""])[0]
+    return {"audio_base64": audio_b64, "format": "wav", "provider": "sarvam", "sample_rate": 22050}
+
+
+async def _openai_tts(text: str, api_key: str, voice_id: Optional[str], speed: float) -> Dict[str, Any]:
+    """OpenAI TTS-1 — 6 voices (alloy, echo, fable, onyx, nova, shimmer)."""
+    voice = voice_id or "nova"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
             "https://api.openai.com/v1/audio/speech",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": "tts-1", "input": text, "voice": voice, "speed": speed,
+                  "response_format": "mp3"},
+        )
+        resp.raise_for_status()
+    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "mp3",
+            "provider": "openai_tts", "sample_rate": 24000}
+
+
+async def _deepgram_tts(text: str, api_key: str, voice_id: Optional[str]) -> Dict[str, Any]:
+    """Deepgram Aura — lowest latency TTS."""
+    voice = voice_id or "aura-asteria-en"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.deepgram.com/v1/speak?model={voice}",
+            headers={"Authorization": f"Token {api_key}", "Content-Type": "application/json"},
+            json={"text": text},
+        )
+        resp.raise_for_status()
+    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "mp3",
+            "provider": "deepgram_aura", "sample_rate": 24000}
+
+
+async def _google_tts(text: str, api_key: str, language: str, voice_id: Optional[str]) -> Dict[str, Any]:
+    """Google Cloud TTS — WaveNet voices, wide language support."""
+    lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
+                "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
+                "en": "en-IN", "pa": "pa-IN"}
+    google_lang = lang_map.get(language, "en-IN")
+    voice_name = voice_id or f"{google_lang}-Wavenet-A"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://texttospeech.googleapis.com/v1/text:synthesize?key={api_key}",
             json={
-                "model": "tts-1",
-                "input": text,
-                "voice": voice,
-                "speed": speed,
-                "response_format": "mp3",
+                "input": {"text": text},
+                "voice": {"languageCode": google_lang, "name": voice_name},
+                "audioConfig": {"audioEncoding": "MP3", "speakingRate": 1.0},
             },
         )
         resp.raise_for_status()
-        audio_bytes = resp.content
+        data = resp.json()
 
-    return {
-        "audio_base64": base64.b64encode(audio_bytes).decode(),
-        "format": "mp3",
-        "provider": "openai_tts",
-        "sample_rate": 24000,
-    }
+    return {"audio_base64": data.get("audioContent", ""), "format": "mp3",
+            "provider": "google_cloud_tts", "sample_rate": 24000}
 
 
 async def _edge_tts(text: str, language: str, speed: float) -> Dict[str, Any]:
-    """Microsoft Edge TTS — free, no API key, many Indian voices."""
+    """Microsoft Edge TTS — FREE, no API key, 9+ Indian language voices."""
     import edge_tts
 
     voice_map = {
-        "ta": "ta-IN-PallaviNeural",
-        "hi": "hi-IN-SwaraNeural",
-        "te": "te-IN-ShrutiNeural",
-        "kn": "kn-IN-SapnaNeural",
-        "ml": "ml-IN-SobhanaNeural",
-        "bn": "bn-IN-TanishaaNeural",
-        "mr": "mr-IN-AarohiNeural",
-        "gu": "gu-IN-DhwaniNeural",
-        "en": "en-IN-NeerjaNeural",
+        "ta": "ta-IN-PallaviNeural", "hi": "hi-IN-SwaraNeural",
+        "te": "te-IN-ShrutiNeural", "kn": "kn-IN-SapnaNeural",
+        "ml": "ml-IN-SobhanaNeural", "bn": "bn-IN-TanishaaNeural",
+        "mr": "mr-IN-AarohiNeural", "gu": "gu-IN-DhwaniNeural",
+        "en": "en-IN-NeerjaNeural", "pa": "pa-IN-Default",
+        "or": "or-IN-Default",
     }
     voice = voice_map.get(language, "en-IN-NeerjaNeural")
     rate_str = f"{int((speed - 1) * 100):+d}%"
 
     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
         tmp_path = f.name
-
     try:
         comm = edge_tts.Communicate(text, voice, rate=rate_str)
         await comm.save(tmp_path)
@@ -301,14 +437,5 @@ async def _edge_tts(text: str, language: str, speed: float) -> Dict[str, Any]:
     finally:
         os.unlink(tmp_path)
 
-    return {
-        "audio_base64": base64.b64encode(audio_bytes).decode(),
-        "format": "mp3",
-        "provider": "edge_tts",
-        "sample_rate": 24000,
-    }
-
-
-# ── LLM (Language Model) ────────────────────────────────────────
-# Already implemented in voice_ai_service.py as _call_llm()
-# Groq → Anthropic Claude → OpenAI → stub fallback
+    return {"audio_base64": base64.b64encode(audio_bytes).decode(), "format": "mp3",
+            "provider": "edge_tts", "sample_rate": 24000}

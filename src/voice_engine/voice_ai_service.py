@@ -437,13 +437,23 @@ class VoiceAIService:
         t_after_stt = time.time()
         logger.info(f"STT done in {(t_after_stt - t_start)*1000:.0f}ms: '{user_text[:60]}'")
 
-        # --- Step 2: Generate LLM response ---
-        ai_text = await _call_llm(
-            system_prompt=request.system_prompt,
-            user_message=user_text,
-            provider=request.llm_provider,
-            model=request.llm_model,
-        )
+        # --- Step 2: Generate LLM response (tries all providers) ---
+        try:
+            from voice_engine.api_providers import call_llm_api
+            llm_result = await call_llm_api(
+                system_prompt=request.system_prompt,
+                user_message=user_text,
+                provider=request.llm_provider,
+                model=request.llm_model,
+            )
+            ai_text = llm_result["text"]
+        except Exception:
+            ai_text = await _call_llm(
+                system_prompt=request.system_prompt,
+                user_message=user_text,
+                provider=request.llm_provider,
+                model=request.llm_model,
+            )
         t_after_llm = time.time()
         logger.info(f"LLM done in {(t_after_llm - t_after_stt)*1000:.0f}ms: '{ai_text[:60]}'")
 
