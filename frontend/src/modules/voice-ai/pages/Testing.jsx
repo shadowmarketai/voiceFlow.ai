@@ -2,9 +2,11 @@
  * Testing Playground — Premium AI agent testing interface
  */
 
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck } from 'lucide-react'
+import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck, Loader2 } from 'lucide-react'
+
+const LiveKitVoiceRoom = lazy(() => import('../../../components/LiveKitRoom'))
 
 const mockAgents = [
   { id: '1', name: 'Sales Assistant', language: 'English' },
@@ -297,39 +299,25 @@ export default function Testing() {
             </div>
           </motion.div>
 
-          {/* WebRTC Call Button */}
+          {/* LiveKit Voice Call */}
           <motion.div
             variants={fadeUp}
             initial="hidden"
             animate="show"
             transition={{ delay: 0.4 }}
+            className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden"
           >
-            <button
-              onClick={() => setIsWebRTCCall(!isWebRTCCall)}
-              disabled={!selectedAgent}
-              className={`w-full flex items-center justify-center gap-3 py-4 rounded-2xl text-sm font-semibold transition-all duration-300 ${
-                isWebRTCCall
-                  ? 'bg-red-500 text-white shadow-lg shadow-red-200 hover:bg-red-600'
-                  : selectedAgent
-                    ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-200 hover:shadow-xl'
-                    : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              {isWebRTCCall ? (
-                <>
-                  <PhoneOff className="w-5 h-5" />
-                  End WebRTC Call
-                </>
-              ) : (
-                <>
-                  <Phone className="w-5 h-5" />
-                  Start Browser Call (Free)
-                </>
-              )}
-            </button>
-            <p className="text-center text-[11px] text-gray-400 mt-2">
-              {isWebRTCCall ? 'Connected via WebRTC — no charges' : 'Voice call via browser — zero telephony cost'}
-            </p>
+            <Suspense fallback={
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+              </div>
+            }>
+              <LiveKitVoiceRoom
+                agentId={selectedAgent}
+                agentName={mockAgents.find(a => a.id === selectedAgent)?.name || 'AI Agent'}
+                onEnd={() => setIsWebRTCCall(false)}
+              />
+            </Suspense>
           </motion.div>
         </div>
       </div>

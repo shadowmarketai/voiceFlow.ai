@@ -298,6 +298,14 @@ def _include_routers(application: FastAPI) -> None:
     # ── Voice AI pipeline (STT → LLM → TTS) ─────────────────
     _load_voice_pipeline(application)
 
+    # ── LiveKit (real-time WebRTC voice) ──────────────────────
+    try:
+        from livekit_agent.router import livekit_router
+        application.include_router(livekit_router)
+        logger.info("LiveKit router loaded")
+    except Exception as exc:
+        logger.warning("LiveKit router not available: %s", exc)
+
     # ── Voice Cloning ────────────────────────────────────────
     try:
         from voice_cloning.router import voice_clone_router

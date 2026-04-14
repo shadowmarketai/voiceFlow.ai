@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     # WebRTC (browser calls)
     WEBRTC_ENABLED: bool = True
     WEBRTC_STUN_SERVERS: str = "stun:stun.l.google.com:19302"
+    # LiveKit (real-time voice)
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
 
     # ── Payments ─────────────────────────────────────────────────
     RAZORPAY_KEY_ID: str = ""

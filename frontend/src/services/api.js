@@ -720,4 +720,18 @@ export const voiceCloneAPI = {
   deleteVoice: (voiceId) => api.delete(`/api/v1/voice-clone/voices/${voiceId}`),
 };
 
+// ============================================
+// LIVEKIT API (real-time voice)
+// ============================================
+export const livekitAPI = {
+  // Get LiveKit status
+  status: () => api.get('/api/v1/livekit/status'),
+
+  // Create room and get user token
+  createRoom: (data) => api.post('/api/v1/livekit/token', data),
+
+  // Get agent token for a room
+  agentToken: (data) => api.post('/api/v1/livekit/agent-token', data),
+};
+
 export default api;
