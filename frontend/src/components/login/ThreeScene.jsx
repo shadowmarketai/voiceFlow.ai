@@ -8,7 +8,7 @@
 
 import { Suspense, useRef, useState, useEffect } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
-import { Float, MeshDistortMaterial, Sphere, Environment } from '@react-three/drei'
+import { Float, MeshDistortMaterial, Sphere } from '@react-three/drei'
 
 // ── Check WebGL support ─────────────────────────────────────────
 
@@ -106,13 +106,12 @@ export default function ThreeScene() {
       style={{ position: 'absolute', inset: 0 }}
     >
       <Suspense fallback={null}>
-        <Environment preset="apartment" />
-
-        {/* Soft ambient lighting for light theme */}
-        <ambientLight intensity={0.8} color="#f8fafc" />
-        <directionalLight position={[5, 5, 5]} intensity={0.5} color="#e0e7ff" />
-        <pointLight position={[-5, 3, 2]} intensity={0.4} color="#c4b5fd" />
-        <pointLight position={[3, -3, -2]} intensity={0.3} color="#fbcfe8" />
+        {/* Lighting only — no external HDRI download needed */}
+        <ambientLight intensity={1.0} color="#f8fafc" />
+        <directionalLight position={[5, 5, 5]} intensity={0.6} color="#e0e7ff" />
+        <directionalLight position={[-3, 3, -3]} intensity={0.3} color="#c4b5fd" />
+        <pointLight position={[-5, 3, 2]} intensity={0.5} color="#c4b5fd" />
+        <pointLight position={[3, -3, -2]} intensity={0.4} color="#fbcfe8" />
 
         {/* Main pastel blob */}
         <PastelBlob />
