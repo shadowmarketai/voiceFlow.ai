@@ -294,15 +294,25 @@ export default function Login() {
                 </div>
               </div>
 
-              {/* Demo login */}
-              <button
-                type="button"
-                onClick={handleDemoLogin}
-                className="w-full px-6 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-gray-200 text-slate-700 hover:text-slate-900 text-sm font-medium transition-all flex items-center justify-center gap-2"
-              >
-                <Sparkles className="w-4 h-4 text-indigo-500" />
-                Explore Demo
-              </button>
+              {/* Quick login buttons */}
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => { setEmail('admin@swetha.in'); setPassword('Swetha123!'); }}
+                  className="w-full px-6 py-3 rounded-xl bg-slate-50 hover:bg-slate-100 border border-gray-200 text-slate-700 hover:text-slate-900 text-sm font-medium transition-all flex items-center justify-center gap-2"
+                >
+                  <Shield className="w-4 h-4 text-indigo-500" />
+                  Admin Login (admin@swetha.in)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDemoLogin}
+                  className="w-full px-6 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 text-indigo-700 text-sm font-medium transition-all flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  Explore Demo (no login required)
+                </button>
+              </div>
 
               {/* Toggle */}
               <p className="text-center mt-6 text-xs text-slate-500">
