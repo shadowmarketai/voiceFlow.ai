@@ -164,6 +164,13 @@ def _register_lifecycle(application: FastAPI) -> None:
             application.state.voice_engine = None
             logger.warning("Voice engine not available: %s", exc)
 
+        # Start synthetic uptime monitor (every 60s)
+        try:
+            from api.services.uptime_monitor import start_in_background
+            start_in_background()
+        except Exception as exc:
+            logger.warning("Uptime monitor not started: %s", exc)
+
         logger.info("%s ready!", settings.APP_NAME)
 
     @application.on_event("shutdown")

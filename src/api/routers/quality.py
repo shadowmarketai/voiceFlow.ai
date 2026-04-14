@@ -18,6 +18,8 @@ from typing import Any
 import httpx
 from fastapi import APIRouter
 
+from api.services import quality_store
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/quality", tags=["quality"])
@@ -88,43 +90,59 @@ async def _probe(name: str, url: str, env_key: str, auth_style: str | None) -> d
 
 @router.get("/providers")
 async def provider_latency():
-    """Live latency probe across all configured providers."""
+    """Live latency probe across all configured providers. Persists results for trends."""
     results: dict[str, list[dict[str, Any]]] = {"stt": [], "llm": [], "tts": []}
     for category, probes in PROBES.items():
         tasks = [_probe(*p) for p in probes]
         results[category] = await asyncio.gather(*tasks)
+        for r in results[category]:
+            if r["status"] != "not_configured":
+                quality_store.record_provider_probe(
+                    category=category, provider=r["name"],
+                    latency_ms=r.get("latency_ms"), ok=r.get("ok", False),
+                    http_status=r.get("http_status"), note=r.get("status"),
+                )
     return {"timestamp": time.time(), "providers": results}
+
+
+_DEFAULT_STAGES = [
+    {"name": "Noise Reduction", "p50": 8, "p95": 15, "target": 20},
+    {"name": "VAD", "p50": 5, "p95": 12, "target": 15},
+    {"name": "STT (Deepgram)", "p50": 180, "p95": 320, "target": 400},
+    {"name": "Emotion Analysis", "p50": 25, "p95": 50, "target": 80},
+    {"name": "LLM (Groq)", "p50": 220, "p95": 450, "target": 600},
+    {"name": "TTS (ElevenLabs)", "p50": 280, "p95": 520, "target": 700},
+    {"name": "EOS", "p50": 10, "p95": 20, "target": 30},
+]
 
 
 @router.get("/pipeline-latency")
 async def pipeline_latency():
-    """Estimated end-to-end voice pipeline latency breakdown (ms)."""
-    # These are rolling snapshots — in production, pull from metrics store.
+    """End-to-end voice pipeline latency breakdown (ms). Uses real call data if available."""
+    stages = quality_store.pipeline_stage_snapshot(hours=24) or _DEFAULT_STAGES
+    p50 = sum(s["p50"] for s in stages)
+    p95 = sum(s["p95"] for s in stages)
+    target = sum(s["target"] for s in stages)
     return {
-        "components": [
-            {"name": "Noise Reduction", "p50": 8, "p95": 15, "target": 20},
-            {"name": "VAD", "p50": 5, "p95": 12, "target": 15},
-            {"name": "STT (Deepgram)", "p50": 180, "p95": 320, "target": 400},
-            {"name": "Emotion Analysis", "p50": 25, "p95": 50, "target": 80},
-            {"name": "LLM (Groq)", "p50": 220, "p95": 450, "target": 600},
-            {"name": "TTS (ElevenLabs)", "p50": 280, "p95": 520, "target": 700},
-            {"name": "EOS", "p50": 10, "p95": 20, "target": 30},
-        ],
-        "total_p50_ms": 728,
-        "total_p95_ms": 1387,
-        "target_p95_ms": 1845,
+        "components": stages,
+        "total_p50_ms": p50,
+        "total_p95_ms": p95,
+        "target_p95_ms": target,
+        "source": "live" if quality_store.pipeline_stage_snapshot(hours=24) else "baseline",
     }
 
 
 @router.get("/uptime")
 async def uptime_status():
-    """Current uptime + infra health snapshot."""
+    """Current uptime + infra health snapshot (real DB data when probes exist)."""
+    up30 = quality_store.uptime_percent("api", hours=24 * 30)
+    up7 = quality_store.uptime_percent("api", hours=24 * 7)
     return {
-        "uptime_percent_30d": 99.87,
-        "uptime_percent_7d": 99.94,
-        "status": "operational",
+        "uptime_percent_30d": up30,
+        "uptime_percent_7d": up7,
+        "status": "operational" if up7 >= 99.0 else "degraded",
         "services": [
-            {"name": "API Server", "status": "up"},
+            {"name": "API Server", "status": "up" if up7 >= 99.0 else "degraded"},
             {"name": "Database (Postgres)", "status": "up"},
             {"name": "Redis Cache", "status": "up"},
             {"name": "LiveKit WebRTC", "status": "up"},
@@ -232,15 +250,31 @@ async def competitor_benchmark():
 
 @router.get("/trends")
 async def daily_trends():
-    """7-day rolling trend for latency / uptime / accuracy."""
-    # Replace with query against metrics store when wired up.
+    """7-day rolling trend. Uses real DB aggregates; falls back to seeded baseline if empty."""
+    t = quality_store.daily_trends(days=7)
+    if sum(t["calls_handled"]) > 0:
+        return t
+    # Baseline for fresh installs
     return {
-        "days": ["Apr 08", "Apr 09", "Apr 10", "Apr 11", "Apr 12", "Apr 13", "Apr 14"],
+        "days": t["days"] or ["Apr 08", "Apr 09", "Apr 10", "Apr 11", "Apr 12", "Apr 13", "Apr 14"],
         "p95_latency_ms": [1420, 1398, 1405, 1380, 1395, 1378, 1387],
         "uptime_percent": [99.92, 99.95, 99.89, 99.97, 99.94, 99.93, 99.94],
         "calls_handled": [1240, 1380, 1120, 1540, 1680, 1720, 1810],
         "avg_hindi_wer": [8.2, 8.0, 7.9, 7.8, 7.9, 7.7, 7.8],
     }
+
+
+@router.post("/ingest/call")
+async def ingest_call(payload: dict):
+    """Ingest a completed call's metrics — called by the pipeline at call end."""
+    allowed = {
+        "agent_id", "language", "duration_sec",
+        "noise_ms", "vad_ms", "stt_ms", "emotion_ms", "llm_ms", "tts_ms", "eos_ms", "total_ms",
+        "wer", "tts_mos", "intent_ok",
+    }
+    clean = {k: v for k, v in payload.items() if k in allowed}
+    quality_store.record_call(**clean)
+    return {"status": "ok"}
 
 
 @router.get("/summary")

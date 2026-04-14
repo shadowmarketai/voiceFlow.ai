@@ -469,6 +469,21 @@ class VoiceAIService:
         total_ms = (t_end - t_start) * 1000
         logger.info(f"TTS done in {(t_end - t_after_llm)*1000:.0f}ms. Total: {total_ms:.0f}ms")
 
+        # Record call metrics for the Quality Dashboard (best-effort, non-blocking)
+        try:
+            from api.services.quality_store import record_call
+            record_call(
+                agent_id=getattr(request, "assistant_id", None),
+                language=request.language or request.tts_language,
+                noise_ms=int((locals().get("t_preprocess", t_start) - t_start) * 1000),
+                stt_ms=int((t_after_stt - t_start) * 1000),
+                llm_ms=int((t_after_llm - t_after_stt) * 1000),
+                tts_ms=int((t_end - t_after_llm) * 1000),
+                total_ms=int(total_ms),
+            )
+        except Exception:
+            pass
+
         return VoiceTurnResponse(
             text=ai_text,
             audio_base64=tts_result["audio_base64"],
