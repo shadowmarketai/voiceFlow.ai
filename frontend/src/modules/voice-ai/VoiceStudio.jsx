@@ -476,13 +476,9 @@ export default function VoiceStudioPage() {
  setGenZMode(!genZMode);
  toast(genZMode ? 'GenZ mode disabled' : 'GenZ mode enabled', { icon: '\u2728' });
  }}
- className="text-slate-500 hover:text-indigo-600 transition-colors"
+ className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out ${genZMode ? 'bg-emerald-500' : 'bg-red-400'}`}
  >
- {genZMode ? (
- <ToggleRight className="w-8 h-8 text-pink-500" />
- ) : (
- <ToggleLeft className="w-8 h-8 text-slate-400" />
- )}
+ <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${genZMode ? 'translate-x-5' : 'translate-x-0.5'}`} />
  </button>
  </div>
  <p className="text-xs text-slate-400 mt-1.5">Enable GenZ slang understanding and natural responses</p>

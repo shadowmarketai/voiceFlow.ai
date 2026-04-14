@@ -19,7 +19,7 @@ import {
   CreditCard, Users, Target, Radio, AudioLines, Wrench
 } from 'lucide-react';
 
-/* ─── Toggle Component ────────────────────────────────────────── */
+/* ─── Toggle Component — Green=ON, Red=OFF, pill style ────────── */
 function Toggle({ enabled, onChange, label, description }) {
   return (
     <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
@@ -27,9 +27,9 @@ function Toggle({ enabled, onChange, label, description }) {
         <p className="text-sm font-medium text-gray-700">{label}</p>
         {description && <p className="text-[10px] text-gray-400 mt-0.5">{description}</p>}
       </div>
-      <button onClick={() => onChange(!enabled)}
-        className={`relative w-10 h-[22px] rounded-full transition-colors ${enabled ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-        <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-[18px]' : ''}`} />
+      <button onClick={() => onChange(!enabled)} aria-checked={enabled} role="switch"
+        className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out focus:outline-none ${enabled ? 'bg-emerald-500' : 'bg-red-400'}`}>
+        <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${enabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
       </button>
     </div>
   );
@@ -595,8 +595,8 @@ export default function AgentBuilder() {
                     </div>
                   </div>
                   <button onClick={() => toggleCoreTool(tool.id)}
-                    className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.on ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.on ? 'translate-x-[18px]' : ''}`} />
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out ${tool.on ? 'bg-emerald-500' : 'bg-red-400'}`}>
+                    <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${tool.on ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
               ))}
@@ -615,8 +615,8 @@ export default function AgentBuilder() {
                     </div>
                   </div>
                   <button onClick={() => toggleFeatureTool(tool.id)}
-                    className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.on ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                    <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.on ? 'translate-x-[18px]' : ''}`} />
+                    className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out ${tool.on ? 'bg-emerald-500' : 'bg-red-400'}`}>
+                    <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${tool.on ? 'translate-x-5' : 'translate-x-0.5'}`} />
                   </button>
                 </div>
               ))}
@@ -637,8 +637,8 @@ export default function AgentBuilder() {
                   <div className="flex items-center gap-2">
                     {tool.connected && <span className="text-[10px] text-emerald-600 flex items-center gap-1"><Check className="w-3 h-3" /> Connected</span>}
                     <button onClick={() => toggleIntegrationTool(tool.id)}
-                      className={`relative w-10 h-[22px] rounded-full transition-colors ${tool.connected ? 'bg-indigo-500' : 'bg-gray-300'}`}>
-                      <span className={`absolute top-[3px] left-[3px] w-4 h-4 rounded-full bg-white shadow transition-transform ${tool.connected ? 'translate-x-[18px]' : ''}`} />
+                      className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out ${tool.connected ? 'bg-emerald-500' : 'bg-red-400'}`}>
+                      <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${tool.connected ? 'translate-x-5' : 'translate-x-0.5'}`} />
                     </button>
                   </div>
                 </div>
