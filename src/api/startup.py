@@ -27,7 +27,6 @@ RECOMMENDED_VARS = {
 
 PRODUCTION_REQUIRED_VARS = {
     "DATABASE_URL": "PostgreSQL connection string (required in production)",
-    "ALLOWED_ORIGINS": "CORS allowed origins (comma-separated)",
 }
 
 

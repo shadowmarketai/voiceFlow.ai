@@ -30,14 +30,21 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── CORS ─────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://localhost:8001",
-        "*",
-    ]
+    ALLOWED_ORIGINS: str = "*"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Parse ALLOWED_ORIGINS — supports '*', JSON array, or comma-separated."""
+        val = self.ALLOWED_ORIGINS.strip()
+        if val == "*":
+            return ["*"]
+        if val.startswith("["):
+            import json
+            try:
+                return json.loads(val)
+            except Exception:
+                return ["*"]
+        return [o.strip() for o in val.split(",") if o.strip()]
 
     # ── Voice AI ─────────────────────────────────────────────────
     WHISPER_MODEL: str = "base"
