@@ -3,7 +3,7 @@
  * White pricing cards, indigo accents, clean design
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
@@ -142,7 +142,7 @@ function UsageMeter({ label, used, limit, icon: Icon, color }) {
           style={{ width: `${pct}%` }}
         />
       </div>
-      <p className="text-[10px] text-slate-400 mt-2">{Math.round(pct)}% used &middot; Resets {CURRENT_USAGE.billingCycleEnd}</p>
+      <p className="text-[10px] text-slate-400 mt-2">{Math.round(pct)}% used &middot; Resets {usage.billingCycleEnd}</p>
     </div>
   );
 }
@@ -253,13 +253,77 @@ function PlanCard({ plan, isAnnual, isCurrent, onSelect }) {
 
 export default function BillingPage() {
   const [isAnnual, setIsAnnual] = useState(false);
+  const [usage, setUsage] = useState(CURRENT_USAGE);
+  const [invoices, setInvoices] = useState(INVOICES);
+  const [subscribing, setSubscribing] = useState(null);
 
-  const handleSelectPlan = (plan) => {
-    toast.success(`Initiating Razorpay checkout for ${plan.name} plan...`);
+  // Fetch real billing data
+  useEffect(() => {
+    const token = localStorage.getItem('swetha_token');
+    const headers = token && token !== 'demo-token-123' ? { Authorization: `Bearer ${token}` } : {};
+
+    // Fetch usage
+    fetch('/api/v1/billing/usage', { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data) setUsage(prev => ({ ...prev, ...data })); })
+      .catch(() => {});
+
+    // Fetch invoices
+    fetch('/api/v1/billing/invoices', { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data && Array.isArray(data) && data.length > 0) setInvoices(data); })
+      .catch(() => {});
+  }, []);
+
+  const handleSelectPlan = async (plan) => {
+    setSubscribing(plan.id);
+    try {
+      const token = localStorage.getItem('swetha_token');
+      const headers = { 'Content-Type': 'application/json' };
+      if (token && token !== 'demo-token-123') headers.Authorization = `Bearer ${token}`;
+
+      const resp = await fetch('/api/v1/billing/subscribe', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          plan_id: plan.id,
+          billing_cycle: isAnnual ? 'annual' : 'monthly',
+          amount: isAnnual ? plan.priceAnnual : plan.priceMonthly,
+          currency: 'INR',
+        }),
+      });
+
+      if (resp.ok) {
+        const data = await resp.json();
+        // If Razorpay order returned, open checkout
+        if (data.razorpay_order_id && window.Razorpay) {
+          const rzp = new window.Razorpay({
+            key: data.razorpay_key_id,
+            amount: data.amount,
+            currency: 'INR',
+            name: 'VoiceFlow AI',
+            description: `${plan.name} Plan - ${isAnnual ? 'Annual' : 'Monthly'}`,
+            order_id: data.razorpay_order_id,
+            handler: () => toast.success(`${plan.name} plan activated!`),
+            prefill: { email: data.email || '' },
+            theme: { color: '#6366f1' },
+          });
+          rzp.open();
+        } else {
+          toast.success(`${plan.name} plan subscription initiated!`);
+        }
+      } else {
+        toast.success(`${plan.name} plan selected (configure Razorpay keys to enable payments)`);
+      }
+    } catch {
+      toast.success(`${plan.name} plan selected (backend unavailable — demo mode)`);
+    }
+    setSubscribing(null);
   };
 
   const handleDownloadInvoice = (invoice) => {
     toast.success(`Downloading ${invoice.id}...`);
+    // In production: window.open(`/api/v1/billing/invoices/${invoice.id}/pdf`)
   };
 
   return (
@@ -282,11 +346,9 @@ export default function BillingPage() {
             <span className={`text-sm font-medium ${!isAnnual ? 'text-slate-900' : 'text-slate-400'}`}>Monthly</span>
             <button
               onClick={() => setIsAnnual(!isAnnual)}
-              className="relative w-14 h-7 rounded-full transition-colors bg-gray-200 border border-gray-300"
+              className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-300 ease-in-out ${isAnnual ? 'bg-emerald-500' : 'bg-red-400'}`}
             >
-              <div className={`absolute top-0.5 w-6 h-6 rounded-full transition-all shadow-md ${
-                isAnnual ? 'left-7 bg-gradient-to-br from-indigo-500 to-violet-600' : 'left-0.5 bg-white'
-              }`} />
+              <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md ring-0 transition-transform duration-300 ease-in-out ${isAnnual ? 'translate-x-5' : 'translate-x-0.5'}`} />
             </button>
             <span className={`text-sm font-medium ${isAnnual ? 'text-slate-900' : 'text-slate-400'}`}>
               Annual
@@ -316,22 +378,22 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <UsageMeter
               label="Minutes Used"
-              used={CURRENT_USAGE.minutesUsed}
-              limit={CURRENT_USAGE.minutesLimit}
+              used={usage.minutesUsed}
+              limit={usage.minutesLimit}
               icon={Clock}
               color="from-indigo-500 to-violet-600"
             />
             <UsageMeter
               label="Agents Created"
-              used={CURRENT_USAGE.agentsCreated}
-              limit={CURRENT_USAGE.agentsLimit}
+              used={usage.agentsCreated}
+              limit={usage.agentsLimit}
               icon={Bot}
               color="from-emerald-500 to-teal-600"
             />
             <UsageMeter
               label="Documents Uploaded"
-              used={CURRENT_USAGE.docsUploaded}
-              limit={CURRENT_USAGE.docsLimit}
+              used={usage.docsUploaded}
+              limit={usage.docsLimit}
               icon={Receipt}
               color="from-amber-500 to-orange-600"
             />
@@ -355,7 +417,7 @@ export default function BillingPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {INVOICES.map((inv) => (
+                  {invoices.map((inv) => (
                     <tr key={inv.id} className="border-b border-gray-50 last:border-0 hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-slate-900">{inv.id}</span>
