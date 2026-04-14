@@ -43,9 +43,23 @@ const VOICES = [
   { id: 'xt-marco', name: 'Marco', gender: 'male', provider: 'XTTS v2', language: 'multi', langLabel: 'Multi-lang', accent: 'Global', description: 'Cross-lingual male — natural in any language', emotions: false, quality: 4.3, sample: '/api/v1/tts/preview?voice=marco&engine=xtts_v2' },
   { id: 'xt-sara', name: 'Sara', gender: 'female', provider: 'XTTS v2', language: 'en-IN', langLabel: 'English', accent: 'Indian', description: 'Indian English female — call center ready', emotions: false, quality: 4.2, sample: '/api/v1/tts/preview?voice=sara&engine=xtts_v2&lang=en' },
 
-  // ── Svara TTS (Canopy AI) — Indian languages focus ──
-  { id: 'sv-amara', name: 'Amara', gender: 'female', provider: 'Svara', language: 'ta-IN', langLabel: 'Tamil', accent: 'Chennai', description: 'Native Tamil female — customer support', emotions: false, quality: 4.0, sample: '/api/v1/tts/preview?voice=amara&engine=svara&lang=ta' },
-  { id: 'sv-rohit', name: 'Rohit', gender: 'male', provider: 'Svara', language: 'hi-IN', langLabel: 'Hindi', accent: 'Standard', description: 'Warm Hindi male — IVR optimized', emotions: false, quality: 4.0, sample: '/api/v1/tts/preview?voice=rohit&engine=svara&lang=hi' },
+  // ── Sarvam AI (Indian-built) — Native Indic TTS, API-based ──
+  { id: 'sa-anushka', name: 'Anushka', gender: 'female', provider: 'Sarvam AI', language: 'ta-IN', langLabel: 'Tamil', accent: 'Chennai', description: 'Native Tamil female — Sarvam Bulbul v2', emotions: false, quality: 4.4, badge: 'Indic Native', apiProvider: 'sarvam', apiVoice: 'anushka' },
+  { id: 'sa-abhilash', name: 'Abhilash', gender: 'male', provider: 'Sarvam AI', language: 'hi-IN', langLabel: 'Hindi', accent: 'Standard', description: 'Professional Hindi male — native quality', emotions: false, quality: 4.4, badge: 'Indic Native', apiProvider: 'sarvam', apiVoice: 'abhilash' },
+  { id: 'sa-manisha', name: 'Manisha', gender: 'female', provider: 'Sarvam AI', language: 'ml-IN', langLabel: 'Malayalam', accent: 'Kerala', description: 'Natural Malayalam female', emotions: false, quality: 4.3, apiProvider: 'sarvam', apiVoice: 'manisha' },
+  { id: 'sa-arya', name: 'Arya', gender: 'female', provider: 'Sarvam AI', language: 'te-IN', langLabel: 'Telugu', accent: 'Hyderabad', description: 'Clear Telugu female voice', emotions: false, quality: 4.3, apiProvider: 'sarvam', apiVoice: 'arya' },
+  { id: 'sa-vidya', name: 'Vidya', gender: 'female', provider: 'Sarvam AI', language: 'en-IN', langLabel: 'English', accent: 'Indian', description: 'Indian English female — professional', emotions: false, quality: 4.3, apiProvider: 'sarvam', apiVoice: 'vidya' },
+  { id: 'sa-karun', name: 'Karun', gender: 'male', provider: 'Sarvam AI', language: 'kn-IN', langLabel: 'Kannada', accent: 'Bangalore', description: 'Warm Kannada male voice', emotions: false, quality: 4.2, apiProvider: 'sarvam', apiVoice: 'karun' },
+  { id: 'sa-priya-kn', name: 'Priya', gender: 'female', provider: 'Sarvam AI', language: 'kn-IN', langLabel: 'Kannada', accent: 'Standard', description: 'Smooth Kannada female', emotions: false, quality: 4.2, apiProvider: 'sarvam', apiVoice: 'priya' },
+  { id: 'sa-ritu', name: 'Ritu', gender: 'female', provider: 'Sarvam AI', language: 'gu-IN', langLabel: 'Gujarati', accent: 'Standard', description: 'Native Gujarati female', emotions: false, quality: 4.2, apiProvider: 'sarvam', apiVoice: 'ritu' },
+  { id: 'sa-neha', name: 'Neha', gender: 'female', provider: 'Sarvam AI', language: 'bn-IN', langLabel: 'Bengali', accent: 'Kolkata', description: 'Bengali female — clear and warm', emotions: false, quality: 4.2, apiProvider: 'sarvam', apiVoice: 'neha' },
+  { id: 'sa-kavya', name: 'Kavya', gender: 'female', provider: 'Sarvam AI', language: 'mr-IN', langLabel: 'Marathi', accent: 'Pune', description: 'Marathi female — natural prosody', emotions: false, quality: 4.2, apiProvider: 'sarvam', apiVoice: 'kavya' },
+  { id: 'sa-rahul', name: 'Rahul', gender: 'male', provider: 'Sarvam AI', language: 'hi-IN', langLabel: 'Hindi', accent: 'Delhi', description: 'Confident Hindi male — Sarvam native', emotions: false, quality: 4.3, apiProvider: 'sarvam', apiVoice: 'rahul' },
+  { id: 'sa-simran', name: 'Simran', gender: 'female', provider: 'Sarvam AI', language: 'pa-IN', langLabel: 'Punjabi', accent: 'Standard', description: 'Punjabi female — native speaker', emotions: false, quality: 4.1, apiProvider: 'sarvam', apiVoice: 'simran' },
+
+  // ── Svara TTS (Canopy AI) — Indian languages (GPU only) ──
+  { id: 'svara-amara', name: 'Amara', gender: 'female', provider: 'Svara', language: 'ta-IN', langLabel: 'Tamil', accent: 'Chennai', description: 'Native Tamil female — needs GPU', emotions: false, quality: 4.0, badge: 'GPU' },
+  { id: 'svara-rohit', name: 'Rohit', gender: 'male', provider: 'Svara', language: 'hi-IN', langLabel: 'Hindi', accent: 'Standard', description: 'Hindi male — needs GPU', emotions: false, quality: 4.0, badge: 'GPU' },
 
   // ── OpenAI TTS — High quality, 6 voices ──
   { id: 'oai-alloy', name: 'Alloy', gender: 'neutral', provider: 'OpenAI TTS', language: 'multi', langLabel: 'Multi-lang', accent: 'Global', description: 'Balanced and versatile', emotions: false, quality: 4.4, sample: '/api/v1/tts/preview?voice=alloy&engine=openai' },
@@ -85,6 +99,7 @@ const providerColors = {
   'IndicF5': 'from-rose-500 to-rose-600',
   'OpenVoice V2': 'from-teal-500 to-teal-600',
   'XTTS v2': 'from-blue-500 to-blue-600',
+  'Sarvam AI': 'from-indigo-500 to-violet-600',
   'Svara': 'from-purple-500 to-purple-600',
   'OpenAI TTS': 'from-slate-700 to-slate-800',
   'Google Cloud TTS': 'from-blue-400 to-blue-500',
@@ -274,44 +289,79 @@ export default function VoiceLibrary() {
     return candidates[0] || null
   }
 
-  const handlePlay = (voiceId) => {
+  const handlePlay = async (voiceId) => {
+    // Stop current playback
     if (playingId === voiceId) {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
       window.speechSynthesis?.cancel()
       setPlayingId(null)
       return
     }
+
     const voice = VOICES.find(v => v.id === voiceId)
-    if (!voice || !window.speechSynthesis) return
+    if (!voice) return
 
-    window.speechSynthesis.cancel()
+    setPlayingId(voiceId)
+    if (audioRef.current) { audioRef.current.pause(); }
+    window.speechSynthesis?.cancel()
 
-    const text = SAMPLE_TEXTS[voice.language] || SAMPLE_TEXTS['en-US']
-    const utterance = new SpeechSynthesisUtterance(text)
+    const sampleText = SAMPLE_TEXTS[voice.language] || SAMPLE_TEXTS['en-US']
+    const langCode = voice.language?.split('-')[0] || 'en'
 
-    // Set language
-    utterance.lang = voice.language === 'multi' ? 'en-US' : voice.language
+    // Try real TTS API first (Sarvam, OpenAI, Edge TTS etc.)
+    if (voice.apiProvider || voice.provider === 'OpenAI TTS' || voice.provider === 'Edge TTS' || voice.provider === 'Deepgram Aura' || voice.provider === 'Google Cloud TTS') {
+      try {
+        const provider = voice.apiProvider || (
+          voice.provider === 'OpenAI TTS' ? 'openai' :
+          voice.provider === 'Deepgram Aura' ? 'deepgram' :
+          voice.provider === 'Google Cloud TTS' ? 'google' :
+          'edge'
+        )
+        const apiVoice = voice.apiVoice || (
+          voice.provider === 'OpenAI TTS' ? voice.name.toLowerCase() :
+          voice.provider === 'Deepgram Aura' ? `aura-${voice.name.toLowerCase()}-en` :
+          undefined
+        )
 
-    // Pick matching browser voice
-    const browserVoice = pickBrowserVoice(voice.language, voice.gender)
-    if (browserVoice) utterance.voice = browserVoice
+        const params = new URLSearchParams({
+          text: sampleText,
+          provider,
+          language: langCode,
+        })
+        if (apiVoice) params.set('voice', apiVoice)
 
-    // Differentiate voices using pitch + rate based on gender and provider
-    if (voice.gender === 'female') {
-      utterance.pitch = 1.1 + (voice.id.charCodeAt(3) % 5) * 0.05  // 1.1 - 1.3
-      utterance.rate = 0.9 + (voice.id.charCodeAt(4) % 3) * 0.05   // 0.9 - 1.0
-    } else if (voice.gender === 'male') {
-      utterance.pitch = 0.7 + (voice.id.charCodeAt(3) % 5) * 0.05  // 0.7 - 0.9
-      utterance.rate = 0.85 + (voice.id.charCodeAt(4) % 3) * 0.05  // 0.85 - 0.95
-    } else {
-      utterance.pitch = 1.0
-      utterance.rate = 0.9
+        const resp = await fetch(`/api/v1/tts/preview?${params}`)
+        if (resp.ok) {
+          const data = await resp.json()
+          if (data.audio_base64) {
+            const format = data.format || 'mp3'
+            const audioUrl = `data:audio/${format};base64,${data.audio_base64}`
+            audioRef.current.src = audioUrl
+            audioRef.current.onended = () => setPlayingId(null)
+            audioRef.current.onerror = () => setPlayingId(null)
+            await audioRef.current.play()
+            return
+          }
+        }
+      } catch (e) {
+        console.warn('API TTS failed, falling back to browser:', e)
+      }
     }
 
-    utterance.onend = () => setPlayingId(null)
-    utterance.onerror = () => setPlayingId(null)
-
-    window.speechSynthesis.speak(utterance)
-    setPlayingId(voiceId)
+    // Fallback: Browser SpeechSynthesis
+    if (window.speechSynthesis) {
+      const utterance = new SpeechSynthesisUtterance(sampleText)
+      utterance.lang = voice.language === 'multi' ? 'en-US' : voice.language
+      const browserVoice = pickBrowserVoice(voice.language, voice.gender)
+      if (browserVoice) utterance.voice = browserVoice
+      utterance.pitch = voice.gender === 'female' ? 1.15 : voice.gender === 'male' ? 0.8 : 1.0
+      utterance.rate = 0.9
+      utterance.onend = () => setPlayingId(null)
+      utterance.onerror = () => setPlayingId(null)
+      window.speechSynthesis.speak(utterance)
+    } else {
+      setPlayingId(null)
+    }
   }
 
   const clearFilters = () => {

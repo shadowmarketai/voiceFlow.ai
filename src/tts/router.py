@@ -202,3 +202,25 @@ async def get_emotion_mapping():
 async def tts_health_check():
     """Check health status of TTS engines."""
     return await get_tts_service().health_check()
+
+
+@tts_router.get("/preview")
+async def preview_voice(
+    text: str = Query(default="Hello! I am your AI voice assistant. How can I help you today?"),
+    voice: str = Query(default="nova"),
+    provider: str = Query(default="auto"),
+    language: str = Query(default="en"),
+):
+    """Preview a voice using API-based TTS. Used by Voice Library for playback.
+
+    Returns: {"audio_base64": str, "format": str, "provider": str}
+    """
+    try:
+        from voice_engine.api_providers import synthesize_speech_api
+        result = await synthesize_speech_api(
+            text=text, language=language, voice_id=voice, provider=provider,
+        )
+        return result
+    except Exception as e:
+        logger.error("Voice preview failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
