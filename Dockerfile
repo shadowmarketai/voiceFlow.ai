@@ -16,7 +16,7 @@ RUN npm run build
 # ── Stage 2: Python backend ─────────────────
 FROM python:3.11-slim-bookworm AS backend
 
-# System dependencies for audio processing + PostgreSQL
+# System dependencies for audio processing + PostgreSQL + Rust (for whisper build)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
@@ -24,13 +24,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     curl \
+    rustc \
+    cargo \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install build tools first, then Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir setuptools-rust wheel && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
 COPY src/ ./src/
