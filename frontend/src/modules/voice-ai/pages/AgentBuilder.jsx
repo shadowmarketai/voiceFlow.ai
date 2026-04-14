@@ -5,6 +5,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
@@ -120,13 +121,17 @@ const TEMPLATES = [
 
 /* ─── Main Component ──────────────────────────────────────────── */
 export default function AgentBuilder() {
+  const { agentId } = useParams();
+  const navigate = useNavigate();
+  const isEditMode = !!agentId;
+
   const [activeTab, setActiveTab] = useState('overview');
   const [saving, setSaving] = useState(false);
 
   // Agent Identity
   const [agentName, setAgentName] = useState('My Voice Agent');
-  const [agentLang, setAgentLang] = useState('Gujarati + English');
-  const [agentStatus, setAgentStatus] = useState('active');
+  const [agentLang, setAgentLang] = useState('English');
+  const [agentStatus, setAgentStatus] = useState('draft');
 
   // Overview — Prompt
   const [systemPrompt, setSystemPrompt] = useState('');
@@ -135,8 +140,27 @@ export default function AgentBuilder() {
 
   // Voice & AI
   const [quickPreset, setQuickPreset] = useState('low_latency');
-  const [llmProvider, setLlmProvider] = useState('gemini');
-  const [selectedVoice, setSelectedVoice] = useState('leda');
+  const [llmProvider, setLlmProvider] = useState('groq');
+  const [selectedVoice, setSelectedVoice] = useState('priya');
+
+  // Load agent data in edit mode
+  useEffect(() => {
+    if (!isEditMode) return;
+    try {
+      const saved = localStorage.getItem('vf_editing_agent');
+      if (!saved) return;
+      const agent = JSON.parse(saved);
+      setAgentName(agent.name || 'My Voice Agent');
+      setAgentLang(agent.language || 'English');
+      setAgentStatus(agent.status || 'active');
+      if (agent.config) {
+        if (agent.config.prompt) setSystemPrompt(agent.config.prompt);
+        if (agent.config.llmProvider) setLlmProvider(agent.config.llmProvider);
+        if (agent.config.voice) setSelectedVoice(agent.config.voice);
+        if (agent.config.accent) setSpeechAccent(agent.config.accent);
+      }
+    } catch {}
+  }, [isEditMode]);
   const [responseTiming, setResponseTiming] = useState('balanced');
   const [speechAccent, setSpeechAccent] = useState('default');
   const [noiseFilter, setNoiseFilter] = useState(true);
@@ -199,6 +223,13 @@ export default function AgentBuilder() {
 
   return (
     <div className="space-y-5">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <button onClick={() => navigate('/voice/agents-list')} className="hover:text-indigo-600 transition-colors">Agents</button>
+        <ChevronRight className="w-3 h-3" />
+        <span className="text-gray-900 font-medium">{isEditMode ? 'Edit Agent' : 'New Agent'}</span>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -209,14 +240,22 @@ export default function AgentBuilder() {
             <div className="flex items-center gap-2">
               <input value={agentName} onChange={e => setAgentName(e.target.value)}
                 className="text-lg font-bold text-gray-900 bg-transparent border-none focus:outline-none focus:border-b-2 focus:border-indigo-500 p-0" />
-              <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${agentStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500'}`}>
+              <span className="text-xs text-gray-500">IN</span>
+              <span className="text-xs text-gray-500">{agentLang}</span>
+              <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${agentStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : agentStatus === 'draft' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-gray-100 text-gray-500'}`}>
                 {agentStatus}
               </span>
             </div>
-            <p className="text-xs text-gray-500">{agentLang}</p>
+            {isEditMode && <p className="text-[10px] text-gray-400 mt-0.5">Updated {new Date().toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isEditMode && (
+            <button onClick={() => { navigate('/voice/testing'); toast.success(`Testing "${agentName}"`); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all">
+              <Phone className="w-4 h-4" /> Test Call
+            </button>
+          )}
           <button onClick={handleSave} disabled={saving}
             className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-indigo-600 to-violet-600 shadow-sm hover:shadow-md disabled:opacity-50 transition-all">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
