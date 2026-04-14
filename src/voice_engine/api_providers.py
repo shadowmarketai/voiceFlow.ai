@@ -339,17 +339,19 @@ async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> D
                 "en": "en-IN", "pa": "pa-IN", "or": "or-IN"}
     sarvam_lang = lang_map.get(language, "hi-IN")
 
-    # Sarvam voice IDs per language
-    voice_map = {"ta-IN": "meera", "hi-IN": "arvind", "te-IN": "suresh",
-                 "kn-IN": "suresh", "en-IN": "arvind"}
-    speaker = voice_map.get(sarvam_lang, "arvind")
+    # Sarvam speakers: anushka, abhilash, manisha, vidya, arya, karun,
+    # hitesh, aditya, ritu, priya, neha, rahul, pooja, rohan, simran, kavya
+    voice_map = {"ta-IN": "anushka", "hi-IN": "abhilash", "te-IN": "arya",
+                 "kn-IN": "priya", "ml-IN": "manisha", "bn-IN": "neha",
+                 "mr-IN": "kavya", "gu-IN": "ritu", "en-IN": "vidya"}
+    speaker = voice_map.get(sarvam_lang, "anushka")
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.sarvam.ai/text-to-speech",
             headers={"API-Subscription-Key": api_key, "Content-Type": "application/json"},
             json={"inputs": [text], "target_language_code": sarvam_lang,
-                  "speaker": speaker, "model": "bulbul:v1",
+                  "speaker": speaker, "model": "bulbul:v2",
                   "pace": speed, "loudness": 1.0, "enable_preprocessing": True},
         )
         resp.raise_for_status()
