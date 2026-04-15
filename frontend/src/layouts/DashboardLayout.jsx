@@ -370,16 +370,6 @@ export default function DashboardLayout() {
             isCollapsedDesktop ? 'px-2' : 'px-3'
           )}
         >
-          {/* Settings link */}
-          {!isCollapsedDesktop && (
-            <Link
-              to="/settings"
-              className="flex items-center gap-3 h-9 px-3 rounded-lg text-[13px] font-medium text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-colors"
-            >
-              <Settings className="w-[17px] h-[17px]" strokeWidth={1.8} />
-              <span>Settings</span>
-            </Link>
-          )}
           {/* Collapse toggle */}
           {!mobile && (
             <button
