@@ -832,94 +832,68 @@ def _seed_saas_control_layer():
             cur.execute("SELECT COUNT(*) AS cnt FROM system_features")
             feat_count = cur.fetchone()["cnt"]
 
-        if feat_count == 0:
-            # (id, key, name, parent_key, category, description, icon, route, default_enabled, is_premium, sort_order)
-            features = [
-                # ── CRM Module ──
-                ("f-01", "crm", "CRM", None, "CRM", "Lead & customer management", "Users", "/crm", 1, 0, 100),
-                ("f-01-01", "crm.dashboard", "Dashboard", "crm", "CRM", "CRM overview & stats", "BarChart3", "/crm", 1, 0, 101),
-                ("f-01-02", "crm.leads", "Leads", "crm", "CRM", "Lead management", "Users", "/crm/leads", 1, 0, 102),
-                ("f-01-03", "crm.companies", "Companies", "crm", "CRM", "Company database", "Building2", "/crm/companies", 1, 0, 103),
-                ("f-01-04", "crm.contacts", "Contacts", "crm", "CRM", "Contact management", "UserCheck", "/crm/contacts", 1, 0, 104),
-                ("f-01-05", "crm.deals", "Deals", "crm", "CRM", "Sales pipeline", "Handshake", "/crm/deals", 1, 0, 105),
-                ("f-01-06", "crm.activities", "Activities", "crm", "CRM", "Activity timeline", "Activity", "/crm/activities", 1, 0, 106),
-                ("f-01-07", "crm.tasks", "Tasks", "crm", "CRM", "Task management", "CheckSquare", "/crm/tasks", 1, 0, 107),
-                ("f-01-08", "crm.notes", "Notes", "crm", "CRM", "Notes & memos", "StickyNote", "/crm/notes", 1, 0, 108),
-                ("f-01-09", "crm.products", "Products", "crm", "CRM", "Product catalog", "Package", "/crm/products", 1, 0, 109),
-                ("f-01-10", "crm.vendors", "Vendors", "crm", "CRM", "Vendor management", "Truck", "/crm/vendors", 1, 0, 110),
-                ("f-01-11", "crm.lead_sources", "Lead Sources", "crm", "CRM", "IndiaMart, JustDial, Facebook", "Globe", "/crm/lead-sources", 1, 0, 111),
-                ("f-01-12", "crm.integrations", "Integrations", "crm", "CRM", "Zoho, HubSpot sync", "Link", "/crm/integrations", 1, 0, 112),
-                ("f-01-13", "crm.settings", "CRM Settings", "crm", "CRM", "Pipeline & field config", "Settings", "/crm/settings", 1, 0, 113),
+        # Canonical VoiceFlow AI feature list. Every key maps 1:1 to a
+        # page that actually exists in the frontend sidebar.
+        voiceflow_features = [
+            # ── Voice AI (parent) ──
+            ("f-va",       "voice_ai",            "Voice AI",          None,       "Voice AI", "The full voice AI platform",       "Mic",          "/voice/dashboard-v2",     1, 0, 100),
 
-                # ── Voice AI Module ──
-                ("f-02", "voice_ai", "Voice AI", None, "Voice AI", "AI calling + auto dialer", "Mic", "/voice", 1, 0, 200),
-                ("f-02-01", "voice.dashboard", "Dashboard", "voice_ai", "Voice AI", "Voice AI overview", "BarChart3", "/voice", 1, 0, 201),
-                ("f-02-02", "voice.live_calls", "Live Calls", "voice_ai", "Voice AI", "Real-time call monitoring", "PhoneCall", "/voice/live-calls", 1, 0, 202),
-                ("f-02-03", "voice.agents", "AI Agents", "voice_ai", "Voice AI", "Manage AI voice agents", "Bot", "/voice/agents", 1, 0, 203),
-                ("f-02-04", "voice.campaigns", "Campaigns", "voice_ai", "Voice AI", "Auto-dialer campaigns", "Megaphone", "/voice/campaigns", 1, 0, 204),
-                ("f-02-05", "voice.contact_lists", "Contact Lists", "voice_ai", "Voice AI", "Dialer contact lists", "List", "/voice/contact-lists", 1, 0, 205),
-                ("f-02-06", "voice.call_logs", "Call History", "voice_ai", "Voice AI", "Call log & recordings", "Clock", "/voice/call-logs", 1, 0, 206),
-                ("f-02-07", "voice.recordings", "Recordings", "voice_ai", "Voice AI", "Audio recordings", "Disc", "/voice/recordings", 1, 0, 207),
-                ("f-02-08", "voice.studio", "Voice Studio", "voice_ai", "Voice AI", "Voice training & cloning", "AudioWaveform", "/voice/studio", 1, 1, 208),
-                ("f-02-09", "voice.analytics", "Analytics", "voice_ai", "Voice AI", "Call & emotion analytics", "PieChart", "/voice/analytics", 1, 0, 209),
-                ("f-02-10", "voice.knowledge", "Knowledge Base", "voice_ai", "Voice AI", "AI agent knowledge", "BookOpen", "/voice/knowledge", 1, 0, 210),
-                ("f-02-11", "voice.config", "Agent Config", "voice_ai", "Voice AI", "Voice agent settings", "Sliders", "/voice/config", 1, 0, 211),
+            # MAIN
+            ("f-va-dash",  "voice.dashboard",     "Dashboard",         "voice_ai", "Voice AI", "Voice AI overview & KPIs",         "BarChart3",    "/voice/dashboard-v2",     1, 0, 101),
+            ("f-va-ag",    "voice.agents",        "Agents",            "voice_ai", "Voice AI", "Create & manage AI voice agents",  "Bot",          "/voice/agents-list",      1, 0, 102),
 
-                # ── Quotation Module (PEB) ──
-                ("f-03", "quotation", "Quotation", None, "Quotation", "PEB quotation system", "ClipboardList", "/quotation", 1, 0, 300),
-                ("f-03-01", "quotation.dashboard", "Dashboard", "quotation", "Quotation", "Quotation overview", "BarChart3", "/quotation", 1, 0, 301),
-                ("f-03-02", "quotation.new", "New Quote", "quotation", "Quotation", "Create PEB quotation", "Plus", "/quotation/new", 1, 0, 302),
-                ("f-03-03", "quotation.3d", "3D Viewer", "quotation", "Quotation", "Interactive 3D building model", "Box", "/quotation/3d", 1, 1, 303),
-                ("f-03-04", "quotation.drawings", "2D Drawings", "quotation", "Quotation", "Plan, elevation, cross-section", "PenTool", "/quotation/drawings", 1, 1, 304),
-                ("f-03-05", "quotation.ai_render", "AI Render", "quotation", "Quotation", "AI-generated building images", "Sparkles", "/quotation/ai-image", 1, 1, 305),
-                ("f-03-06", "quotation.material_cost", "Material Cost", "quotation", "Quotation", "Steel rates & BOQ breakdown", "IndianRupee", "/quotation/material-cost", 1, 0, 306),
-                ("f-03-07", "quotation.history", "History", "quotation", "Quotation", "Quotation versions", "History", "/quotation/history", 1, 0, 307),
-                ("f-03-08", "quotation.audit_logs", "Audit Logs", "quotation", "Quotation", "Track changes", "Shield", "/quotation/logs", 1, 0, 308),
+            # BUILD
+            ("f-va-kb",    "voice.knowledge",     "Knowledge Base",    "voice_ai", "Voice AI", "Upload docs your agents use",      "BookOpen",     "/voice/knowledge",        1, 0, 110),
+            ("f-va-st",    "voice.studio",        "Voice Library & Studio", "voice_ai", "Voice AI", "Voice cloning & library",      "AudioWaveform","/voice/studio",           1, 1, 111),
 
-                # ── Appointments ──
-                ("f-04", "appointments", "Appointments", None, "Appointments", "Booking & scheduling", "Calendar", "/appointments", 1, 0, 400),
-                ("f-04-01", "appointments.calendar", "Calendar", "appointments", "Appointments", "Calendar view", "Calendar", "/appointments", 1, 0, 401),
-                ("f-04-02", "appointments.bookings", "Bookings", "appointments", "Appointments", "Manage bookings", "BookOpen", "/appointments/bookings", 1, 0, 402),
-                ("f-04-03", "appointments.availability", "Availability", "appointments", "Appointments", "Set available slots", "Clock", "/appointments/availability", 1, 0, 403),
-                ("f-04-04", "appointments.services", "Services", "appointments", "Appointments", "Service catalog", "Briefcase", "/appointments/services", 1, 0, 404),
-                ("f-04-05", "appointments.pages", "Booking Pages", "appointments", "Appointments", "Public booking pages", "Globe", "/appointments/pages", 1, 0, 405),
+            # DEPLOY
+            ("f-va-ph",    "voice.phone_numbers", "Phone Numbers",     "voice_ai", "Voice AI", "Inbound/outbound numbers (7 providers)", "Phone",  "/voice/phone-numbers",    1, 0, 120),
+            ("f-va-ch",    "voice.channels",      "Channels",          "voice_ai", "Voice AI", "Web widget, WhatsApp, phone, API", "Globe",        "/voice/channels",         1, 0, 121),
+            ("f-va-cp",    "voice.campaigns",     "Campaigns",         "voice_ai", "Voice AI", "Outbound dialer campaigns",        "Megaphone",    "/voice/campaigns",        1, 0, 122),
 
-                # ── Automation ──
-                ("f-05", "automation", "Automation", None, "Automation", "Workflow builder", "Zap", "/automation", 1, 0, 500),
-                ("f-05-01", "automation.workflows", "Workflows", "automation", "Automation", "Workflow list", "GitBranch", "/automation", 1, 0, 501),
-                ("f-05-02", "automation.templates", "Templates", "automation", "Automation", "Workflow templates", "Layout", "/automation/templates", 1, 0, 502),
-                ("f-05-03", "automation.triggers", "Triggers", "automation", "Automation", "Event triggers", "Zap", "/automation/triggers", 1, 0, 503),
-                ("f-05-04", "automation.logs", "Logs", "automation", "Automation", "Execution logs", "FileText", "/automation/logs", 1, 0, 504),
-                ("f-05-05", "automation.builder", "Builder", "automation", "Automation", "Visual workflow builder", "Puzzle", "/automation/builder", 1, 1, 505),
+            # MONITOR
+            ("f-va-cl",    "voice.call_logs",     "Conversations",     "voice_ai", "Voice AI", "Call logs & transcripts",          "MessageSquare","/voice/call-logs",        1, 0, 130),
+            ("f-va-lc",    "voice.live_calls",    "Live Calls",        "voice_ai", "Voice AI", "Real-time active call monitoring", "Radio",        "/voice/live-calls",       1, 0, 131),
+            ("f-va-an",    "voice.analytics",     "Analytics",         "voice_ai", "Voice AI", "Call + sentiment + conversion analytics", "PieChart", "/voice/analytics-dashboard", 1, 0, 132),
+            ("f-va-re",    "voice.recordings",    "Recordings",        "voice_ai", "Voice AI", "Audio recordings of every call",   "FileAudio",    "/voice/recordings",       1, 0, 133),
+            ("f-va-ts",    "voice.testing",       "Testing",           "voice_ai", "Voice AI", "Testing playground for agents",    "FlaskConical", "/voice/testing",          1, 0, 134),
+            ("f-va-ql",    "voice.quality",       "Quality Dashboard", "voice_ai", "Voice AI", "Latency / uptime / accuracy / benchmarks", "Gauge","/voice/quality",          1, 0, 135),
 
-                # ── Inbox ──
-                ("f-06", "inbox", "Inbox", None, "Inbox", "Unified messaging", "MessageSquare", "/inbox", 1, 0, 600),
-                ("f-06-01", "inbox.all", "All Messages", "inbox", "Inbox", "Unified inbox", "Inbox", "/inbox", 1, 0, 601),
-                ("f-06-02", "inbox.whatsapp", "WhatsApp", "inbox", "Inbox", "WhatsApp messages", "MessageCircle", "/inbox/whatsapp", 1, 0, 602),
-                ("f-06-03", "inbox.sms", "SMS", "inbox", "Inbox", "SMS messages", "Smartphone", "/inbox/sms", 1, 0, 603),
-                ("f-06-04", "inbox.email", "Email", "inbox", "Inbox", "Email inbox", "Mail", "/inbox/email", 1, 0, 604),
+            # CONNECT
+            ("f-va-in",    "voice.integrations",  "Integrations",      "voice_ai", "Voice AI", "CRM / webhook / Zapier integrations", "Puzzle",    "/voice/integrations",     1, 0, 140),
+            ("f-va-ap",    "voice.api",           "API & Developer",   "voice_ai", "Voice AI", "REST + WebSocket API keys",        "Code",         "/voice/api",              1, 0, 141),
 
-                # ── Surveys ──
-                ("f-07", "surveys", "Surveys", None, "Surveys", "Feedback forms", "ClipboardList", "/surveys", 1, 0, 700),
-                ("f-07-01", "surveys.dashboard", "Dashboard", "surveys", "Surveys", "Survey overview", "BarChart3", "/surveys", 1, 0, 701),
-                ("f-07-02", "surveys.forms", "Forms", "surveys", "Surveys", "Form builder", "FileText", "/surveys/forms", 1, 0, 702),
-                ("f-07-03", "surveys.responses", "Responses", "surveys", "Surveys", "View responses", "MessageSquare", "/surveys/responses", 1, 0, 703),
+            # ── Billing (parent) ──
+            ("f-bl",       "billing",             "Billing & Wallet",  None,       "Billing",  "Subscription, prepaid wallet, recharge", "CreditCard", "/voice/billing",   1, 0, 200),
+            ("f-bl-wa",    "billing.wallet",      "Wallet",            "billing",  "Billing",  "Prepaid balance + recharge",       "Wallet",       "/voice/wallet",           1, 0, 201),
+            ("f-bl-tp",    "billing.tenant_pricing","My Pricing",      "billing",  "Billing",  "White-label markup (tenant only)", "TrendingUp",   "/voice/tenant-pricing",   1, 0, 202),
+            ("f-bl-sb",    "billing.subscription","Subscription",      "billing",  "Billing",  "Monthly subscription plans",       "CreditCard",   "/voice/billing",          1, 0, 203),
+        ]
 
-                # ── Help Desk ──
-                ("f-08", "helpdesk", "Help Desk", None, "Help Desk", "Support tickets", "Headphones", "/helpdesk", 1, 0, 800),
-                ("f-08-01", "helpdesk.dashboard", "Dashboard", "helpdesk", "Help Desk", "Help desk overview", "BarChart3", "/helpdesk", 1, 0, 801),
-                ("f-08-02", "helpdesk.tickets", "Tickets", "helpdesk", "Help Desk", "Support tickets", "Ticket", "/helpdesk/tickets", 1, 0, 802),
-                ("f-08-03", "helpdesk.agents", "Agents", "helpdesk", "Help Desk", "Support agents", "Users", "/helpdesk/agents", 1, 0, 803),
-                ("f-08-04", "helpdesk.kb", "Knowledge Base", "helpdesk", "Help Desk", "Help articles", "BookOpen", "/helpdesk/kb", 1, 0, 804),
+        # Delete any legacy features (CRM, Quotation, Inbox, etc.) that exist
+        # from earlier seeds, then (re)insert the VoiceFlow-AI-only set.
+        valid_keys = {f[1] for f in voiceflow_features}
+        existing = conn.execute("SELECT key FROM system_features").fetchall()
+        existing_keys = {r[0] if not isinstance(r, dict) else r["key"] for r in existing}
+        stale = existing_keys - valid_keys
+        for k in stale:
+            conn.execute(f"DELETE FROM tenant_features WHERE feature_key={_ph}", (k,))
+            conn.execute(f"DELETE FROM system_features WHERE key={_ph}", (k,))
+        if stale:
+            logger.info("Removed %d legacy feature(s) from system_features", len(stale))
 
-                # ── Reports ──
-                ("f-09", "reports", "Reports", None, "Reports", "Analytics & insights", "BarChart3", "/reports", 1, 0, 900),
-                ("f-09-01", "reports.overview", "Overview", "reports", "Reports", "Report overview", "PieChart", "/reports", 1, 0, 901),
-                ("f-09-02", "reports.sales", "Sales Report", "reports", "Reports", "Sales analytics", "TrendingUp", "/reports/sales", 1, 0, 902),
-                ("f-09-03", "reports.calls", "Calls Report", "reports", "Reports", "Call analytics", "Phone", "/reports/calls", 1, 0, 903),
-                ("f-09-04", "reports.custom", "Custom Report", "reports", "Reports", "Custom queries", "Sliders", "/reports/custom", 1, 1, 904),
-            ]
-            for f in features:
+        # Always upsert — ensures any new feature added to the canonical
+        # list gets picked up on the next boot without needing a reseed.
+        for f in voiceflow_features:
+            if f[1] in existing_keys:
+                conn.execute(f"""
+                    UPDATE system_features SET
+                        name={_ph}, parent_key={_ph}, category={_ph}, description={_ph},
+                        icon={_ph}, route={_ph}, default_enabled={_ph}, is_premium={_ph},
+                        sort_order={_ph}
+                    WHERE key={_ph}
+                """, (f[2], f[3], f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[1]))
+            else:
                 conn.execute(f"""
                     INSERT INTO system_features (id,key,name,parent_key,category,description,icon,route,default_enabled,is_premium,sort_order)
                     VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})

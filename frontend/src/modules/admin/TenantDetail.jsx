@@ -12,51 +12,45 @@ import {
 import toast from 'react-hot-toast'
 import api, { superAdminAPI } from '../../services/api'
 
+/* Feature list — ONLY what VoiceFlow AI actually ships.
+ * Mirrors the left-sidebar items in DashboardLayout (MAIN / BUILD / DEPLOY /
+ * MONITOR / CONNECT / ACCOUNT). Each row maps 1:1 to a page the tenant
+ * can reach, so toggling it off truly removes access.
+ */
 const DEMO_FEATURES = [
- { key: 'crm', name: 'CRM', parent_key: null, category: 'CRM', enabled: true, is_premium: 0, description: 'Lead & customer management', route: '/crm' },
- { key: 'crm.dashboard', name: 'Dashboard', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'CRM overview & stats', route: '/crm' },
- { key: 'crm.leads', name: 'Leads', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Lead management', route: '/crm/leads' },
- { key: 'crm.companies', name: 'Companies', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Company database', route: '/crm/companies' },
- { key: 'crm.contacts', name: 'Contacts', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Contact management', route: '/crm/contacts' },
- { key: 'crm.deals', name: 'Deals', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Sales pipeline', route: '/crm/deals' },
- { key: 'crm.activities', name: 'Activities', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Activity timeline', route: '/crm/activities' },
- { key: 'crm.tasks', name: 'Tasks', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Task management', route: '/crm/tasks' },
- { key: 'crm.notes', name: 'Notes', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Notes & memos', route: '/crm/notes' },
- { key: 'crm.products', name: 'Products', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Product catalog', route: '/crm/products' },
- { key: 'crm.vendors', name: 'Vendors', parent_key: 'crm', category: 'CRM', enabled: false, is_premium: 0, description: 'Vendor management', route: '/crm/vendors' },
- { key: 'crm.lead_sources', name: 'Lead Sources', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'IndiaMart, JustDial, Facebook', route: '/crm/lead-sources' },
- { key: 'crm.integrations', name: 'Integrations', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Zoho, HubSpot sync', route: '/crm/integrations' },
- { key: 'crm.settings', name: 'CRM Settings', parent_key: 'crm', category: 'CRM', enabled: true, is_premium: 0, description: 'Pipeline & field config', route: '/crm/settings' },
+ // ── Voice AI (parent) ────────────────────────────────────────────────────
+ { key: 'voice_ai', name: 'Voice AI', parent_key: null, category: 'Voice AI', enabled: true, is_premium: 0, description: 'The full voice AI platform', route: '/voice/dashboard-v2' },
 
- { key: 'voice_ai', name: 'Voice AI', parent_key: null, category: 'Voice AI', enabled: true, is_premium: 0, description: 'AI calling + auto dialer', route: '/voice' },
- { key: 'voice.dashboard', name: 'Dashboard', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Voice AI overview', route: '/voice' },
- { key: 'voice.live_calls', name: 'Live Calls', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Real-time call monitoring', route: '/voice/live-calls' },
- { key: 'voice.agents', name: 'AI Agents', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Manage AI voice agents', route: '/voice/agents' },
- { key: 'voice.campaigns', name: 'Campaigns', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Auto-dialer campaigns', route: '/voice/campaigns' },
- { key: 'voice.contact_lists', name: 'Contact Lists', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Dialer contact lists', route: '/voice/contact-lists' },
- { key: 'voice.call_logs', name: 'Call History', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Call log & recordings', route: '/voice/call-logs' },
- { key: 'voice.recordings', name: 'Recordings', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Audio recordings', route: '/voice/recordings' },
- { key: 'voice.studio', name: 'Voice Studio', parent_key: 'voice_ai', category: 'Voice AI', enabled: false, is_premium: 1, description: 'Voice training & cloning', route: '/voice/studio' },
- { key: 'voice.analytics', name: 'Analytics', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Call & emotion analytics', route: '/voice/analytics' },
- { key: 'voice.knowledge', name: 'Knowledge Base', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'AI agent knowledge', route: '/voice/knowledge' },
- { key: 'voice.config', name: 'Agent Config', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Voice agent settings', route: '/voice/config' },
+ // MAIN
+ { key: 'voice.dashboard', name: 'Dashboard', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Voice AI overview & KPIs', route: '/voice/dashboard-v2' },
+ { key: 'voice.agents', name: 'Agents', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Create & manage AI voice agents', route: '/voice/agents-list' },
 
- { key: 'quotation', name: 'Quotation', parent_key: null, category: 'Quotation', enabled: true, is_premium: 0, description: 'PEB quotation system', route: '/quotation' },
- { key: 'quotation.dashboard', name: 'Dashboard', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 0, description: 'Quotation overview', route: '/quotation' },
- { key: 'quotation.new', name: 'New Quote', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 0, description: 'Create PEB quotation', route: '/quotation/new' },
- { key: 'quotation.3d', name: '3D Viewer', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 1, description: 'Interactive 3D building model', route: '/quotation/3d' },
- { key: 'quotation.drawings', name: '2D Drawings', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 1, description: 'Plan, elevation, cross-section', route: '/quotation/drawings' },
- { key: 'quotation.ai_render', name: 'AI Render', parent_key: 'quotation', category: 'Quotation', enabled: false, is_premium: 1, description: 'AI-generated building images', route: '/quotation/ai-image' },
- { key: 'quotation.material_cost', name: 'Material Cost', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 0, description: 'Steel rates & BOQ breakdown', route: '/quotation/material-cost' },
- { key: 'quotation.history', name: 'History', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 0, description: 'Quotation versions', route: '/quotation/history' },
- { key: 'quotation.audit_logs', name: 'Audit Logs', parent_key: 'quotation', category: 'Quotation', enabled: true, is_premium: 0, description: 'Track changes', route: '/quotation/logs' },
+ // BUILD
+ { key: 'voice.knowledge', name: 'Knowledge Base', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Upload docs your agents use', route: '/voice/knowledge' },
+ { key: 'voice.studio', name: 'Voice Library & Studio', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 1, description: 'Voice cloning & library (54+ voices)', route: '/voice/studio' },
 
- { key: 'appointments', name: 'Appointments', parent_key: null, category: 'Appointments', enabled: true, is_premium: 0, description: 'Booking & scheduling', route: '/appointments' },
- { key: 'automation', name: 'Automation', parent_key: null, category: 'Automation', enabled: true, is_premium: 0, description: 'Workflow builder', route: '/automation' },
- { key: 'inbox', name: 'Inbox', parent_key: null, category: 'Inbox', enabled: true, is_premium: 0, description: 'Unified messaging', route: '/inbox' },
- { key: 'surveys', name: 'Surveys', parent_key: null, category: 'Surveys', enabled: true, is_premium: 0, description: 'Feedback forms', route: '/surveys' },
- { key: 'helpdesk', name: 'Help Desk', parent_key: null, category: 'Help Desk', enabled: true, is_premium: 0, description: 'Support tickets', route: '/helpdesk' },
- { key: 'reports', name: 'Reports', parent_key: null, category: 'Reports', enabled: true, is_premium: 0, description: 'Analytics & insights', route: '/reports' },
+ // DEPLOY
+ { key: 'voice.phone_numbers', name: 'Phone Numbers', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Inbound / outbound numbers across 7 providers', route: '/voice/phone-numbers' },
+ { key: 'voice.channels', name: 'Channels', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Web widget, WhatsApp, phone, API', route: '/voice/channels' },
+ { key: 'voice.campaigns', name: 'Campaigns', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Outbound dialer campaigns', route: '/voice/campaigns' },
+
+ // MONITOR
+ { key: 'voice.call_logs', name: 'Conversations', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Call logs & transcripts', route: '/voice/call-logs' },
+ { key: 'voice.live_calls', name: 'Live Calls', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Real-time active call monitoring', route: '/voice/live-calls' },
+ { key: 'voice.analytics', name: 'Analytics', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Call + sentiment + conversion analytics', route: '/voice/analytics-dashboard' },
+ { key: 'voice.recordings', name: 'Recordings', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Audio recordings of every call', route: '/voice/recordings' },
+ { key: 'voice.testing', name: 'Testing', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Testing playground for agents', route: '/voice/testing' },
+ { key: 'voice.quality', name: 'Quality Dashboard', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'Latency / uptime / accuracy / competitor benchmark', route: '/voice/quality' },
+
+ // CONNECT
+ { key: 'voice.integrations', name: 'Integrations', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'CRM / webhook / Zapier integrations', route: '/voice/integrations' },
+ { key: 'voice.api', name: 'API & Developer', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'REST + WebSocket API keys', route: '/voice/api' },
+
+ // ACCOUNT (billing group)
+ { key: 'billing', name: 'Billing & Wallet', parent_key: null, category: 'Billing', enabled: true, is_premium: 0, description: 'Subscription, prepaid wallet, recharge', route: '/voice/billing' },
+ { key: 'billing.wallet', name: 'Wallet', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'Prepaid balance + recharge', route: '/voice/wallet' },
+ { key: 'billing.tenant_pricing', name: 'My Pricing', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'White-label markup (tenant only)', route: '/voice/tenant-pricing' },
+ { key: 'billing.subscription', name: 'Subscription', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'Monthly subscription plans', route: '/voice/billing' },
 ]
 
 export default function TenantDetail() {
