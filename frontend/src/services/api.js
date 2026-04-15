@@ -45,7 +45,7 @@ export const authAPI = {
   logout: () => api.post('/api/v1/auth/logout'),
   getProfile: () => api.get('/api/v1/auth/me'),
   // Google OAuth
-  googleLogin: (credential) => api.post('/api/v1/auth/google', { credential }),
+  googleLogin: (data) => api.post('/api/v1/auth/google', data),
   // 2FA
   setup2FA: () => api.post('/api/v1/auth/2fa/setup'),
   verify2FA: (code) => api.post('/api/v1/auth/2fa/verify', { code }),

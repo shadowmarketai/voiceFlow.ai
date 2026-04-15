@@ -202,9 +202,10 @@ class LoginResponse(BaseModel):
 
 
 class GoogleAuthRequest(BaseModel):
-    """Google OAuth token from frontend."""
+    """Google OAuth code from frontend popup flow."""
 
-    credential: str = Field(..., min_length=1, description="Google ID token from Sign-In")
+    code: str = Field(..., min_length=1, description="Authorization code from Google OAuth")
+    redirect_uri: str = Field(..., min_length=1, description="Redirect URI used in the auth request")
 
 
 # ── Forgot / Reset Password Schemas ─────────────────────────────

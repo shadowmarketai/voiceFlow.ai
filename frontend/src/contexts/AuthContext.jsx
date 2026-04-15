@@ -45,11 +45,12 @@ export function AuthProvider({ children }) {
     return await _completeLogin(res.data)
   }
 
-  const googleLogin = async (credential) => {
+  const googleLogin = async (code) => {
     localStorage.removeItem('swetha_token')
     localStorage.removeItem('swetha_user')
 
-    const res = await authAPI.googleLogin(credential)
+    const redirectUri = `${window.location.origin}/auth/google/callback`
+    const res = await authAPI.googleLogin({ code, redirect_uri: redirectUri })
     return await _completeLogin(res.data)
   }
 

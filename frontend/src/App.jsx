@@ -16,6 +16,7 @@ import ProtectedRoute, { SuperAdminRoute, TenantRoute } from './components/Prote
 import Login from './pages/Login'
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const GoogleCallback = lazy(() => import('./pages/GoogleCallback'))
 
 // ── Voice AI Module ──
 const VoiceDashboardV2Page = lazy(() => import('./modules/voice-ai/pages/Dashboard'))
@@ -83,6 +84,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<S><ForgotPassword /></S>} />
         <Route path="/reset-password" element={<S><ResetPassword /></S>} />
+        <Route path="/auth/google/callback" element={<S><GoogleCallback /></S>} />
 
         {/* ═══════════════════════════════════════════════════
             SUPER ADMIN — Platform Console

@@ -314,8 +314,8 @@ async def login_2fa(request: Request, body: TwoFactorLoginRequest) -> LoginRespo
 )
 @limiter.limit(_rate_login)
 async def google_auth(request: Request, body: GoogleAuthRequest) -> LoginResponse:
-    """Authenticate using a Google ID token from the frontend Sign-In button."""
-    result = AuthService.google_login(id_token_str=body.credential)
+    """Authenticate using a Google authorization code from the frontend popup."""
+    result = AuthService.google_login(code=body.code, redirect_uri=body.redirect_uri)
     return LoginResponse(**result)
 
 

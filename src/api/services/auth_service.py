@@ -561,23 +561,49 @@ class AuthService:
     # ── Google OAuth ────────────────────────────────────────────
 
     @classmethod
-    def google_login(cls, id_token_str: str) -> dict:
-        """Authenticate or register a user via Google ID token.
+    def google_login(cls, code: str, redirect_uri: str) -> dict:
+        """Authenticate or register a user via Google OAuth authorization code.
 
-        Verifies the Google ID token, creates an account if new,
-        and returns JWT tokens.
+        Exchanges the auth code for tokens, extracts user info,
+        creates an account if new, and returns JWT tokens.
         """
+        import httpx
+
+        # Exchange auth code for tokens
+        try:
+            token_resp = httpx.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": settings.GOOGLE_CLIENT_ID,
+                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+                timeout=10,
+            )
+            token_data = token_resp.json()
+            if "error" in token_data:
+                logger.warning("Google token exchange failed: %s", token_data)
+                raise UnauthorizedError(detail="Google authentication failed")
+        except UnauthorizedError:
+            raise
+        except Exception as exc:
+            logger.warning("Google token exchange error: %s", exc)
+            raise UnauthorizedError(detail="Google authentication failed")
+
+        # Decode the ID token to get user info
         from google.oauth2 import id_token
         from google.auth.transport import requests as google_requests
 
         try:
             idinfo = id_token.verify_oauth2_token(
-                id_token_str,
+                token_data["id_token"],
                 google_requests.Request(),
                 settings.GOOGLE_CLIENT_ID,
             )
         except Exception as exc:
-            logger.warning("Google token verification failed: %s", exc)
+            logger.warning("Google ID token verification failed: %s", exc)
             raise UnauthorizedError(detail="Invalid Google credential")
 
         google_id = idinfo.get("sub")
