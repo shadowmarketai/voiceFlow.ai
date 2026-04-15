@@ -78,6 +78,14 @@ def _get_admin_user() -> dict:
     """
     try:
         with db() as conn:
+            # Canonical platform owner
+            row = conn.execute(
+                "SELECT * FROM users WHERE email=?",
+                ("mkumaran2931@gmail.com",),
+            ).fetchone()
+            if row:
+                return dict(row)
+            # Legacy fallback
             row = conn.execute(
                 "SELECT * FROM users WHERE email=?",
                 ("admin@shadowmarket.ai",),

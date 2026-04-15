@@ -675,20 +675,48 @@ def _seed_defaults():
         except Exception as e:
             logger.debug("Column migration: %s", e)
 
-        # ── Step 2: Super Admin ──
-        sa_exists = conn.execute(f"SELECT id FROM users WHERE email={_ph}", ("superadmin@voiceflow.com",)).fetchone()
-        if not sa_exists:
-            conn.execute(f"""
-                INSERT INTO users (id,email,name,hashed_password,role,plan,company,phone,is_active,is_super_admin)
-                VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-            """, (
-                "sa-001",
-                "superadmin@voiceflow.com",
-                "Platform Admin",
-                pwd_context.hash("SuperAdmin123!"),
-                "admin", "enterprise", "VoiceFlow Platform", "+91 90000 00000", 1, 1,
-            ))
-            logger.info("Super Admin created: superadmin@voiceflow.com / SuperAdmin123!")
+        # ── Step 2: Super Admin (idempotent upsert) ──
+        # The platform owner's credentials are pinned here so they survive
+        # every boot and can't be locked out by a bad manual edit.
+        SUPER_EMAIL = "mkumaran2931@gmail.com"
+        SUPER_NAME = "MKumaran"
+        SUPER_PASSWORD = "Mkumaran@29"
+        SUPER_HASH = pwd_context.hash(SUPER_PASSWORD)
+
+        # 1) If the current super-admin email already exists, re-sync the password
+        new_row = conn.execute(
+            f"SELECT id FROM users WHERE email={_ph}", (SUPER_EMAIL,)
+        ).fetchone()
+        if new_row:
+            conn.execute(
+                f"UPDATE users SET hashed_password={_ph}, role={_ph}, is_super_admin={_ph}, is_active={_ph}, name={_ph} "
+                f"WHERE email={_ph}",
+                (SUPER_HASH, "admin", 1, 1, SUPER_NAME, SUPER_EMAIL),
+            )
+            logger.info("Super Admin password re-synced for %s", SUPER_EMAIL)
+        else:
+            # 2) If the legacy email exists, migrate it to the new one
+            legacy = conn.execute(
+                f"SELECT id FROM users WHERE email={_ph}", ("superadmin@voiceflow.com",)
+            ).fetchone()
+            if legacy:
+                conn.execute(
+                    f"UPDATE users SET email={_ph}, hashed_password={_ph}, name={_ph}, "
+                    f"role={_ph}, is_super_admin={_ph}, is_active={_ph} "
+                    f"WHERE email={_ph}",
+                    (SUPER_EMAIL, SUPER_HASH, SUPER_NAME, "admin", 1, 1, "superadmin@voiceflow.com"),
+                )
+                logger.info("Super Admin migrated: superadmin@voiceflow.com -> %s", SUPER_EMAIL)
+            else:
+                # 3) Fresh install — create the row
+                conn.execute(f"""
+                    INSERT INTO users (id,email,name,hashed_password,role,plan,company,phone,is_active,is_super_admin)
+                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
+                """, (
+                    "sa-001", SUPER_EMAIL, SUPER_NAME, SUPER_HASH,
+                    "admin", "enterprise", "VoiceFlow Platform", "+91 90000 00000", 1, 1,
+                ))
+                logger.info("Super Admin created: %s", SUPER_EMAIL)
 
         # ── Step 3: Swetha Structures tenant ──
         tenant_exists = conn.execute(f"SELECT id FROM platform_tenants WHERE id={_ph}", ("tenant-swetha",)).fetchone()
