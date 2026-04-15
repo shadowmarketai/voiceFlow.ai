@@ -12,6 +12,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import GlobalSearch from '../components/GlobalSearch';
 import NotificationsPanel from '../components/NotificationsPanel';
+import HeaderWalletPill from '../components/HeaderWalletPill';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { defaultTheme } from '../config/theme';
 import {
@@ -493,6 +494,9 @@ export default function DashboardLayout() {
                     >
                       <Search className="w-5 h-5" />
                     </button>
+
+                    {/* Wallet pill — balance + minutes remaining */}
+                    <HeaderWalletPill />
 
                     {/* Notifications */}
                     <NotificationsPanel />

@@ -16,8 +16,10 @@ import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import {
   MessageSquare, Bot, Clock, Smile, TrendingUp, TrendingDown,
   Phone, Globe, ArrowRight, Plus, Upload,
-  Activity, Sparkles, Star, Languages, Target
+  Activity, Sparkles, Star, Languages, Target,
+  Wallet as WalletIcon, AlertTriangle, CreditCard,
 } from 'lucide-react';
+import { billingAPI } from '../../../services/api';
 import {
   AreaChart, Area, LineChart, Line, PieChart, Pie, Cell, BarChart, Bar,
   XAxis, YAxis, Tooltip, ResponsiveContainer
@@ -143,6 +145,88 @@ function Spark({ data, color = P.indigo }) {
         <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} fill={`url(#s-${color.replace('#','')})`} dot={false} isAnimationActive={false} />
       </AreaChart>
     </ResponsiveContainer>
+  );
+}
+
+/* ─── Wallet snapshot for the dashboard ─────────────────────────── */
+function DashboardWalletCard() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () =>
+      billingAPI
+        .wallet()
+        .then(({ data }) => alive && setData(data))
+        .catch(() => {})
+        .finally(() => alive && setLoading(false));
+    load();
+    const id = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (loading || !data) return null;
+
+  const balance = data.balance_inr ?? 0;
+  const mins = data.minutes_remaining ?? 0;
+  const rate = data.current_rate_inr_per_min ?? 0;
+  const calls = data.calls_remaining_approx ?? 0;
+  const isEmpty = balance <= 0;
+  const isLow = mins < 10 && !isEmpty;
+
+  const statusTone = isEmpty
+    ? 'from-red-500 to-rose-600'
+    : isLow
+    ? 'from-amber-500 to-orange-600'
+    : 'from-indigo-600 via-violet-600 to-purple-700';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4 }}
+      className={`relative overflow-hidden mb-8 rounded-2xl bg-gradient-to-br ${statusTone} text-white shadow-lg`}
+    >
+      <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl" />
+      <div className="relative p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-sm">
+            {isEmpty || isLow ? <AlertTriangle className="w-6 h-6" /> : <WalletIcon className="w-6 h-6" />}
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wider opacity-80 font-medium">Wallet balance</p>
+            <p className="text-3xl font-bold mt-0.5">₹{balance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+            <p className="text-sm opacity-85 mt-1">
+              ~{Math.round(mins)} min of talk-time · {calls} calls @ ₹{rate}/min
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {(isEmpty || isLow) && (
+            <div className="hidden md:block px-3 py-1.5 rounded-lg bg-white/15 text-xs font-medium">
+              {isEmpty ? 'Balance empty — recharge to continue' : 'Low balance — top up soon'}
+            </div>
+          )}
+          <Link
+            to="/voice/wallet"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-white text-indigo-700 text-sm font-semibold hover:bg-indigo-50 transition-colors"
+          >
+            <CreditCard className="w-4 h-4" /> Recharge
+          </Link>
+          <Link
+            to="/voice/wallet"
+            className="hidden sm:flex items-center gap-1 px-3 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-sm font-medium"
+          >
+            Details <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -291,6 +375,9 @@ export default function VoiceAIDashboard() {
         <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
           {HERO_STATS.map(s => <StatCard key={s.label} stat={s} />)}
         </motion.div>
+
+        {/* Wallet snapshot */}
+        <DashboardWalletCard />
 
         {/* 2. Live Activity + Conversation Volume */}
         <motion.div variants={stagger} initial="hidden" animate="show" className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
