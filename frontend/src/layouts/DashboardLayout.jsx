@@ -72,7 +72,6 @@ const navSections = [
       { icon: Wallet,     name: 'Wallet',   path: '/voice/wallet' },
       { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing', tenantOnly: true },
       { icon: Users,      name: 'Team',     path: '/voice/team',             tenantOnly: true },
-      { icon: Settings,   name: 'Settings', path: '/settings' },
     ],
   },
 ];
@@ -363,13 +362,29 @@ export default function DashboardLayout() {
           ))}
         </nav>
 
-        {/* Footer actions */}
+        {/* Footer actions — fixed at sidebar bottom */}
         <div
           className={cn(
-            'border-t border-slate-100 py-2.5',
+            'border-t border-slate-100 py-2.5 space-y-1',
             isCollapsedDesktop ? 'px-2' : 'px-3'
           )}
         >
+          {/* Settings — fixed bottom link (matches Collapse styling) */}
+          <Link
+            to="/settings"
+            title="Settings"
+            className={cn(
+              'flex items-center gap-3 rounded-lg text-[13px] font-medium transition-colors',
+              location.pathname === '/settings'
+                ? 'bg-indigo-50 text-indigo-700'
+                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50',
+              isCollapsedDesktop ? 'justify-center h-9 w-9 mx-auto' : 'h-9 px-3 w-full'
+            )}
+          >
+            <Settings className="w-[17px] h-[17px]" strokeWidth={1.8} />
+            {!isCollapsedDesktop && <span>Settings</span>}
+          </Link>
+
           {/* Collapse toggle */}
           {!mobile && (
             <button
