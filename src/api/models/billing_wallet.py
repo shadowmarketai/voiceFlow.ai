@@ -56,14 +56,22 @@ class RatePlan(Base):
     tts_provider: Mapped[str] = mapped_column(String(32), default="cartesia")
     telephony_provider: Mapped[str] = mapped_column(String(32), default="exotel")
 
-    # Agency controls
+    # ── Platform (super-admin) layer ────────────────────────────────
+    # Set by us. Determines what we charge the tenant.
     platform_fee_paise: Mapped[int] = mapped_column(BigInteger, default=100)     # ₹1/min
     ai_markup_pct: Mapped[int] = mapped_column(Integer, default=20)              # 20%
     telephony_markup_pct: Mapped[int] = mapped_column(Integer, default=10)       # 10%
-    min_floor_paise: Mapped[int] = mapped_column(BigInteger, default=250)        # ₹2.50/min floor
-    lock_llm: Mapped[bool] = mapped_column(Boolean, default=False)               # prevent client changing LLM
+    min_floor_paise: Mapped[int] = mapped_column(BigInteger, default=250)        # ₹2.50/min
+    lock_llm: Mapped[bool] = mapped_column(Boolean, default=False)               # super-admin lock
     lock_tts: Mapped[bool] = mapped_column(Boolean, default=False)
     tier: Mapped[str] = mapped_column(String(16), default="starter")
+
+    # ── Tenant (white-label) layer ──────────────────────────────────
+    # Set by the tenant. They can only ADD margin; cannot undercut platform.
+    tenant_fee_paise: Mapped[int] = mapped_column(BigInteger, default=0)         # ₹/min added on top of platform
+    tenant_ai_markup_pct: Mapped[int] = mapped_column(Integer, default=0)        # extra % on AI passthrough
+    tenant_lock_llm: Mapped[bool] = mapped_column(Boolean, default=False)        # tenant locks LLM for its users
+    tenant_lock_tts: Mapped[bool] = mapped_column(Boolean, default=False)
 
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

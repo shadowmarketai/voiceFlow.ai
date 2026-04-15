@@ -99,56 +99,109 @@ def calculate_cost(
     ai_markup_pct: int = 20,
     telephony_markup_pct: int = 10,
     min_floor_paise: int = 250,
+    tenant_fee_paise: int = 0,
+    tenant_ai_markup_pct: int = 0,
     duration_min: float = 1.0,
-    hide_platform_fee: bool = False,
+    view: str = "user",          # "super" | "tenant" | "user"
 ) -> dict[str, Any]:
     """
-    Compute full per-minute + total cost breakdown in INR.
+    Three-tier white-label cost calculator.
 
-    Returns everything the UI needs to render either the client view
-    (platform fee hidden from breakdown) or agency view (full margin).
+        raw providers
+         + platform markup + platform fee   = tenant_cost  (what we charge the tenant)
+         + tenant markup + tenant fee       = user_price   (what the tenant's end user pays)
+
+    `view` controls how much detail is returned:
+        super  → everything including our raw cost + both margins
+        tenant → tenant sees "your cost to us" + their markup + end-user price
+        user   → only the final end-user total, no fee breakdown
     """
     stt_cost = _lookup("stt", stt)
     llm_cost = _lookup("llm", llm)
     tts_cost = _lookup("tts", tts)
     tel_cost = _lookup("telephony", telephony)
 
-    platform_fee = platform_fee_paise / 100.0
     ai_raw = stt_cost + llm_cost + tts_cost
-    ai_billed = round(ai_raw * (1 + ai_markup_pct / 100.0), 4)
-    tel_billed = round(tel_cost * (1 + telephony_markup_pct / 100.0), 4)
+    platform_fee = platform_fee_paise / 100.0
+    tenant_fee = tenant_fee_paise / 100.0
 
-    per_min = platform_fee + ai_billed + tel_billed
-    per_min = max(per_min, min_floor_paise / 100.0)
-    per_min = round(per_min, 2)
+    # Tier 1: platform → tenant
+    ai_after_platform = round(ai_raw * (1 + ai_markup_pct / 100.0), 4)
+    tel_after_platform = round(tel_cost * (1 + telephony_markup_pct / 100.0), 4)
+    tenant_cost = round(
+        max(platform_fee + ai_after_platform + tel_after_platform, min_floor_paise / 100.0), 2
+    )
 
-    your_cost = round(ai_raw + tel_cost, 2)
-    margin = round(per_min - your_cost, 2)
-    margin_pct = round((margin / per_min) * 100, 1) if per_min else 0.0
+    # Tier 2: tenant → user
+    ai_after_tenant = round(ai_after_platform * (1 + tenant_ai_markup_pct / 100.0), 4)
+    user_price = round(tenant_fee + ai_after_tenant + tel_after_platform + platform_fee, 2)
+    # If tenant added no markup, price == tenant_cost
+    user_price = max(user_price, tenant_cost)
 
-    breakdown = {
-        "stt": {"label": COST_CATALOG["stt"].get(stt, {}).get("label", stt), "raw": stt_cost, "billed": round(stt_cost * (1 + ai_markup_pct / 100.0), 4)},
-        "llm": {"label": COST_CATALOG["llm"].get(llm, {}).get("label", llm), "raw": llm_cost, "billed": round(llm_cost * (1 + ai_markup_pct / 100.0), 4)},
-        "tts": {"label": COST_CATALOG["tts"].get(tts, {}).get("label", tts), "raw": tts_cost, "billed": round(tts_cost * (1 + ai_markup_pct / 100.0), 4)},
-        "telephony": {"label": COST_CATALOG["telephony"].get(telephony, {}).get("label", telephony), "raw": tel_cost, "billed": tel_billed},
-        "ai_total_raw": round(ai_raw, 2),
-        "ai_total_billed": ai_billed,
+    # Margins
+    our_raw = round(ai_raw + tel_cost, 2)
+    our_margin = round(tenant_cost - our_raw, 2)
+    our_margin_pct = round((our_margin / tenant_cost) * 100, 1) if tenant_cost else 0.0
+    tenant_margin = round(user_price - tenant_cost, 2)
+    tenant_margin_pct = round((tenant_margin / user_price) * 100, 1) if user_price else 0.0
+
+    common_breakdown = {
+        "stt": {"label": COST_CATALOG["stt"].get(stt, {}).get("label", stt), "raw": stt_cost},
+        "llm": {"label": COST_CATALOG["llm"].get(llm, {}).get("label", llm), "raw": llm_cost},
+        "tts": {"label": COST_CATALOG["tts"].get(tts, {}).get("label", tts), "raw": tts_cost},
+        "telephony": {"label": COST_CATALOG["telephony"].get(telephony, {}).get("label", telephony), "raw": tel_cost},
     }
 
-    if not hide_platform_fee:
-        breakdown["platform_fee"] = platform_fee
-
-    return {
-        "per_minute": per_min,
-        "total": round(per_min * duration_min, 2),
+    out: dict[str, Any] = {
+        "per_minute": user_price,
+        "total": round(user_price * duration_min, 2),
         "duration_min": duration_min,
-        "breakdown": breakdown,
-        # Agency-only fields (client caller strips these before returning)
-        "your_cost_per_min": your_cost,
-        "margin_per_min": margin,
-        "margin_pct": margin_pct,
         "config": {"stt": stt, "llm": llm, "tts": tts, "telephony": telephony},
     }
+
+    if view == "super":
+        out["breakdown"] = {
+            **common_breakdown,
+            "ai_raw_total": round(ai_raw, 2),
+            "ai_after_platform": ai_after_platform,
+            "ai_after_tenant": ai_after_tenant,
+            "telephony_billed": tel_after_platform,
+            "platform_fee": platform_fee,
+            "tenant_fee": tenant_fee,
+        }
+        out.update({
+            "tenant_cost": tenant_cost,
+            "user_price": user_price,
+            "our_raw_cost": our_raw,
+            "our_margin": our_margin,
+            "our_margin_pct": our_margin_pct,
+            "tenant_margin": tenant_margin,
+            "tenant_margin_pct": tenant_margin_pct,
+        })
+    elif view == "tenant":
+        # Tenant sees what we charge them + the margin they're adding.
+        # They do NOT see our raw cost.
+        out["breakdown"] = {
+            **common_breakdown,
+            "tenant_cost_per_min": tenant_cost,
+            "ai_after_tenant": ai_after_tenant,
+            "tenant_fee": tenant_fee,
+        }
+        out.update({
+            "tenant_cost": tenant_cost,
+            "user_price": user_price,
+            "tenant_margin": tenant_margin,
+            "tenant_margin_pct": tenant_margin_pct,
+        })
+    else:   # user view — hide everything sensitive
+        out["breakdown"] = {
+            **common_breakdown,
+            "ai_total_billed": ai_after_tenant,
+            "telephony_billed": tel_after_platform,
+            # No fee line items — just the total
+        }
+
+    return out
 
 
 def recharge_summary(amount_inr: float) -> dict[str, Any]:

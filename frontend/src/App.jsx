@@ -36,6 +36,7 @@ const IntegrationsPage = lazy(() => import('./modules/voice-ai/pages/Integration
 const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDeveloper'))
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
 const WalletBillingPage = lazy(() => import('./modules/voice-ai/pages/WalletBilling'))
+const TenantPricingPage = lazy(() => import('./modules/voice-ai/pages/TenantPricing'))
 const AgencyPricingPage = lazy(() => import('./modules/admin/AgencyPricingPage'))
 
 // ── Settings ──
@@ -139,6 +140,7 @@ function App() {
           <Route path="voice/api" element={<S><ApiDeveloperPage /></S>} />
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />
           <Route path="voice/wallet" element={<S><WalletBillingPage /></S>} />
+          <Route path="voice/tenant-pricing" element={<S><TenantPricingPage /></S>} />
 
           {/* Settings & Support */}
           <Route path="settings" element={<S><Settings /></S>} />

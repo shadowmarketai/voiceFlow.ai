@@ -758,6 +758,10 @@ export const billingAPI = {
   rechargeOrder: (data) => api.post('/api/v1/billing/wallet/recharge/order', data),
   verifyRecharge: (data) => api.post('/api/v1/billing/wallet/recharge/verify', data),
   debit: (data) => api.post('/api/v1/billing/wallet/debit', data),
+  // Tenant (white-label) endpoints — uses current logged-in tenant context
+  tenantRatePlan: () => api.get('/api/v1/billing/tenant/rate-plan'),
+  tenantUpdateRatePlan: (data) => api.put('/api/v1/billing/tenant/rate-plan', data),
+  tenantCalculate: (data) => api.post('/api/v1/billing/tenant/calculate', data),
   // Agency endpoints — require X-Admin-Token header
   adminRatePlan: (tenantId, token) =>
     api.get(`/api/v1/billing/admin/rate-plan/${tenantId}`, { headers: { 'X-Admin-Token': token } }),

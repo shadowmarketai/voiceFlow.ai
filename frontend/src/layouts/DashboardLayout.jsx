@@ -70,6 +70,7 @@ const navSections = [
     label: 'ACCOUNT',
     items: [
       { icon: Wallet,     name: 'Wallet',   path: '/voice/wallet' },
+      { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing' },
       { icon: CreditCard, name: 'Billing',  path: '/voice/billing' },
       { icon: Settings,   name: 'Settings', path: '/settings' },
     ],

@@ -81,7 +81,7 @@ class CalculateRequest(BaseModel):
 
 @router.post("/calculate")
 def calculate(req: CalculateRequest, tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
-    """Calculate cost using tenant's rate plan. Platform fee is hidden from breakdown."""
+    """User-view calculation (end-user of a tenant). Shows only final total, no fees."""
     plan = wallet_service.get_rate_plan(tenant_id)
     result = pricing.calculate_cost(
         stt=req.stt, llm=req.llm, tts=req.tts, telephony=req.telephony,
@@ -89,14 +89,11 @@ def calculate(req: CalculateRequest, tenant_id: str = Depends(_current_tenant)) 
         ai_markup_pct=plan.ai_markup_pct,
         telephony_markup_pct=plan.telephony_markup_pct,
         min_floor_paise=plan.min_floor_paise,
+        tenant_fee_paise=plan.tenant_fee_paise,
+        tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
         duration_min=req.duration_min,
-        hide_platform_fee=True,
+        view="user",
     )
-    # Strip agency-only fields for client view
-    result.pop("your_cost_per_min", None)
-    result.pop("margin_per_min", None)
-    result.pop("margin_pct", None)
-
     if req.monthly_minutes:
         result["monthly_estimate"] = round(result["per_minute"] * req.monthly_minutes, 2)
     return result
@@ -276,9 +273,92 @@ def wallet_debit(req: DebitRequest, tenant_id: str = Depends(_current_tenant)) -
 
 # ═══ AGENCY (ADMIN) ENDPOINTS ══════════════════════════════════════════════
 
+# ═══ TENANT (WHITE-LABEL) ENDPOINTS ═══════════════════════════════════════
+# A tenant can set their own fee on top of what we charge them, but cannot
+# modify platform-layer fields or reduce below the platform floor.
+
+@router.get("/tenant/rate-plan")
+def tenant_get_rate_plan(tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
+    """Tenant view: what we charge them + their markup + end-user price."""
+    plan = wallet_service.get_rate_plan(tenant_id)
+    calc = pricing.calculate_cost(
+        stt=plan.stt_provider, llm=plan.llm_provider, tts=plan.tts_provider,
+        telephony=plan.telephony_provider,
+        platform_fee_paise=plan.platform_fee_paise,
+        ai_markup_pct=plan.ai_markup_pct,
+        telephony_markup_pct=plan.telephony_markup_pct,
+        min_floor_paise=plan.min_floor_paise,
+        tenant_fee_paise=plan.tenant_fee_paise,
+        tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
+        view="tenant",
+    )
+    return {
+        "tenant_id": tenant_id,
+        "providers": {
+            "stt": plan.stt_provider, "llm": plan.llm_provider,
+            "tts": plan.tts_provider, "telephony": plan.telephony_provider,
+        },
+        "tenant_cost_per_min": calc["tenant_cost"],
+        "tenant_fee_inr": round(plan.tenant_fee_paise / 100, 2),
+        "tenant_ai_markup_pct": plan.tenant_ai_markup_pct,
+        "user_price_per_min": calc["user_price"],
+        "tenant_margin_per_min": calc["tenant_margin"],
+        "tenant_margin_pct": calc["tenant_margin_pct"],
+        "locks_from_platform": {"lock_llm": plan.lock_llm, "lock_tts": plan.lock_tts},
+        "tenant_locks_for_users": {"lock_llm": plan.tenant_lock_llm, "lock_tts": plan.tenant_lock_tts},
+        "breakdown": calc["breakdown"],
+    }
+
+
+class TenantRatePlanUpdate(BaseModel):
+    tenant_fee_inr: float | None = None             # min 0 — cannot undercut platform
+    tenant_ai_markup_pct: int | None = None         # min 0
+    tenant_lock_llm: bool | None = None
+    tenant_lock_tts: bool | None = None
+
+
+@router.put("/tenant/rate-plan")
+def tenant_update_rate_plan(req: TenantRatePlanUpdate, tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
+    """Tenant updates ONLY their own markup + user-facing locks."""
+    updates: dict[str, Any] = {}
+    if req.tenant_fee_inr is not None:
+        if req.tenant_fee_inr < 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tenant fee cannot be negative")
+        updates["tenant_fee_paise"] = int(round(req.tenant_fee_inr * 100))
+    if req.tenant_ai_markup_pct is not None:
+        if req.tenant_ai_markup_pct < 0:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Tenant markup cannot be negative")
+        updates["tenant_ai_markup_pct"] = req.tenant_ai_markup_pct
+    if req.tenant_lock_llm is not None:
+        updates["tenant_lock_llm"] = req.tenant_lock_llm
+    if req.tenant_lock_tts is not None:
+        updates["tenant_lock_tts"] = req.tenant_lock_tts
+    wallet_service.update_rate_plan(tenant_id, **updates)
+    return {"success": True, "updated": list(updates.keys())}
+
+
+@router.post("/tenant/calculate")
+def tenant_calculate(req: CalculateRequest, tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
+    """Tenant view calculator — sees what we charge them + their margin + user price."""
+    plan = wallet_service.get_rate_plan(tenant_id)
+    return pricing.calculate_cost(
+        stt=req.stt, llm=req.llm, tts=req.tts, telephony=req.telephony,
+        platform_fee_paise=plan.platform_fee_paise,
+        ai_markup_pct=plan.ai_markup_pct,
+        telephony_markup_pct=plan.telephony_markup_pct,
+        min_floor_paise=plan.min_floor_paise,
+        tenant_fee_paise=plan.tenant_fee_paise,
+        tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
+        duration_min=req.duration_min,
+        view="tenant",
+    )
+
+
+# ═══ SUPER-ADMIN (PLATFORM) ENDPOINTS ═════════════════════════════════════
+
 @router.post("/admin/calculate", dependencies=[Depends(_require_admin)])
 def admin_calculate(req: CalculateRequest, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-    """Same as /calculate but returns FULL margin breakdown (platform fee visible)."""
+    """Super admin view: full visibility into raw costs + both margin tiers."""
     target_tenant = x_tenant_id or "default"
     plan = wallet_service.get_rate_plan(target_tenant)
     return pricing.calculate_cost(
@@ -287,8 +367,10 @@ def admin_calculate(req: CalculateRequest, x_tenant_id: str | None = Header(defa
         ai_markup_pct=plan.ai_markup_pct,
         telephony_markup_pct=plan.telephony_markup_pct,
         min_floor_paise=plan.min_floor_paise,
+        tenant_fee_paise=plan.tenant_fee_paise,
+        tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
         duration_min=req.duration_min,
-        hide_platform_fee=False,
+        view="super",
     )
 
 
@@ -308,6 +390,11 @@ def admin_get_rate_plan(tenant_id: str) -> dict[str, Any]:
         "lock_llm": plan.lock_llm,
         "lock_tts": plan.lock_tts,
         "tier": plan.tier,
+        # Tenant white-label layer (read-only from super-admin view)
+        "tenant_fee_inr": round(plan.tenant_fee_paise / 100, 2),
+        "tenant_ai_markup_pct": plan.tenant_ai_markup_pct,
+        "tenant_lock_llm": plan.tenant_lock_llm,
+        "tenant_lock_tts": plan.tenant_lock_tts,
     }
 
 

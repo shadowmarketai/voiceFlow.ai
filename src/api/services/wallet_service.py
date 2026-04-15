@@ -32,21 +32,35 @@ class WalletBlockedError(Exception):
 _TABLES_ENSURED = False
 
 
+_TENANT_COLUMNS_SQL = [
+    ("tenant_fee_paise", "BIGINT NOT NULL DEFAULT 0"),
+    ("tenant_ai_markup_pct", "INTEGER NOT NULL DEFAULT 0"),
+    ("tenant_lock_llm", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("tenant_lock_tts", "BOOLEAN NOT NULL DEFAULT FALSE"),
+]
+
+
 def _ensure_tables() -> None:
     global _TABLES_ENSURED
     if _TABLES_ENSURED:
         return
     engine = get_engine()
-    # Only create these four tables, not the whole Base.metadata
     Wallet.__table__.create(bind=engine, checkfirst=True)
     WalletTransaction.__table__.create(bind=engine, checkfirst=True)
     RatePlan.__table__.create(bind=engine, checkfirst=True)
-    # RechargeOrder is imported at module level; create it too if available
     try:
         from api.models.billing_wallet import RechargeOrder
         RechargeOrder.__table__.create(bind=engine, checkfirst=True)
     except Exception:
         pass
+    # Opportunistic ALTER for the white-label columns (safe no-op if already present).
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        for col_name, col_ddl in _TENANT_COLUMNS_SQL:
+            try:
+                conn.execute(text(f"ALTER TABLE billing_rate_plans ADD COLUMN {col_name} {col_ddl}"))
+            except Exception:
+                pass     # column already exists or dialect refused — harmless
     _TABLES_ENSURED = True
 
 
@@ -194,6 +208,11 @@ class _RatePlanDTO:
         self.lock_llm = bool(m["lock_llm"])
         self.lock_tts = bool(m["lock_tts"])
         self.tier = m["tier"]
+        # White-label (tenant) layer
+        self.tenant_fee_paise = int(m.get("tenant_fee_paise") or 0)
+        self.tenant_ai_markup_pct = int(m.get("tenant_ai_markup_pct") or 0)
+        self.tenant_lock_llm = bool(m.get("tenant_lock_llm") or False)
+        self.tenant_lock_tts = bool(m.get("tenant_lock_tts") or False)
 
     # back-compat alias used by wallet router: plan.stt / .llm / .tts / .telephony
     @property
@@ -212,6 +231,8 @@ _DEFAULT_PLAN = {
     "platform_fee_paise": 100, "ai_markup_pct": 20,
     "telephony_markup_pct": 10, "min_floor_paise": 250,
     "lock_llm": False, "lock_tts": False, "tier": "starter",
+    "tenant_fee_paise": 0, "tenant_ai_markup_pct": 0,
+    "tenant_lock_llm": False, "tenant_lock_tts": False,
 }
 
 
@@ -237,6 +258,8 @@ def update_rate_plan(tenant_id: str, **updates) -> _RatePlanDTO:
         "stt_provider", "llm_provider", "tts_provider", "telephony_provider",
         "platform_fee_paise", "ai_markup_pct", "telephony_markup_pct",
         "min_floor_paise", "lock_llm", "lock_tts", "tier",
+        "tenant_fee_paise", "tenant_ai_markup_pct",
+        "tenant_lock_llm", "tenant_lock_tts",
     }
     clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
     _ensure_tables()
