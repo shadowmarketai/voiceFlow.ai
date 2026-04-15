@@ -16,7 +16,7 @@ import HeaderWalletPill from '../components/HeaderWalletPill';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { defaultTheme } from '../config/theme';
 import {
-  LayoutDashboard, Bot, Wand2, BookOpen, Mic, Phone, Globe,
+  LayoutDashboard, Bot, Wand2, BookOpen, Mic, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
   FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
   Search, Menu, LogOut, User, HelpCircle,

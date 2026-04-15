@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  Globe, MessageCircle, Phone, Code, CheckCircle, Clock, Copy, Check,
+  Globe, MessageCircle, Code, CheckCircle, Clock, Copy, Check,
   X, ExternalLink, Save, Loader2, Settings, Zap, AlertCircle, Terminal,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -284,32 +284,7 @@ function WhatsAppConfig({ initial, onSave, onRefresh }) {
   )
 }
 
-function PhoneConfig({ onGo }) {
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-600">
-        Phone channels are managed from the <b>Phone Numbers</b> page. You can:
-      </p>
-      <ul className="space-y-2 text-sm text-gray-700">
-        {[
-          'Buy or import numbers from TeleCMI / Twilio / Vonage / Exotel / SIP',
-          'Assign agents to inbound numbers',
-          'Configure call routing and business hours',
-          'Enable recording, transcription, and post-call webhooks',
-        ].map((x) => (
-          <li key={x} className="flex gap-2"><CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />{x}</li>
-        ))}
-      </ul>
-      <div className="flex justify-end">
-        <button onClick={onGo}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
-          <Phone className="w-4 h-4" /> Manage Phone Numbers
-          <ExternalLink className="w-3 h-3" />
-        </button>
-      </div>
-    </div>
-  )
-}
+// PhoneConfig removed — phone features available in other locations.
 
 // ApiConfig sub-component removed — the Developer tab on this page
 // now owns all API / keys / webhooks UX.
@@ -329,7 +304,6 @@ export default function Channels() {
   const [statuses, setStatuses] = useState({
     'web-widget': 'ready',
     'whatsapp': 'checking',
-    'phone': 'checking',
   })
   const [savedConfig, setSavedConfig] = useState(loadSavedConfig())
   const [agents, setAgents] = useState([])
@@ -341,14 +315,6 @@ export default function Channels() {
       setStatuses(s => ({ ...s, whatsapp: data.status === 'configured' ? 'configured' : 'needs_setup' }))
     } catch {
       setStatuses(s => ({ ...s, whatsapp: 'needs_setup' }))
-    }
-    // Phone — any telephony provider configured?
-    try {
-      const { data } = await api.get('/api/v1/telephony/providers')
-      const hasAny = Array.isArray(data?.providers) && data.providers.some(p => p.configured)
-      setStatuses(s => ({ ...s, phone: hasAny ? 'configured' : 'needs_setup' }))
-    } catch {
-      setStatuses(s => ({ ...s, phone: 'needs_setup' }))
     }
     // Web widget — configured if we have a saved agent_id
     const saved = loadSavedConfig()
@@ -405,16 +371,8 @@ export default function Channels() {
       features: ['Meta Graph API integration', 'Rich media message support', 'Template message management', 'Test message sender'],
     },
     {
-      id: 'phone',
-      name: 'Phone (Inbound / Outbound)',
-      description: 'Handle inbound calls and run outbound campaigns across 7 telephony providers — TeleCMI, Twilio, Vonage, Exotel, SIP, and more.',
-      icon: Phone,
-      gradient: 'from-blue-500 to-blue-600',
-      check: 'text-blue-500',
-      features: ['Inbound routing', 'Outbound dialing', 'Call transfer to humans', 'Real-time transcription'],
-    },
-    // NOTE: "API / WebSocket" card intentionally removed — the Developer
-    // tab above covers endpoints / keys / webhooks comprehensively.
+    // Phone and API cards removed — phone features in other locations,
+    // API/Developer handled by the Developer tab.
   ]
 
   const handleSave = (id, data) => {
@@ -432,8 +390,6 @@ export default function Channels() {
         return <WebWidgetConfig initial={initial} agents={agents} onSave={(d) => handleSave(id, d)} />
       case 'whatsapp':
         return <WhatsAppConfig initial={initial} onSave={(d) => handleSave(id, d)} onRefresh={refreshStatuses} />
-      case 'phone':
-        return <PhoneConfig onGo={() => { setOpen(null); navigate('/voice/phone-numbers') }} />
       default: return null
     }
   }
