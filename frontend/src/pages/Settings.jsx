@@ -31,15 +31,13 @@ import {
   UsersRound
 } from 'lucide-react'
 
+/* Minimal settings tabs — everything else already has its own top-level
+ * sidebar page (Team, Billing/Wallet, Integrations, API & Developer,
+ * Notifications lives in the bell icon). Settings is just for Profile
+ * + Security changes. */
 const tabs = [
   { id: 'profile', name: 'Profile', icon: User },
-  { id: 'organization', name: 'Organization', icon: Building2 },
-  { id: 'team', name: 'Team', icon: UsersRound },
-  { id: 'billing', name: 'Billing', icon: CreditCard },
-  { id: 'notifications', name: 'Notifications', icon: Bell },
-  { id: 'integrations', name: 'Integrations', icon: Plug },
   { id: 'security', name: 'Security', icon: Shield },
-  { id: 'api', name: 'API Keys', icon: Key },
 ]
 
 const integrations = [

@@ -17,7 +17,6 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { billingAPI } from '../../../services/api'
-import { useAuth } from '../../../contexts/AuthContext'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 10 },
@@ -30,18 +29,13 @@ const PRESET_ICONS = {
 }
 
 export default function WalletBilling() {
-  const { user } = useAuth()
-  const isSuperAdmin = !!user?.is_super_admin
   const [wallet, setWallet]     = useState(null)
   const [txns, setTxns]         = useState([])
-  const [catalog, setCatalog]   = useState(null)
   const [pricedPresets, setPricedPresets] = useState([])
   const [packs, setPacks]       = useState([])
   const [plan, setPlan]         = useState(null)
   const [loading, setLoading]   = useState(true)
   const [recharging, setRechg]  = useState(false)
-  const [switching, setSwitching] = useState(null)
-  const [monthlyMins, setMonthlyMins] = useState(1000)
 
   const loadAll = async () => {
     try {
@@ -53,7 +47,6 @@ export default function WalletBilling() {
         billingAPI.presetsWithPrices('user'),
       ])
       setWallet(w.data)
-      setCatalog(c.data.catalog)
       setPacks(c.data.recharge_packs)
       setTxns(t.data.transactions || [])
       setPlan(p.data)
@@ -66,19 +59,6 @@ export default function WalletBilling() {
   }
 
   useEffect(() => { loadAll() }, [])
-
-  const switchPreset = async (presetId) => {
-    setSwitching(presetId)
-    try {
-      await billingAPI.selectPreset(presetId)
-      toast.success('Plan switched')
-      await loadAll()
-    } catch (e) {
-      toast.error(e.response?.data?.detail || 'Switch failed')
-    } finally {
-      setSwitching(null)
-    }
-  }
 
   const recharge = async (amount) => {
     setRechg(true)
@@ -214,87 +194,36 @@ export default function WalletBilling() {
         </p>
       </motion.div>
 
-      {/* Plan selector — 5 preset cards with prices */}
-      <motion.div variants={fadeUp} initial="hidden" animate="show"
-        className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-violet-500" /> Choose your plan
-          <span className="text-[11px] font-normal text-gray-400 ml-2">Pick a performance tier — the price is per-minute all-inclusive</span>
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          {pricedPresets.map((p) => {
-            const Icon = PRESET_ICONS[p.id] || Sparkles
-            const active = plan && (
-              (p.id === 'low_latency'  && plan.llm === 'groq_llama3_8b') ||
-              (p.id === 'high_quality' && plan.llm === 'claude_haiku') ||
-              (p.id === 'budget'       && plan.llm === 'gemini_flash') ||
-              (p.id === 'tamil_native' && plan.llm === 'claude_haiku' && plan.stt === 'sarvam') ||
-              (p.id === 'premium'      && plan.llm === 'claude_opus')
-            )
-            const busy = switching === p.id
-            return (
-              <button key={p.id}
-                onClick={() => !active && switchPreset(p.id)}
-                disabled={busy || active}
-                className={`relative p-4 rounded-xl border-2 text-left transition-all ${
-                  active
-                    ? 'border-indigo-500 bg-indigo-50'
-                    : 'border-gray-200 hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-md'
-                } disabled:cursor-default`}
-              >
-                {active && (
-                  <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-semibold">
-                    <Check className="w-3 h-3" /> Active
-                  </span>
-                )}
-                <Icon className={`w-5 h-5 mb-2 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
-                <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                <p className="text-2xl font-bold text-indigo-700 mt-2">₹{p.per_minute}<span className="text-xs text-gray-500 font-normal">/min</span></p>
-                <p className="text-[10px] text-gray-400 mt-1">~₹{(p.per_minute * monthlyMins).toLocaleString('en-IN')}/mo at {monthlyMins} min</p>
-                {busy && <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mx-auto mt-2" />}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Volume slider */}
-        <div className="mt-5">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Estimate monthly volume</label>
-          <div className="flex items-center gap-4 mt-1">
-            <input type="range" min="100" max="10000" step="100" value={monthlyMins}
-              onChange={(e) => setMonthlyMins(Number(e.target.value))}
-              className="flex-1" />
-            <span className="font-mono text-sm text-gray-900 w-24">{monthlyMins.toLocaleString('en-IN')} min</span>
-          </div>
-        </div>
-
-        {/* Super-admin advanced section */}
-        {isSuperAdmin && catalog && (
-          <div className="mt-5 p-4 rounded-xl bg-gray-50 border border-gray-200">
-            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-3">Advanced (super-admin only)</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-              <div>
-                <p className="text-gray-500">Current STT</p>
-                <p className="font-medium">{catalog.stt?.[plan?.stt]?.label}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Current LLM</p>
-                <p className="font-medium">{catalog.llm?.[plan?.llm]?.label}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Current TTS</p>
-                <p className="font-medium">{catalog.tts?.[plan?.tts]?.label}</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Current Telephony</p>
-                <p className="font-medium">{catalog.telephony?.[plan?.telephony]?.label}</p>
-              </div>
+      {/* Current plan — compact read-only card.
+          Plan switching has moved to Agent Builder's Voice & AI tab. */}
+      {plan && pricedPresets.length > 0 && (
+        <motion.div variants={fadeUp} initial="hidden" animate="show"
+          className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-gradient-to-br from-indigo-50 to-violet-50">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
             </div>
-            <p className="text-[10px] text-gray-400 mt-2">Raw providers are hidden from clients. Use <a href="/admin/pricing" className="text-indigo-600 underline">/admin/pricing</a> to edit.</p>
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">Current plan</p>
+              <p className="text-sm font-semibold text-gray-900 mt-0.5">
+                {(() => {
+                  const activePreset = pricedPresets.find(p =>
+                    (p.id === 'low_latency'  && plan.llm === 'groq_llama3_8b') ||
+                    (p.id === 'high_quality' && plan.llm === 'claude_haiku') ||
+                    (p.id === 'budget'       && plan.llm === 'gemini_flash') ||
+                    (p.id === 'tamil_native' && plan.llm === 'claude_haiku' && plan.stt === 'sarvam') ||
+                    (p.id === 'premium'      && plan.llm === 'claude_opus')
+                  )
+                  return activePreset ? `${activePreset.name} — ₹${activePreset.per_minute}/min` : 'Custom'
+                })()}
+              </p>
+            </div>
           </div>
-        )}
-      </motion.div>
+          <a href="/voice/agent-builder" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium">
+            Change plan →
+          </a>
+        </motion.div>
+      )}
 
       {/* Transactions */}
       <motion.div variants={fadeUp} initial="hidden" animate="show"
