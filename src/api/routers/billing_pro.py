@@ -156,7 +156,10 @@ def wallet_balance(tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
         platform_fee_paise=plan.platform_fee_paise,
         ai_markup_pct=plan.ai_markup_pct,
         telephony_markup_pct=plan.telephony_markup_pct,
-        min_floor_paise=plan.min_floor_paise, hide_platform_fee=True,
+        min_floor_paise=plan.min_floor_paise,
+        tenant_fee_paise=plan.tenant_fee_paise,
+        tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
+        view="user",
     )
     rate_per_min = calc["per_minute"]
     mins_left = (bal["balance_inr"] / rate_per_min) if rate_per_min else 0.0
