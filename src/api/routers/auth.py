@@ -18,11 +18,18 @@ from slowapi.util import get_remote_address
 
 from api.dependencies import get_current_active_user, get_current_user
 from api.schemas.auth import (
+    ForgotPasswordRequest,
+    GoogleAuthRequest,
     LoginRequest,
+    LoginResponse,
     RefreshTokenRequest,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     TenantBranding,
+    TwoFactorLoginRequest,
+    TwoFactorSetupResponse,
+    TwoFactorVerifyRequest,
     UserResponse,
     UserUpdate,
 )
@@ -72,17 +79,18 @@ async def register(request: Request, body: RegisterRequest) -> TokenResponse:
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
+    response_model=LoginResponse,
     summary="Login with email and password",
 )
 @limiter.limit(_rate_login)
-async def login(request: Request, body: LoginRequest) -> TokenResponse:
+async def login(request: Request, body: LoginRequest) -> LoginResponse:
     """Authenticate with email and password, returns JWT tokens.
 
+    If 2FA is enabled, returns requires_2fa=True with a temp_token.
     Rate limited to 5 requests per minute (KB-006).
     """
     result = AuthService.login(email=body.email, password=body.password)
-    return TokenResponse(**result)
+    return LoginResponse(**result)
 
 
 # ── POST /refresh ────────────────────────────────────────────────
@@ -228,3 +236,118 @@ async def get_permissions(
         "permissions": get_role_permissions(role),
         "accessible_modules": get_accessible_modules(role),
     }
+
+
+# ── 2FA Endpoints ───────────────────────────────────────────────
+
+
+@router.post(
+    "/2fa/setup",
+    response_model=TwoFactorSetupResponse,
+    summary="Start 2FA setup — returns QR code URI",
+)
+async def setup_2fa(
+    current_user: dict = Depends(get_current_active_user),
+) -> TwoFactorSetupResponse:
+    """Generate TOTP secret and QR URI for authenticator app setup."""
+    result = AuthService.setup_2fa(user_id=current_user.get("id", ""))
+    return TwoFactorSetupResponse(**result)
+
+
+@router.post(
+    "/2fa/verify",
+    response_model=MessageResponse,
+    summary="Verify TOTP code and enable 2FA",
+)
+async def verify_2fa(
+    body: TwoFactorVerifyRequest,
+    current_user: dict = Depends(get_current_active_user),
+) -> MessageResponse:
+    """Verify a 6-digit TOTP code to activate 2FA on the account."""
+    AuthService.verify_and_enable_2fa(
+        user_id=current_user.get("id", ""),
+        code=body.code,
+    )
+    return MessageResponse(message="Two-factor authentication enabled successfully")
+
+
+@router.post(
+    "/2fa/disable",
+    response_model=MessageResponse,
+    summary="Disable 2FA",
+)
+async def disable_2fa(
+    body: TwoFactorVerifyRequest,
+    current_user: dict = Depends(get_current_active_user),
+) -> MessageResponse:
+    """Disable 2FA after verifying a valid TOTP code."""
+    AuthService.disable_2fa(
+        user_id=current_user.get("id", ""),
+        code=body.code,
+    )
+    return MessageResponse(message="Two-factor authentication disabled")
+
+
+@router.post(
+    "/2fa/login",
+    response_model=LoginResponse,
+    summary="Complete login with 2FA code",
+)
+@limiter.limit(_rate_login)
+async def login_2fa(request: Request, body: TwoFactorLoginRequest) -> LoginResponse:
+    """Verify 2FA code and complete login — returns full JWT tokens."""
+    result = AuthService.verify_2fa_login(
+        email=body.email,
+        code=body.code,
+        temp_token=body.temp_token,
+    )
+    return LoginResponse(**result)
+
+
+# ── Google OAuth ────────────────────────────────────────────────
+
+
+@router.post(
+    "/google",
+    response_model=LoginResponse,
+    summary="Login or register with Google",
+)
+@limiter.limit(_rate_login)
+async def google_auth(request: Request, body: GoogleAuthRequest) -> LoginResponse:
+    """Authenticate using a Google ID token from the frontend Sign-In button."""
+    result = AuthService.google_login(id_token_str=body.credential)
+    return LoginResponse(**result)
+
+
+# ── Forgot / Reset Password ────────────────────────────────────
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    summary="Request password reset email",
+)
+@limiter.limit("3/minute")
+async def forgot_password(request: Request, body: ForgotPasswordRequest) -> MessageResponse:
+    """Generate a password reset token.
+
+    Always returns success to prevent email enumeration.
+    In production, this would send an email with the reset link.
+    """
+    token = AuthService.create_password_reset_token(email=body.email)
+    if token:
+        # TODO: Send email with reset link containing the token
+        # For now, log the token (remove in production)
+        logger.info("Password reset token for %s: %s", body.email, token[:20] + "...")
+    return MessageResponse(message="If an account exists with that email, a reset link has been sent")
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+    summary="Reset password with token",
+)
+async def reset_password(body: ResetPasswordRequest) -> MessageResponse:
+    """Reset password using a valid reset token from the email link."""
+    AuthService.reset_password(token=body.token, new_password=body.new_password)
+    return MessageResponse(message="Password reset successfully. You can now sign in.")

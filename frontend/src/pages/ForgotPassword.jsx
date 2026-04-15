@@ -1,12 +1,12 @@
 /**
- * ForgotPassword — Placeholder page for the forgot password flow.
- * Will be fully implemented in Step 3 (forgot password + reset).
+ * ForgotPassword — Request password reset link via email.
  */
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Mail, ArrowLeft, ArrowRight, Mic, CheckCircle } from 'lucide-react'
+import { authAPI } from '../services/api'
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('')
@@ -19,13 +19,14 @@ export default function ForgotPassword() {
     e.preventDefault()
     setError('')
     setIsLoading(true)
-
-    // TODO: Wire to backend POST /auth/forgot-password in Step 3
-    // Simulate API call for now
-    setTimeout(() => {
+    try {
+      await authAPI.forgotPassword(email)
       setSent(true)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Something went wrong. Please try again.')
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
   return (
@@ -42,7 +43,7 @@ export default function ForgotPassword() {
             <Mic className="w-5 h-5 text-white" />
           </div>
           <div>
-            <p className="text-slate-900 font-bold text-lg">VoiceFlow</p>
+            <p className="text-slate-900 font-heading font-bold text-lg">VoiceFlow</p>
             <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-500/60">AI Platform</p>
           </div>
         </div>
@@ -58,10 +59,10 @@ export default function ForgotPassword() {
               <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 flex items-center justify-center">
                 <CheckCircle className="w-7 h-7 text-emerald-500" />
               </div>
-              <h2 className="text-xl font-bold text-slate-900">Check your email</h2>
+              <h2 className="text-xl font-heading font-bold text-slate-900">Check your email</h2>
               <p className="text-sm text-slate-500 leading-relaxed">
-                We sent a password reset link to <span className="font-medium text-slate-700">{email}</span>.
-                Check your inbox and follow the instructions.
+                If an account exists for <span className="font-medium text-slate-700">{email}</span>,
+                we've sent a password reset link. Check your inbox.
               </p>
               <button
                 onClick={() => navigate('/login')}
@@ -74,7 +75,7 @@ export default function ForgotPassword() {
           ) : (
             <>
               <div className="mb-6">
-                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Reset password</h2>
+                <h2 className="text-2xl font-heading font-bold text-slate-900 tracking-tight">Reset password</h2>
                 <p className="text-sm text-slate-500 mt-1.5">
                   Enter your email and we'll send you a reset link.
                 </p>
@@ -128,7 +129,6 @@ export default function ForgotPassword() {
             </>
           )}
 
-          {/* Back link */}
           {!sent && (
             <button
               onClick={() => navigate('/login')}

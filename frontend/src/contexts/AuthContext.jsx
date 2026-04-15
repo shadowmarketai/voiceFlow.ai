@@ -15,7 +15,6 @@ export function AuthProvider({ children }) {
         .catch(() => localStorage.removeItem('swetha_token'))
         .finally(() => setLoading(false))
     } else if (token === 'demo-token-123') {
-      // Restore demo user from localStorage
       const savedUser = localStorage.getItem('swetha_user')
       if (savedUser) {
         setUser(JSON.parse(savedUser))
@@ -27,13 +26,34 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = async (email, password) => {
-    // Clear any stale demo tokens first
     localStorage.removeItem('swetha_token')
     localStorage.removeItem('swetha_user')
 
     const res = await authAPI.login({ email, password })
     const data = res.data
-    // API returns { access_token, refresh_token, user }
+
+    // If 2FA is required, return the flag + temp token (don't set user yet)
+    if (data.requires_2fa) {
+      return { requires_2fa: true, temp_token: data.temp_token, email }
+    }
+
+    return await _completeLogin(data)
+  }
+
+  const verify2FALogin = async (email, code, tempToken) => {
+    const res = await authAPI.login2FA({ email, code, temp_token: tempToken })
+    return await _completeLogin(res.data)
+  }
+
+  const googleLogin = async (credential) => {
+    localStorage.removeItem('swetha_token')
+    localStorage.removeItem('swetha_user')
+
+    const res = await authAPI.googleLogin(credential)
+    return await _completeLogin(res.data)
+  }
+
+  const _completeLogin = async (data) => {
     const token = data.access_token || data.token
     let userData = data.user || data
 
@@ -43,14 +63,11 @@ export function AuthProvider({ children }) {
 
     localStorage.setItem('swetha_token', token)
 
-    // Fetch full profile (includes tenant branding) — the bare login response
-    // omits the tenant object, which the dashboard layout needs for branding.
     try {
       const profile = await authAPI.getProfile()
       userData = profile.data
-    } catch (err) {
-      // Fallback to login user data if /me fails
-      console.warn('getProfile after login failed, using login response', err)
+    } catch (_err) {
+      // Fallback to login response data
     }
 
     localStorage.setItem('swetha_user', JSON.stringify(userData))
@@ -59,7 +76,6 @@ export function AuthProvider({ children }) {
   }
 
   const register = async (data) => {
-    // Backend expects full_name, frontend may send name
     const payload = {
       email: data.email,
       password: data.password,
@@ -83,7 +99,6 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
-  // Demo login - bypasses API for exploring the platform
   const demoLogin = () => {
     const demoUser = {
       id: 'demo-001',
@@ -101,7 +116,6 @@ export function AuthProvider({ children }) {
     return demoUser
   }
 
-  // Demo login as a specific role - for testing RBAC
   const demoLoginAs = (role) => {
     const roleNames = {
       admin: 'Swetha Admin',
@@ -129,7 +143,12 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, demoLogin, demoLoginAs }}>
+    <AuthContext.Provider value={{
+      user, loading,
+      login, register, logout,
+      verify2FALogin, googleLogin,
+      demoLogin, demoLoginAs,
+    }}>
       {children}
     </AuthContext.Provider>
   )

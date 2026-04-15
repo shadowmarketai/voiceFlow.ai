@@ -75,6 +75,10 @@ class User(TimestampMixin, SoftDeleteMixin, Base):
     oauth_provider: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "google", "microsoft"
     oauth_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
+    # Two-Factor Authentication (TOTP)
+    totp_secret: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    is_2fa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Multi-tenant
     tenant_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("tenants.id", ondelete="SET NULL"), nullable=True, index=True,

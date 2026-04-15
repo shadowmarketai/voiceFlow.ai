@@ -75,6 +75,14 @@ razorpay>=1.4.0
 # Security
 cryptography>=41.0.0
 
+# 2FA / TOTP
+pyotp>=2.9.0
+qrcode[pil]>=7.4.2
+
+# Google OAuth
+google-auth>=2.25.0
+google-auth-oauthlib>=1.1.0
+
 # Database Production
 psycopg2-binary>=2.9.0
 

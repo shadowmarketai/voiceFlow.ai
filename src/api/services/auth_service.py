@@ -17,6 +17,7 @@ from typing import Optional
 
 import bcrypt
 import jwt
+import pyotp
 
 from api.config import settings
 from api.database import db
@@ -222,6 +223,7 @@ class AuthService:
 
         Returns:
             dict with access_token, refresh_token, and user info.
+            If 2FA is enabled, returns requires_2fa=True with a temp_token instead.
 
         Raises:
             UnauthorizedError: If email/password is invalid.
@@ -239,9 +241,21 @@ class AuthService:
         if not cls.verify_password(password, user_dict.get("hashed_password", "")):
             raise UnauthorizedError(detail="Invalid email or password")
 
-        # Check if user is active
         if not user_dict.get("is_active", 1):
             raise UnauthorizedError(detail="Account is deactivated")
+
+        # Check if 2FA is enabled
+        if user_dict.get("is_2fa_enabled") and user_dict.get("totp_secret"):
+            # Issue a short-lived temp token for 2FA verification
+            temp_token = cls.create_access_token(
+                {"sub": email, "type": "2fa_pending", "user_id": user_dict["id"]},
+                expires_delta=timedelta(minutes=5),
+            )
+            logger.info("2FA required for: %s", email)
+            return {
+                "requires_2fa": True,
+                "temp_token": temp_token,
+            }
 
         safe_user = _safe_user(user_dict)
         token_data = {
@@ -262,6 +276,7 @@ class AuthService:
             "token_type": "bearer",
             "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
             "user": safe_user,
+            "requires_2fa": False,
         }
 
     # ── Refresh Token ────────────────────────────────────────────
@@ -419,6 +434,270 @@ class AuthService:
         return _safe_user(user_dict)
 
 
+    # ── 2FA (TOTP) ────────────────────────────────────────────────
+
+    @classmethod
+    def setup_2fa(cls, user_id: str) -> dict:
+        """Generate a TOTP secret for the user and return QR URI.
+
+        Does NOT enable 2FA yet — user must verify a code first.
+        """
+        secret = pyotp.random_base32()
+        totp = pyotp.TOTP(secret)
+        email = ""
+
+        with db() as conn:
+            row = conn.execute("SELECT email FROM users WHERE id=?", (user_id,)).fetchone()
+            if not row:
+                raise NotFoundError(detail="User not found")
+            email = dict(row)["email"]
+            # Store secret but don't enable yet
+            conn.execute(
+                "UPDATE users SET totp_secret=? WHERE id=?", (secret, user_id)
+            )
+
+        qr_uri = totp.provisioning_uri(name=email, issuer_name="VoiceFlow AI")
+        logger.info("2FA setup initiated for user: %s", user_id)
+        return {"secret": secret, "qr_uri": qr_uri}
+
+    @classmethod
+    def verify_and_enable_2fa(cls, user_id: str, code: str) -> bool:
+        """Verify a TOTP code and enable 2FA for the user."""
+        with db() as conn:
+            row = conn.execute(
+                "SELECT totp_secret FROM users WHERE id=?", (user_id,)
+            ).fetchone()
+            if not row:
+                raise NotFoundError(detail="User not found")
+            secret = dict(row).get("totp_secret")
+            if not secret:
+                raise UnauthorizedError(detail="2FA not set up. Call setup first.")
+
+            totp = pyotp.TOTP(secret)
+            if not totp.verify(code, valid_window=1):
+                raise UnauthorizedError(detail="Invalid verification code")
+
+            conn.execute(
+                "UPDATE users SET is_2fa_enabled=1 WHERE id=?", (user_id,)
+            )
+
+        logger.info("2FA enabled for user: %s", user_id)
+        return True
+
+    @classmethod
+    def verify_2fa_login(cls, email: str, code: str, temp_token: str) -> dict:
+        """Verify 2FA code during login and issue full tokens."""
+        # Validate temp token
+        payload = cls.decode_token(temp_token)
+        if payload.get("type") != "2fa_pending":
+            raise UnauthorizedError(detail="Invalid temp token")
+        if payload.get("sub") != email:
+            raise UnauthorizedError(detail="Token email mismatch")
+
+        with db() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email=?", (email,)
+            ).fetchone()
+
+        if not row:
+            raise UnauthorizedError(detail="User not found")
+
+        user_dict = dict(row)
+        secret = user_dict.get("totp_secret")
+        if not secret:
+            raise UnauthorizedError(detail="2FA not configured")
+
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(code, valid_window=1):
+            raise UnauthorizedError(detail="Invalid 2FA code")
+
+        safe_user = _safe_user(user_dict)
+        token_data = {
+            "sub": user_dict["email"],
+            "role": user_dict.get("role", "user"),
+            "user_id": user_dict["id"],
+            "is_super_admin": bool(user_dict.get("is_super_admin", 0)),
+            "tenant_id": user_dict.get("tenant_id", ""),
+        }
+        access_token = cls.create_access_token(token_data)
+        refresh_token = cls.create_refresh_token(token_data)
+
+        logger.info("2FA verified, user logged in: %s", email)
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "user": safe_user,
+            "requires_2fa": False,
+        }
+
+    @classmethod
+    def disable_2fa(cls, user_id: str, code: str) -> bool:
+        """Disable 2FA after verifying a valid TOTP code."""
+        with db() as conn:
+            row = conn.execute(
+                "SELECT totp_secret, is_2fa_enabled FROM users WHERE id=?",
+                (user_id,),
+            ).fetchone()
+            if not row:
+                raise NotFoundError(detail="User not found")
+            user = dict(row)
+            if not user.get("is_2fa_enabled"):
+                raise UnauthorizedError(detail="2FA is not enabled")
+
+            totp = pyotp.TOTP(user["totp_secret"])
+            if not totp.verify(code, valid_window=1):
+                raise UnauthorizedError(detail="Invalid verification code")
+
+            conn.execute(
+                "UPDATE users SET is_2fa_enabled=0, totp_secret=NULL WHERE id=?",
+                (user_id,),
+            )
+
+        logger.info("2FA disabled for user: %s", user_id)
+        return True
+
+    # ── Google OAuth ────────────────────────────────────────────
+
+    @classmethod
+    def google_login(cls, id_token_str: str) -> dict:
+        """Authenticate or register a user via Google ID token.
+
+        Verifies the Google ID token, creates an account if new,
+        and returns JWT tokens.
+        """
+        from google.oauth2 import id_token
+        from google.auth.transport import requests as google_requests
+
+        try:
+            idinfo = id_token.verify_oauth2_token(
+                id_token_str,
+                google_requests.Request(),
+                settings.GOOGLE_CLIENT_ID,
+            )
+        except Exception as exc:
+            logger.warning("Google token verification failed: %s", exc)
+            raise UnauthorizedError(detail="Invalid Google credential")
+
+        google_id = idinfo.get("sub")
+        email = idinfo.get("email")
+        name = idinfo.get("name", email.split("@")[0] if email else "User")
+        avatar = idinfo.get("picture", "")
+
+        if not email:
+            raise UnauthorizedError(detail="Google account has no email")
+
+        with db() as conn:
+            row = conn.execute(
+                "SELECT * FROM users WHERE email=?", (email,)
+            ).fetchone()
+
+            if row:
+                # Existing user — link OAuth if not yet linked
+                user_dict = dict(row)
+                if not user_dict.get("oauth_provider"):
+                    conn.execute(
+                        "UPDATE users SET oauth_provider=?, oauth_id=?, avatar_url=? WHERE id=?",
+                        ("google", google_id, avatar, user_dict["id"]),
+                    )
+                # Re-fetch
+                row = conn.execute(
+                    "SELECT * FROM users WHERE email=?", (email,)
+                ).fetchone()
+                user_dict = dict(row)
+            else:
+                # New user via Google
+                user_id = f"user-{uuid.uuid4().hex[:8]}"
+                created_at = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    """
+                    INSERT INTO users (id, email, name, hashed_password, role, plan, company, phone,
+                                       created_at, is_active, oauth_provider, oauth_id, avatar_url, is_verified)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id, email, name, "",  # no password for OAuth users
+                        "user", "starter", "", "",
+                        created_at, 1, "google", google_id, avatar, 1,
+                    ),
+                )
+                row = conn.execute(
+                    "SELECT * FROM users WHERE id=?", (user_id,)
+                ).fetchone()
+                user_dict = dict(row)
+
+        if not user_dict.get("is_active", 1):
+            raise UnauthorizedError(detail="Account is deactivated")
+
+        safe_user = _safe_user(user_dict)
+        token_data = {
+            "sub": user_dict["email"],
+            "role": user_dict.get("role", "user"),
+            "user_id": user_dict["id"],
+            "is_super_admin": bool(user_dict.get("is_super_admin", 0)),
+            "tenant_id": user_dict.get("tenant_id", ""),
+        }
+        access_token = cls.create_access_token(token_data)
+        refresh_token = cls.create_refresh_token(token_data)
+
+        logger.info("Google login: %s (new=%s)", email, not bool(row))
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "user": safe_user,
+            "requires_2fa": False,
+        }
+
+    # ── Forgot / Reset Password ─────────────────────────────────
+
+    @classmethod
+    def create_password_reset_token(cls, email: str) -> Optional[str]:
+        """Create a short-lived JWT for password reset.
+
+        Returns None (silently) if email doesn't exist, to prevent enumeration.
+        """
+        with db() as conn:
+            row = conn.execute(
+                "SELECT id FROM users WHERE email=?", (email,)
+            ).fetchone()
+
+        if not row:
+            return None  # Don't reveal whether email exists
+
+        token = cls.create_access_token(
+            {"sub": email, "type": "password_reset", "user_id": dict(row)["id"]},
+            expires_delta=timedelta(minutes=15),
+        )
+        logger.info("Password reset token created for: %s", email)
+        return token
+
+    @classmethod
+    def reset_password(cls, token: str, new_password: str) -> bool:
+        """Reset password using a valid reset token."""
+        payload = cls.decode_token(token)
+        if payload.get("type") != "password_reset":
+            raise UnauthorizedError(detail="Invalid reset token")
+
+        email = payload.get("sub")
+        if not email:
+            raise UnauthorizedError(detail="Invalid token: missing subject")
+
+        hashed = cls.hash_password(new_password)
+        with db() as conn:
+            result = conn.execute(
+                "UPDATE users SET hashed_password=? WHERE email=?",
+                (hashed, email),
+            )
+            if result.rowcount == 0:
+                raise NotFoundError(detail="User not found")
+
+        logger.info("Password reset completed for: %s", email)
+        return True
+
+
 # ── Private Helpers ──────────────────────────────────────────────
 
 
@@ -436,4 +715,5 @@ def _safe_user(user_dict: dict) -> dict:
         "is_super_admin": bool(user_dict.get("is_super_admin", 0)),
         "tenant_id": user_dict.get("tenant_id", ""),
         "created_at": user_dict.get("created_at", ""),
+        "is_2fa_enabled": bool(user_dict.get("is_2fa_enabled", 0)),
     }

@@ -157,3 +157,80 @@ class PasswordChangeRequest(BaseModel):
         return v
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ── 2FA Schemas ──────────────────────────────────────────────────
+
+
+class TwoFactorSetupResponse(BaseModel):
+    """Response after initiating 2FA setup — contains secret + QR URI."""
+
+    secret: str
+    qr_uri: str
+    message: str = "Scan the QR code with your authenticator app"
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    """Request to verify a TOTP code (6-digit)."""
+
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class TwoFactorLoginRequest(BaseModel):
+    """Request to complete login with 2FA code."""
+
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+    temp_token: str = Field(..., min_length=1)
+
+
+class LoginResponse(BaseModel):
+    """Extended login response that may indicate 2FA is required."""
+
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_type: str = "bearer"
+    expires_in: Optional[int] = None
+    user: Optional[dict[str, Any]] = None
+    requires_2fa: bool = False
+    temp_token: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ── Google OAuth Schemas ─────────────────────────────────────────
+
+
+class GoogleAuthRequest(BaseModel):
+    """Google OAuth token from frontend."""
+
+    credential: str = Field(..., min_length=1, description="Google ID token from Sign-In")
+
+
+# ── Forgot / Reset Password Schemas ─────────────────────────────
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Request a password reset email."""
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """Reset password with token from email."""
+
+    token: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password must contain at least one digit")
+        return v
+
+    model_config = ConfigDict(from_attributes=True)
