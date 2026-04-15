@@ -45,7 +45,6 @@ const navSections = [
   {
     label: 'DEPLOY',
     items: [
-      { icon: Phone,         name: 'Phone Numbers', path: '/voice/phone-numbers' },
       { icon: Globe,         name: 'Channels',       path: '/voice/channels' },
       { icon: PhoneOutgoing, name: 'Campaigns',      path: '/voice/campaigns' },
     ],
