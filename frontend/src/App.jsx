@@ -50,8 +50,8 @@ const TenantDetail = lazy(() => import('./modules/admin/TenantDetail'))
 const PlatformTicketsInbox = lazy(() => import('./modules/admin/PlatformTicketsInbox'))
 const PlatformTicketDetail = lazy(() => import('./modules/admin/PlatformTicketDetail'))
 const CrossTenantUsersPage = lazy(() => import('./modules/admin/CrossTenantUsersPage'))
-const PlansPage = lazy(() => import('./modules/admin/PlansPage'))
-const FeatureFlagsPage = lazy(() => import('./modules/admin/FeatureFlagsPage'))
+// Plans page removed — VoiceFlow AI is prepaid wallet only
+// Feature Flags page removed — per-tenant feature toggles live on Tenant Detail
 const SuperAdminSettingsPage = lazy(() => import('./modules/admin/SuperAdminSettingsPage'))
 
 const PlatformSupport = lazy(() => import('./pages/PlatformSupport'))
@@ -103,8 +103,6 @@ function App() {
           <Route path="tickets" element={<S><PlatformTicketsInbox /></S>} />
           <Route path="tickets/:ticketId" element={<S><PlatformTicketDetail /></S>} />
           <Route path="users" element={<S><CrossTenantUsersPage /></S>} />
-          <Route path="plans" element={<S><PlansPage /></S>} />
-          <Route path="features" element={<S><FeatureFlagsPage /></S>} />
           <Route path="settings" element={<S><SuperAdminSettingsPage /></S>} />
           <Route path="pricing" element={<S><AgencyPricingPage /></S>} />
         </Route>

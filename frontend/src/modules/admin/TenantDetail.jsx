@@ -46,11 +46,10 @@ const DEMO_FEATURES = [
  { key: 'voice.integrations', name: 'Integrations', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'CRM / webhook / Zapier integrations', route: '/voice/integrations' },
  { key: 'voice.api', name: 'API & Developer', parent_key: 'voice_ai', category: 'Voice AI', enabled: true, is_premium: 0, description: 'REST + WebSocket API keys', route: '/voice/api' },
 
- // ACCOUNT (billing group)
- { key: 'billing', name: 'Billing & Wallet', parent_key: null, category: 'Billing', enabled: true, is_premium: 0, description: 'Subscription, prepaid wallet, recharge', route: '/voice/billing' },
+ // ACCOUNT (billing group — prepaid wallet model, no subscriptions)
+ { key: 'billing', name: 'Billing & Wallet', parent_key: null, category: 'Billing', enabled: true, is_premium: 0, description: 'Prepaid wallet + recharge', route: '/voice/wallet' },
  { key: 'billing.wallet', name: 'Wallet', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'Prepaid balance + recharge', route: '/voice/wallet' },
  { key: 'billing.tenant_pricing', name: 'My Pricing', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'White-label markup (tenant only)', route: '/voice/tenant-pricing' },
- { key: 'billing.subscription', name: 'Subscription', parent_key: 'billing', category: 'Billing', enabled: true, is_premium: 0, description: 'Monthly subscription plans', route: '/voice/billing' },
 ]
 
 export default function TenantDetail() {
@@ -176,11 +175,6 @@ export default function TenantDetail() {
  <h1 className="text-2xl font-bold text-slate-900">{tenant?.name}</h1>
  <div className="flex items-center gap-3 mt-1">
  <span className="flex items-center gap-1 text-sm text-slate-500"><Globe className="w-3.5 h-3.5" /> {tenant?.slug}</span>
- <span className={`px-2.5 py-0.5 rounded-lg text-xs font-semibold ${
- tenant?.plan_id === 'enterprise' ? 'bg-violet-50 text-violet-700 border border-violet-200' :
- tenant?.plan_id === 'professional' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
- 'bg-slate-100 text-slate-600 border border-slate-200'
- }`}>{tenant?.plan_id}</span>
  </div>
  </div>
  </div>

@@ -181,7 +181,7 @@ export default function SuperAdminDashboard() {
  </div>
  <div className="flex-1 min-w-0">
  <p className="font-medium text-slate-900 truncate text-xs">{tenant.name}</p>
- <p className="text-[10px] text-slate-400">{tenant.user_count || 0} users · {tenant.plan_id}</p>
+ <p className="text-[10px] text-slate-400">{tenant.user_count || 0} users</p>
  </div>
  <span className={`w-1.5 h-1.5 rounded-full ${tenant.is_active ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'bg-white/20'}`} />
  </Link>

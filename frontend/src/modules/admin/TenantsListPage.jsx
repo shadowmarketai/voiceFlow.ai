@@ -62,9 +62,6 @@ function TenantCard({ t, onClick }) {
         <ChevronRight className="w-4 h-4 text-slate-400 flex-shrink-0" aria-hidden="true" />
       </div>
       <div className="flex items-center gap-2 mt-3 flex-wrap">
-        <span className="px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-600 capitalize">
-          {t.plan_id || '—'}
-        </span>
         <span
           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
             t.is_active
@@ -115,8 +112,7 @@ export default function TenantsListPage() {
     return (
       t.name?.toLowerCase().includes(q) ||
       t.slug?.toLowerCase().includes(q) ||
-      t.id?.toLowerCase().includes(q) ||
-      t.plan_id?.toLowerCase().includes(q)
+      t.id?.toLowerCase().includes(q)
     )
   })
 
@@ -214,7 +210,6 @@ export default function TenantsListPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-left">
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tenant</th>
-                  <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Plan</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Users</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
@@ -240,7 +235,7 @@ export default function TenantsListPage() {
                     tabIndex={0}
                     role="row"
                     className="group hover:bg-slate-50/80 cursor-pointer transition-colors duration-100 focus-visible:outline-none focus-visible:bg-indigo-50/40"
-                    aria-label={`${t.name} — ${t.plan_id || 'no plan'} — ${t.is_active ? 'active' : 'suspended'}`}
+                    aria-label={`${t.name} — ${t.is_active ? 'active' : 'suspended'}`}
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
@@ -256,9 +251,6 @@ export default function TenantsListPage() {
                           <p className="text-xs text-slate-400 mt-0.5">{t.slug || t.id}</p>
                         </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <PlanBadge plan={t.plan_id} />
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1.5 text-slate-600 text-sm">
@@ -308,19 +300,6 @@ function Stat({ label, value, accent }) {
   )
 }
 
-function PlanBadge({ plan }) {
-  const styles = {
-    enterprise: 'bg-violet-50 text-violet-700 ring-1 ring-violet-200/80',
-    professional: 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200/80',
-    starter: 'bg-slate-100 text-slate-600',
-  }
-  return (
-    <span className={`inline-block px-2.5 py-1 rounded-md text-xs font-semibold capitalize ${styles[plan] || 'bg-slate-100 text-slate-600'}`}>
-      {plan || '—'}
-    </span>
-  )
-}
-
 function StatusPill({ active }) {
   return (
     <span
@@ -363,7 +342,7 @@ function EmptyState({ hasQuery }) {
 
 function CreateTenantModal({ onClose, onCreated }) {
   const [form, setForm] = useState({
-    name: '', slug: '', plan_id: 'starter', max_users: 5, primary_color: '#4f46e5',
+    name: '', slug: '', max_users: 5, primary_color: '#4f46e5',
   })
   const [submitting, setSubmitting] = useState(false)
   const firstInputRef = useRef(null)
@@ -472,31 +451,16 @@ function CreateTenantModal({ onClose, onCreated }) {
             />
           </FormField>
 
-          <div className="grid grid-cols-2 gap-3">
-            <FormField id="ct-plan" label="Plan">
-              <select
-                id="ct-plan"
-                value={form.plan_id}
-                onChange={(e) => setForm({ ...form, plan_id: e.target.value })}
-                className={INPUT_CLS}
-              >
-                <option value="starter">Starter</option>
-                <option value="professional">Professional</option>
-                <option value="enterprise">Enterprise</option>
-              </select>
-            </FormField>
-
-            <FormField id="ct-maxusers" label="Max Users">
-              <input
-                id="ct-maxusers"
-                type="number"
-                min="1"
-                value={form.max_users}
-                onChange={(e) => setForm({ ...form, max_users: parseInt(e.target.value) || 1 })}
-                className={INPUT_CLS}
-              />
-            </FormField>
-          </div>
+          <FormField id="ct-maxusers" label="Max Users">
+            <input
+              id="ct-maxusers"
+              type="number"
+              min="1"
+              value={form.max_users}
+              onChange={(e) => setForm({ ...form, max_users: parseInt(e.target.value) || 1 })}
+              className={INPUT_CLS}
+            />
+          </FormField>
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 mt-2">
