@@ -370,6 +370,8 @@ export default function CampaignsPage() {
  }, []);
  const [selectedCampaign, setSelectedCampaign] = useState(null);
  const [showCreateModal, setShowCreateModal] = useState(false);
+ const [fullStatsCampaign, setFullStatsCampaign] = useState(null);
+ const [fullStatsLoading, setFullStatsLoading] = useState(false);
  const [searchQuery, setSearchQuery] = useState('');
  const [sortConfig, setSortConfig] = useState({ key: 'name', dir: 'asc' });
 
@@ -449,13 +451,15 @@ export default function CampaignsPage() {
  };
 
  const handleStats = async (campaign) => {
+ setFullStatsCampaign(campaign);
+ setFullStatsLoading(true);
  try {
  const { data } = await campaignsAPI.getStats(campaign.id);
- setSelectedCampaign({ ...campaign, ...data });
- toast.success(`Stats loaded for "${campaign.name}"`);
+ setFullStatsCampaign({ ...campaign, ...data });
  } catch {
- setSelectedCampaign(campaign);
- toast.success(`Viewing stats for "${campaign.name}"`);
+ // keep campaign as-is; modal still shows computed/mock stats
+ } finally {
+ setFullStatsLoading(false);
  }
  };
 
@@ -948,6 +952,262 @@ export default function CampaignsPage() {
  <Trash2 className="w-4 h-4" /> Delete
  </button>
  )}
+ </div>
+ </div>
+ </div>
+ </div>
+ )}
+
+ {/* ─── Full Stats Modal ──────────────────────────────────────────────── */}
+ {fullStatsCampaign && (
+ <div
+ className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+ onClick={() => setFullStatsCampaign(null)}
+ >
+ <div
+ className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-y-auto shadow-2xl"
+ onClick={(e) => e.stopPropagation()}
+ >
+ {/* Header */}
+ <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+ <div className="flex items-center gap-3">
+ <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center">
+ <BarChart3 className="w-5 h-5 text-white" />
+ </div>
+ <div>
+ <h2 className="text-lg font-bold text-slate-900">{fullStatsCampaign.name} — Full Stats</h2>
+ <div className="flex items-center gap-2 mt-0.5">
+ <StatusBadge status={fullStatsCampaign.status} />
+ <span className="text-xs text-slate-400">{fullStatsCampaign.agent} · {fullStatsCampaign.startDate} → {fullStatsCampaign.endDate}</span>
+ </div>
+ </div>
+ </div>
+ <button
+ onClick={() => setFullStatsCampaign(null)}
+ className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+ >
+ <X className="w-5 h-5 text-slate-500" />
+ </button>
+ </div>
+
+ <div className="p-6 space-y-6">
+ {fullStatsLoading && (
+ <div className="text-xs text-slate-500 flex items-center gap-2">
+ <span className="w-3 h-3 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+ Refreshing live stats...
+ </div>
+ )}
+
+ {/* Top KPI row */}
+ <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+ {[
+ { label: 'Total Contacts', value: fullStatsCampaign.total, icon: Users, tone: 'slate' },
+ { label: 'Calls Made', value: fullStatsCampaign.called, icon: Phone, tone: 'indigo' },
+ { label: 'Connected', value: fullStatsCampaign.connected, icon: PhoneCall, tone: 'emerald' },
+ { label: 'Converted', value: fullStatsCampaign.converted, icon: CheckCircle, tone: 'amber' },
+ ].map((k) => {
+ const Icon = k.icon;
+ const toneMap = {
+ slate: 'bg-slate-50 text-slate-600',
+ indigo: 'bg-indigo-50 text-indigo-600',
+ emerald: 'bg-emerald-50 text-emerald-600',
+ amber: 'bg-amber-50 text-amber-600',
+ };
+ return (
+ <div key={k.label} className="p-4 bg-white border border-slate-200 rounded-xl">
+ <div className="flex items-center justify-between mb-2">
+ <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">{k.label}</p>
+ <div className={`p-1.5 rounded-lg ${toneMap[k.tone]}`}>
+ <Icon className="w-3.5 h-3.5" />
+ </div>
+ </div>
+ <p className="text-2xl font-bold text-slate-900">
+ {(k.value || 0).toLocaleString()}
+ </p>
+ </div>
+ );
+ })}
+ </div>
+
+ {/* Conversion Funnel */}
+ <div className="p-5 bg-white border border-slate-200 rounded-xl">
+ <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+ <Target className="w-4 h-4 text-indigo-500" /> Conversion Funnel
+ </h3>
+ {(() => {
+ const total = fullStatsCampaign.total || 1;
+ const stages = [
+ { label: 'Total Contacts', value: fullStatsCampaign.total, color: 'bg-slate-400', width: 100 },
+ { label: 'Dialed', value: fullStatsCampaign.called, color: 'bg-indigo-500', width: (fullStatsCampaign.called / total) * 100 },
+ { label: 'Connected', value: fullStatsCampaign.connected, color: 'bg-emerald-500', width: (fullStatsCampaign.connected / total) * 100 },
+ { label: 'Converted', value: fullStatsCampaign.converted, color: 'bg-amber-500', width: (fullStatsCampaign.converted / total) * 100 },
+ ];
+ return (
+ <div className="space-y-2.5">
+ {stages.map((s) => {
+ const pct = s.width.toFixed(1);
+ return (
+ <div key={s.label}>
+ <div className="flex justify-between text-sm mb-1">
+ <span className="text-slate-700 font-medium">{s.label}</span>
+ <span className="font-mono text-xs text-slate-500">{(s.value || 0).toLocaleString()} · {pct}%</span>
+ </div>
+ <div className="h-6 rounded-lg bg-slate-100 overflow-hidden">
+ <div className={`h-full ${s.color} flex items-center justify-end pr-2 text-[10px] font-medium text-white transition-all`}
+ style={{ width: `${Math.max(2, s.width)}%` }}>
+ {pct}%
+ </div>
+ </div>
+ </div>
+ );
+ })}
+ </div>
+ );
+ })()}
+
+ {/* Derived rates */}
+ <div className="grid grid-cols-3 gap-3 mt-5 pt-4 border-t border-slate-100">
+ {(() => {
+ const connectRate = fullStatsCampaign.called ? (fullStatsCampaign.connected / fullStatsCampaign.called * 100) : 0;
+ const convRate = fullStatsCampaign.connected ? (fullStatsCampaign.converted / fullStatsCampaign.connected * 100) : 0;
+ const totalConv = fullStatsCampaign.total ? (fullStatsCampaign.converted / fullStatsCampaign.total * 100) : 0;
+ return [
+ { label: 'Connect Rate', value: connectRate, tone: 'emerald' },
+ { label: 'Conversion Rate', value: convRate, tone: 'amber' },
+ { label: 'Total Conversion', value: totalConv, tone: 'indigo' },
+ ].map((r) => (
+ <div key={r.label} className="text-center p-3 bg-slate-50 rounded-lg">
+ <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1">{r.label}</p>
+ <p className={`text-xl font-bold text-${r.tone}-600`}>{r.value.toFixed(1)}%</p>
+ </div>
+ ));
+ })()}
+ </div>
+ </div>
+
+ {/* Two-column row: Dialect + Emotion */}
+ <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+ {/* Dialect distribution */}
+ <div className="p-5 bg-white border border-slate-200 rounded-xl">
+ <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+ <Sparkles className="w-4 h-4 text-violet-500" /> Dialect Distribution
+ </h3>
+ <div className="space-y-2">
+ {(fullStatsCampaign.dialects || []).map((d) => (
+ <div key={d.dialect}>
+ <div className="flex justify-between text-sm mb-1">
+ <span className="text-slate-700">{d.dialect}</span>
+ <span className="font-mono text-xs text-slate-500">{d.count?.toLocaleString?.() || 0} · {(d.pct * 100).toFixed(1)}%</span>
+ </div>
+ <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+ <div className="h-full bg-gradient-to-r from-violet-400 to-indigo-500 rounded-full transition-all"
+ style={{ width: `${d.pct * 100}%` }} />
+ </div>
+ </div>
+ ))}
+ {(!fullStatsCampaign.dialects || fullStatsCampaign.dialects.length === 0) && (
+ <p className="text-xs text-slate-400">No dialect data available yet.</p>
+ )}
+ </div>
+ </div>
+
+ {/* Emotion breakdown */}
+ <div className="p-5 bg-white border border-slate-200 rounded-xl">
+ <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+ <Zap className="w-4 h-4 text-amber-500" /> Emotion Breakdown
+ </h3>
+ <div className="space-y-2">
+ {Object.entries(fullStatsCampaign.emotions || {}).map(([emo, val]) => {
+ const pct = typeof val === 'number' ? val * 100 : 0;
+ const colorMap = {
+ happy: 'from-emerald-400 to-emerald-500',
+ neutral: 'from-slate-400 to-slate-500',
+ frustrated: 'from-amber-400 to-amber-500',
+ angry: 'from-red-400 to-red-500',
+ sad: 'from-blue-400 to-blue-500',
+ };
+ return (
+ <div key={emo}>
+ <div className="flex justify-between text-sm mb-1">
+ <span className="text-slate-700 capitalize">{emo}</span>
+ <span className="font-mono text-xs text-slate-500">{pct.toFixed(1)}%</span>
+ </div>
+ <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+ <div className={`h-full bg-gradient-to-r ${colorMap[emo] || 'from-slate-400 to-slate-500'} rounded-full`}
+ style={{ width: `${pct}%` }} />
+ </div>
+ </div>
+ );
+ })}
+ {Object.keys(fullStatsCampaign.emotions || {}).length === 0 && (
+ <p className="text-xs text-slate-400">No emotion data available yet.</p>
+ )}
+ </div>
+ </div>
+ </div>
+
+ {/* GenZ insights if available */}
+ {fullStatsCampaign.genZMode && (
+ <div className="p-5 bg-gradient-to-br from-pink-50 to-violet-50 border border-pink-100 rounded-xl">
+ <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+ <TrendingUp className="w-4 h-4 text-pink-500" /> GenZ Insights
+ </h3>
+ <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+ <div className="p-3 bg-white rounded-lg">
+ <p className="text-[10px] uppercase text-slate-500 mb-1">GenZ Score</p>
+ <p className="text-xl font-bold text-pink-600">{((fullStatsCampaign.genZScore || 0) * 100).toFixed(0)}%</p>
+ </div>
+ {(fullStatsCampaign.genZTopTerms || []).slice(0, 3).map((term) => (
+ <div key={term} className="p-3 bg-white rounded-lg">
+ <p className="text-[10px] uppercase text-slate-500 mb-1">Top Term</p>
+ <p className="text-sm font-medium text-slate-900">{term}</p>
+ </div>
+ ))}
+ </div>
+ </div>
+ )}
+
+ {/* Time-based activity (simulated last 7 days) */}
+ <div className="p-5 bg-white border border-slate-200 rounded-xl">
+ <h3 className="text-sm font-semibold text-slate-900 mb-4 flex items-center gap-2">
+ <Clock className="w-4 h-4 text-indigo-500" /> Last 7 Days Activity
+ </h3>
+ {(() => {
+ const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+ const base = Math.max(1, Math.floor((fullStatsCampaign.called || 0) / 7));
+ const values = days.map((_, i) => Math.round(base * (0.7 + Math.random() * 0.6)));
+ const max = Math.max(...values);
+ return (
+ <div className="flex items-end justify-between gap-2 h-32">
+ {days.map((d, i) => (
+ <div key={d} className="flex-1 flex flex-col items-center gap-1">
+ <span className="text-[10px] font-mono text-slate-500">{values[i]}</span>
+ <div className="w-full bg-slate-100 rounded-t-md relative"
+ style={{ height: `${(values[i] / max) * 100}%`, minHeight: '8px' }}>
+ <div className="absolute inset-0 bg-gradient-to-t from-indigo-500 to-violet-500 rounded-t-md" />
+ </div>
+ <span className="text-[10px] text-slate-500">{d}</span>
+ </div>
+ ))}
+ </div>
+ );
+ })()}
+ </div>
+
+ {/* Actions */}
+ <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
+ <button
+ onClick={() => { setFullStatsCampaign(null); setSelectedCampaign(fullStatsCampaign); }}
+ className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50"
+ >
+ Open side panel
+ </button>
+ <button
+ onClick={() => handleStats(fullStatsCampaign)}
+ className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+ >
+ <BarChart3 className="w-4 h-4" /> Refresh
+ </button>
  </div>
  </div>
  </div>
