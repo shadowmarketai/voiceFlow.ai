@@ -20,6 +20,8 @@ class UserListItem(BaseModel):
     plan: str = "starter"
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
+    oauth_provider: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,6 +54,19 @@ class UserInviteRequest(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserUpdateRequest(BaseModel):
+    """Request to update a user's details."""
+    full_name: Optional[str] = Field(default=None, max_length=200)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(default=None, max_length=20)
+    company: Optional[str] = Field(default=None, max_length=200)
+    role: Optional[str] = Field(default=None, pattern="^(admin|manager|agent|user|viewer)$")
+    plan: Optional[str] = Field(default=None, max_length=50)
+    is_active: Optional[bool] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class UserDetailResponse(BaseModel):
     """Detailed user response for admin views."""
     id: str
@@ -65,5 +80,7 @@ class UserDetailResponse(BaseModel):
     plan: str = "starter"
     created_at: Optional[str] = None
     last_login_at: Optional[str] = None
+    oauth_provider: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

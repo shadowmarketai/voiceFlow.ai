@@ -268,10 +268,14 @@ def _migrate_users_schema(engine):
     existing = {c["name"] for c in inspector.get_columns("users")}
 
     new_columns = [
+        ("full_name",      "TEXT"),
         ("oauth_provider", "VARCHAR(50)"),
         ("oauth_id",       "VARCHAR(255)"),
         ("avatar_url",     "VARCHAR(500)"),
         ("is_verified",    "BOOLEAN DEFAULT 0"),
+        ("is_super_admin", "INTEGER DEFAULT 0"),
+        ("tenant_id",      "TEXT"),
+        ("last_login_at",  "TEXT"),
     ]
 
     added = []
@@ -385,6 +389,7 @@ if not USE_POSTGRES:
         id          TEXT PRIMARY KEY,
         email       TEXT UNIQUE NOT NULL,
         name        TEXT,
+        full_name   TEXT,
         hashed_password TEXT NOT NULL,
         role        TEXT DEFAULT 'user',
         plan        TEXT DEFAULT 'starter',
@@ -393,9 +398,12 @@ if not USE_POSTGRES:
         created_at  TEXT DEFAULT (datetime('now')),
         is_active   INTEGER DEFAULT 1,
         is_verified INTEGER DEFAULT 0,
+        is_super_admin INTEGER DEFAULT 0,
+        tenant_id   TEXT,
         oauth_provider TEXT,
         oauth_id    TEXT,
-        avatar_url  TEXT
+        avatar_url  TEXT,
+        last_login_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS leads (

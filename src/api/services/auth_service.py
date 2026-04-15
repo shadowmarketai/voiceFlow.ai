@@ -176,12 +176,13 @@ class AuthService:
 
             conn.execute(
                 """
-                INSERT INTO users (id, email, name, hashed_password, role, plan, company, phone, created_at, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO users (id, email, name, full_name, hashed_password, role, plan, company, phone, created_at, is_active, is_verified)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
                     email,
+                    full_name,
                     full_name,
                     hashed,
                     "user",
@@ -190,6 +191,7 @@ class AuthService:
                     phone or "",
                     created_at,
                     1,
+                    0,
                 ),
             )
 
@@ -256,6 +258,13 @@ class AuthService:
                 "requires_2fa": True,
                 "temp_token": temp_token,
             }
+
+        # Update last_login_at
+        with db() as conn:
+            conn.execute(
+                "UPDATE users SET last_login_at = ? WHERE id = ?",
+                (datetime.now(timezone.utc).isoformat(), user_dict["id"]),
+            )
 
         safe_user = _safe_user(user_dict)
         token_data = {
@@ -638,12 +647,12 @@ class AuthService:
                 created_at = datetime.now(timezone.utc).isoformat()
                 conn.execute(
                     """
-                    INSERT INTO users (id, email, name, hashed_password, role, plan, company, phone,
+                    INSERT INTO users (id, email, name, full_name, hashed_password, role, plan, company, phone,
                                        created_at, is_active, oauth_provider, oauth_id, avatar_url, is_verified)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        user_id, email, name, "",  # no password for OAuth users
+                        user_id, email, name, name, "",  # no password for OAuth users
                         "user", "starter", "", "",
                         created_at, 1, "google", google_id, avatar, 1,
                     ),

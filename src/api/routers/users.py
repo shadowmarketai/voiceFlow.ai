@@ -21,6 +21,7 @@ from api.schemas.user_management import (
     UserListResponse,
     UserRoleUpdate,
     UserStatusUpdate,
+    UserUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ async def list_users(
                 conditions.append("is_active = 0")
 
             if search:
-                conditions.append("(email LIKE ? OR full_name LIKE ?)")
+                conditions.append("(email LIKE ? OR COALESCE(full_name, name, '') LIKE ?)")
                 params.extend([f"%{search}%", f"%{search}%"])
 
             where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -71,7 +72,8 @@ async def list_users(
             # Fetch page
             offset = (page - 1) * per_page
             rows = conn.execute(
-                f"SELECT id, email, full_name, role, is_active, company, plan, created_at, last_login_at "
+                f"SELECT id, email, COALESCE(full_name, name, '') as full_name, role, is_active, "
+                f"company, plan, created_at, last_login_at, oauth_provider, avatar_url "
                 f"FROM users {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 params + [per_page, offset],
             ).fetchall()
@@ -80,13 +82,15 @@ async def list_users(
                 UserListItem(
                     id=str(r["id"]),
                     email=r["email"],
-                    full_name=r.get("full_name", r.get("name", "")),
+                    full_name=r["full_name"] or "",
                     role=r.get("role", "user"),
                     is_active=bool(r.get("is_active", 1)),
                     company=r.get("company"),
                     plan=r.get("plan", "starter"),
                     created_at=str(r["created_at"]) if r.get("created_at") else None,
                     last_login_at=str(r["last_login_at"]) if r.get("last_login_at") else None,
+                    oauth_provider=r.get("oauth_provider"),
+                    avatar_url=r.get("avatar_url"),
                 )
                 for r in rows
             ]
@@ -112,8 +116,9 @@ async def get_user(
     try:
         with db() as conn:
             row = conn.execute(
-                "SELECT id, email, full_name, role, is_active, is_verified, "
-                "company, phone, plan, created_at, last_login_at "
+                "SELECT id, email, COALESCE(full_name, name, '') as full_name, role, is_active, "
+                "is_verified, company, phone, plan, created_at, last_login_at, "
+                "oauth_provider, avatar_url "
                 "FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
@@ -124,7 +129,7 @@ async def get_user(
         return UserDetailResponse(
             id=str(row["id"]),
             email=row["email"],
-            full_name=row.get("full_name", row.get("name", "")),
+            full_name=row["full_name"] or "",
             role=row.get("role", "user"),
             is_active=bool(row.get("is_active", 1)),
             is_verified=bool(row.get("is_verified", 0)),
@@ -133,6 +138,8 @@ async def get_user(
             plan=row.get("plan", "starter"),
             created_at=str(row["created_at"]) if row.get("created_at") else None,
             last_login_at=str(row["last_login_at"]) if row.get("last_login_at") else None,
+            oauth_provider=row.get("oauth_provider"),
+            avatar_url=row.get("avatar_url"),
         )
 
     except HTTPException:
@@ -140,6 +147,91 @@ async def get_user(
     except Exception as exc:
         logger.error("Failed to get user %s: %s", user_id, exc)
         raise HTTPException(status_code=500, detail="Failed to get user")
+
+
+# ── PUT /users/{id} — Update user details ─────────────────────
+
+
+@router.put("/{user_id}", response_model=UserDetailResponse, summary="Update user details")
+async def update_user(
+    user_id: str,
+    body: UserUpdateRequest,
+    current_user: dict = Depends(require_permission("userManagement", "update")),
+) -> UserDetailResponse:
+    """Update a user's profile details (name, email, phone, company, role, plan, status)."""
+    try:
+        updates = body.model_dump(exclude_none=True)
+        if not updates:
+            raise HTTPException(status_code=400, detail="No fields to update")
+
+        with db() as conn:
+            row = conn.execute("SELECT id FROM users WHERE id = ?", (user_id,)).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="User not found")
+
+            # Check email uniqueness if changing email
+            if "email" in updates:
+                existing = conn.execute(
+                    "SELECT id FROM users WHERE email = ? AND id != ?",
+                    (updates["email"], user_id),
+                ).fetchone()
+                if existing:
+                    raise HTTPException(status_code=409, detail="Email already in use")
+
+            # Build SET clause
+            set_parts = []
+            params = []
+            for col, val in updates.items():
+                if col == "full_name":
+                    # Update both name and full_name for compatibility
+                    set_parts.append("name = ?")
+                    params.append(val)
+                    set_parts.append("full_name = ?")
+                    params.append(val)
+                elif col == "is_active":
+                    set_parts.append("is_active = ?")
+                    params.append(1 if val else 0)
+                else:
+                    set_parts.append(f"{col} = ?")
+                    params.append(val)
+
+            params.append(user_id)
+            conn.execute(
+                f"UPDATE users SET {', '.join(set_parts)} WHERE id = ?",
+                params,
+            )
+
+            # Re-fetch updated user
+            updated = conn.execute(
+                "SELECT id, email, COALESCE(full_name, name, '') as full_name, role, is_active, "
+                "is_verified, company, phone, plan, created_at, last_login_at, "
+                "oauth_provider, avatar_url "
+                "FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+
+        logger.info("User %s updated by %s: %s", user_id, current_user.get("email"), list(updates.keys()))
+        return UserDetailResponse(
+            id=str(updated["id"]),
+            email=updated["email"],
+            full_name=updated["full_name"] or "",
+            role=updated.get("role", "user"),
+            is_active=bool(updated.get("is_active", 1)),
+            is_verified=bool(updated.get("is_verified", 0)),
+            company=updated.get("company"),
+            phone=updated.get("phone"),
+            plan=updated.get("plan", "starter"),
+            created_at=str(updated["created_at"]) if updated.get("created_at") else None,
+            last_login_at=str(updated["last_login_at"]) if updated.get("last_login_at") else None,
+            oauth_provider=updated.get("oauth_provider"),
+            avatar_url=updated.get("avatar_url"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to update user %s: %s", user_id, exc)
+        raise HTTPException(status_code=500, detail="Failed to update user")
 
 
 # ── PUT /users/{id}/role — Change role ──────────────────────────
@@ -236,10 +328,12 @@ async def invite_user(
             from passlib.hash import sha256_crypt
             hashed = sha256_crypt.hash(temp_password)
 
+            import uuid
+            user_id = f"user-{uuid.uuid4().hex[:8]}"
             conn.execute(
-                "INSERT INTO users (email, hashed_password, full_name, role, company, is_active) "
-                "VALUES (?, ?, ?, ?, ?, 1)",
-                (body.email, hashed, body.full_name, body.role, body.company),
+                "INSERT INTO users (id, email, hashed_password, name, full_name, role, company, is_active) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+                (user_id, body.email, hashed, body.full_name, body.full_name, body.role, body.company),
             )
 
         logger.info("User %s invited with role %s by %s", body.email, body.role, current_user.get("email"))
