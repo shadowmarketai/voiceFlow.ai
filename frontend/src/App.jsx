@@ -14,6 +14,7 @@ import ProtectedRoute, { SuperAdminRoute, TenantRoute } from './components/Prote
 
 // Eager-load Login
 import Login from './pages/Login'
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 
 // ── Voice AI Module ──
 const VoiceDashboardV2Page = lazy(() => import('./modules/voice-ai/pages/Dashboard'))
@@ -76,6 +77,7 @@ function App() {
       />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<S><ForgotPassword /></S>} />
 
         {/* ═══════════════════════════════════════════════════
             SUPER ADMIN — Platform Console
