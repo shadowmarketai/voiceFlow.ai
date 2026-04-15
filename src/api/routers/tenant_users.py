@@ -100,18 +100,20 @@ async def create_tenant_user(
 ) -> dict[str, Any]:
     tenant_id = user["tenant_id"]
 
-    # Enforce max_users quota from platform_tenants (if set)
+    # Enforce max_users quota from platform_tenants.
+    # 0 / NULL / negative = unlimited (agencies need to grow freely).
     with db() as conn:
         tenant_row = conn.execute(
             f"SELECT max_users FROM platform_tenants WHERE id={_ph}", (tenant_id,)
         ).fetchone()
         max_users = (dict(tenant_row).get("max_users") if tenant_row else None)
-        current_count = conn.execute(
-            f"SELECT COUNT(*) FROM users WHERE tenant_id={_ph}", (tenant_id,)
-        ).fetchone()[0]
-        if max_users and current_count >= max_users:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                f"User quota reached ({max_users}). Contact support to raise the limit.")
+        if max_users is not None and max_users > 0:
+            current_count = conn.execute(
+                f"SELECT COUNT(*) FROM users WHERE tenant_id={_ph}", (tenant_id,)
+            ).fetchone()[0]
+            if current_count >= max_users:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                    f"User quota reached ({max_users}). Contact support to raise the limit.")
 
         # Email must be unique
         dup = conn.execute(
@@ -221,6 +223,8 @@ async def tenant_info(user: dict = Depends(_require_tenant_user)) -> dict[str, A
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Tenant not found")
     t = dict(row)
+    raw_max = t.get("max_users")
+    max_users = raw_max if (raw_max is not None and raw_max > 0) else None  # None = unlimited
     return {
         "id": t.get("id"),
         "name": t.get("name"),
@@ -229,7 +233,8 @@ async def tenant_info(user: dict = Depends(_require_tenant_user)) -> dict[str, A
         "primary_color": t.get("primary_color"),
         "secondary_color": t.get("secondary_color"),
         "accent_color": t.get("accent_color"),
-        "max_users": t.get("max_users"),
+        "max_users": max_users,                 # null → unlimited
+        "unlimited_users": max_users is None,
         "current_users": user_count,
         "is_tenant_owner": bool(user.get("is_tenant_owner")),
     }

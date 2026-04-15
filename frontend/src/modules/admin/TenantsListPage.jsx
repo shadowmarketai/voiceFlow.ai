@@ -342,7 +342,7 @@ function EmptyState({ hasQuery }) {
 
 function CreateTenantModal({ onClose, onCreated }) {
   const [form, setForm] = useState({
-    name: '', slug: '', max_users: 5, primary_color: '#4f46e5',
+    name: '', slug: '', max_users: 0, primary_color: '#4f46e5',
   })
   const [submitting, setSubmitting] = useState(false)
   const firstInputRef = useRef(null)
@@ -451,14 +451,15 @@ function CreateTenantModal({ onClose, onCreated }) {
             />
           </FormField>
 
-          <FormField id="ct-maxusers" label="Max Users">
+          <FormField id="ct-maxusers" label="Max Users" hint="Leave 0 for unlimited. Agencies usually stay on 0.">
             <input
               id="ct-maxusers"
               type="number"
-              min="1"
+              min="0"
               value={form.max_users}
-              onChange={(e) => setForm({ ...form, max_users: parseInt(e.target.value) || 1 })}
+              onChange={(e) => setForm({ ...form, max_users: parseInt(e.target.value) || 0 })}
               className={INPUT_CLS}
+              placeholder="0 = unlimited"
             />
           </FormField>
 

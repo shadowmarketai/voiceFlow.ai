@@ -106,8 +106,12 @@ export default function TeamPage() {
           <div className="text-right">
             <p className="text-xs text-gray-500">Members</p>
             <p className="text-lg font-bold text-indigo-700">
-              {info.current_users} <span className="text-sm font-normal text-gray-400">/ {info.max_users || '∞'}</span>
+              {info.current_users}
+              <span className="text-sm font-normal text-gray-400">
+                {' / '}{info.unlimited_users ? '∞' : info.max_users}
+              </span>
             </p>
+            {info.unlimited_users && <p className="text-[10px] text-emerald-600 font-medium">Unlimited</p>}
           </div>
         </div>
       )}

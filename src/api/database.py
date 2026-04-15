@@ -722,6 +722,12 @@ def _seed_defaults():
                     conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT")
                 if "is_tenant_owner" not in cols:
                     conn.execute("ALTER TABLE users ADD COLUMN is_tenant_owner INTEGER DEFAULT 0")
+            # Bump any tenant that was created with the old default (≤5) to
+            # effectively unlimited so agencies aren't blocked when inviting.
+            try:
+                conn.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
+            except Exception:
+                pass
         except Exception as e:
             logger.debug("Column migration: %s", e)
         # Postgres: add column if missing (ignore errors)
@@ -729,6 +735,7 @@ def _seed_defaults():
             if USE_POSTGRES:
                 with conn.cursor() as cur:
                     cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_tenant_owner BOOLEAN DEFAULT FALSE")
+                    cur.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
         except Exception:
             pass
 
@@ -786,7 +793,7 @@ def _seed_defaults():
                 "Swetha Structures PVT LTD",
                 "swetha",
                 "professional",
-                1, 25,
+                1, 0,    # max_users = 0 → unlimited (agency can grow)
                 "Swetha Structures CRM",
                 "#f59e0b", "#1e293b", "#8b5cf6",
             ))
