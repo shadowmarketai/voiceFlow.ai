@@ -29,14 +29,15 @@ const navSections = [
   {
     label: 'MAIN',
     items: [
-      { icon: LayoutDashboard, name: 'Dashboard',    path: '/voice/dashboard-v2' },
-      { icon: Bot,             name: 'Agents',        path: '/voice/agents-list' },
+      { icon: LayoutDashboard, name: 'Dashboard',  path: '/voice/dashboard-v2' },
+      { icon: Bot,             name: 'Agents',      path: '/voice/agents-list' },
+      { icon: Radio,           name: 'Live Calls',  path: '/voice/live-calls' },
     ],
   },
   {
     label: 'BUILD',
     items: [
-      { icon: BookOpen, name: 'Knowledge Base', path: '/voice/knowledge' },
+      { icon: BookOpen, name: 'Knowledge Base',       path: '/voice/knowledge' },
       { icon: Mic,      name: 'Voice Library & Studio', path: '/voice/studio' },
     ],
   },
@@ -52,8 +53,6 @@ const navSections = [
     label: 'MONITOR',
     items: [
       { icon: MessageSquare, name: 'Conversations', path: '/voice/call-logs' },
-      { icon: Radio,         name: 'Live Calls',     path: '/voice/live-calls' },
-      { icon: BarChart3,     name: 'Analytics',      path: '/voice/analytics-dashboard' },
       { icon: FileAudio,     name: 'Recordings',     path: '/voice/recordings' },
       { icon: FlaskConical,  name: 'Testing',        path: '/voice/testing' },
       { icon: Gauge,         name: 'Quality',        path: '/voice/quality' },
@@ -69,9 +68,9 @@ const navSections = [
   {
     label: 'ACCOUNT',
     items: [
-      { icon: Wallet,     name: 'Wallet',   path: '/voice/wallet' },
+      { icon: Wallet,     name: 'Wallet',     path: '/voice/wallet' },
       { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing', tenantOnly: true },
-      { icon: Users,      name: 'Team',     path: '/voice/team',             tenantOnly: true },
+      { icon: Users,      name: 'Team',       path: '/voice/team',           tenantOnly: true },
     ],
   },
 ];
