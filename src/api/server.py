@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Tenant team management (tenant owner adds/removes users) ─
+    try:
+        from api.routers.tenant_users import router as tenant_users_router
+        application.include_router(tenant_users_router)
+        logger.info("Tenant Users router loaded")
+    except Exception as exc:
+        logger.warning("Tenant Users router not available: %s", exc)
+
     # ── Billing Pro (wallet + cost calculator) ──────────────
     try:
         from api.routers.billing_pro import router as billing_pro_router

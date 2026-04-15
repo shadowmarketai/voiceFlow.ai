@@ -720,8 +720,17 @@ def _seed_defaults():
                     conn.execute("ALTER TABLE users ADD COLUMN is_super_admin INTEGER DEFAULT 0")
                 if "tenant_id" not in cols:
                     conn.execute("ALTER TABLE users ADD COLUMN tenant_id TEXT")
+                if "is_tenant_owner" not in cols:
+                    conn.execute("ALTER TABLE users ADD COLUMN is_tenant_owner INTEGER DEFAULT 0")
         except Exception as e:
             logger.debug("Column migration: %s", e)
+        # Postgres: add column if missing (ignore errors)
+        try:
+            if USE_POSTGRES:
+                with conn.cursor() as cur:
+                    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_tenant_owner BOOLEAN DEFAULT FALSE")
+        except Exception:
+            pass
 
         # ── Step 2: Super Admin (idempotent upsert) ──
         # The platform owner's credentials are pinned here so they survive
@@ -783,25 +792,33 @@ def _seed_defaults():
             ))
             logger.info("Tenant created: Swetha Structures PVT LTD")
 
-        # ── Step 4: Swetha Structures users ──
+        # ── Step 4: Swetha demo tenant users ──
+        # Single role within a tenant: the first user is the tenant owner,
+        # everyone else is a plain user. Owner can add/remove team members.
         swetha_users = [
-            ("sw-admin", "admin@swetha.in", "Swetha Kumar", "admin", "professional", "+91 98765 43210"),
-            ("sw-manager", "manager@swetha.in", "Priya Sharma", "manager", "professional", "+91 98765 43211"),
-            ("sw-agent", "agent@swetha.in", "Rajesh Nair", "agent", "professional", "+91 98765 43212"),
+            ("sw-admin",  "admin@swetha.in",  "Swetha Kumar", "user", "+91 98765 43210", 1),
+            ("sw-user-1", "staff1@swetha.in", "Priya Sharma", "user", "+91 98765 43211", 0),
+            ("sw-user-2", "staff2@swetha.in", "Rajesh Nair",  "user", "+91 98765 43212", 0),
         ]
-        for uid, email, name, role, plan, phone in swetha_users:
+        for uid, email, name, role, phone, is_owner in swetha_users:
             existing = conn.execute(f"SELECT id FROM users WHERE email={_ph}", (email,)).fetchone()
             if not existing:
                 conn.execute(f"""
-                    INSERT INTO users (id,email,name,hashed_password,role,plan,company,phone,is_active,is_super_admin,tenant_id)
-                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
+                    INSERT INTO users (id,email,name,hashed_password,role,plan,company,phone,is_active,is_super_admin,tenant_id,is_tenant_owner)
+                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
                 """, (
                     uid, email, name,
                     pwd_context.hash("Swetha123!"),
-                    role, plan, "Swetha Structures PVT LTD", phone,
-                    1, 0, "tenant-swetha",
+                    role, "starter", "Swetha Structures PVT LTD", phone,
+                    1, 0, "tenant-swetha", is_owner,
                 ))
-        logger.info("Swetha users created: admin/manager/agent @swetha.in / Swetha123!")
+            else:
+                # Re-sync role + owner flag for existing rows
+                conn.execute(
+                    f"UPDATE users SET role={_ph}, is_tenant_owner={_ph} WHERE email={_ph}",
+                    (role, is_owner, email),
+                )
+        logger.info("Swetha tenant users synced: admin@swetha.in is owner")
 
         # ── Step 5: Demo leads for Swetha ──
         lead_count = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]

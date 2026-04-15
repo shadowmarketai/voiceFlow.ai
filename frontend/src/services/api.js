@@ -778,6 +778,17 @@ export const billingAPI = {
 };
 
 // ============================================
+// TENANT TEAM MANAGEMENT (tenant owner)
+// ============================================
+export const tenantTeamAPI = {
+  info: () => api.get('/api/v1/tenant/info'),
+  listUsers: () => api.get('/api/v1/tenant/users'),
+  createUser: (data) => api.post('/api/v1/tenant/users', data),
+  updateUser: (id, data) => api.put(`/api/v1/tenant/users/${id}`, data),
+  deleteUser: (id) => api.delete(`/api/v1/tenant/users/${id}`),
+};
+
+// ============================================
 // QUALITY & TESTING METRICS API
 // ============================================
 export const qualityAPI = {

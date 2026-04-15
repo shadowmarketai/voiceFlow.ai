@@ -17,7 +17,7 @@ import { defaultTheme } from '../config/theme';
 import {
   LayoutDashboard, Bot, Wand2, BookOpen, Mic, Phone, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
-  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings,
+  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
   Bell, X,
@@ -70,7 +70,8 @@ const navSections = [
     label: 'ACCOUNT',
     items: [
       { icon: Wallet,     name: 'Wallet',   path: '/voice/wallet' },
-      { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing' },
+      { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing', tenantOnly: true },
+      { icon: Users,      name: 'Team',     path: '/voice/team',             tenantOnly: true },
       { icon: Settings,   name: 'Settings', path: '/settings' },
     ],
   },
@@ -352,9 +353,11 @@ export default function DashboardLayout() {
                 <div className="w-5 mx-auto mb-2 border-t border-slate-100" />
               )}
               <div className="space-y-0.5">
-                {section.items.map((item) => (
-                  <SidebarNavItem key={item.path} item={item} mobile={mobile} />
-                ))}
+                {section.items
+                  .filter((item) => !item.tenantOnly || !!user?.tenant_id)
+                  .map((item) => (
+                    <SidebarNavItem key={item.path} item={item} mobile={mobile} />
+                  ))}
               </div>
             </div>
           ))}
