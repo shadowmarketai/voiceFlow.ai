@@ -750,6 +750,8 @@ export const livekitAPI = {
 export const billingAPI = {
   catalog: () => api.get('/api/v1/billing/catalog'),
   presets: () => api.get('/api/v1/billing/presets'),
+  presetsWithPrices: (view = 'user') => api.get('/api/v1/billing/presets-with-prices', { params: { view } }),
+  selectPreset: (preset_id) => api.post('/api/v1/billing/rate-plan/preset', { preset_id }),
   calculate: (data) => api.post('/api/v1/billing/calculate', data),
   ratePlan: () => api.get('/api/v1/billing/rate-plan'),
   updateProviders: (data) => api.post('/api/v1/billing/rate-plan/providers', data),

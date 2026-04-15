@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CostCalculator from '../components/CostCalculator';
+import { useAuth } from '../../../contexts/AuthContext';
 import {
   Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
   Trash2, Plus, Copy, Check, ChevronDown, ChevronRight, Save,
@@ -154,6 +155,8 @@ export default function AgentBuilder() {
   const [selectedTemplate, setSelectedTemplate] = useState('');
 
   // Voice & AI
+  const { user } = useAuth();
+  const isSuperAdmin = !!user?.is_super_admin;
   const [quickPreset, setQuickPreset] = useState('low_latency');
   // Track previous LLM catalog key for cost-impact warnings
   const prevLlmRef = useRef(LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b');
@@ -374,25 +377,31 @@ export default function AgentBuilder() {
             </div>
           </Section>
 
-          {/* LLM Configuration */}
-          <Section title="LLM Configuration" icon={Brain}>
-            <p className="text-xs text-gray-500 mb-3">Configure which language model this agent uses for conversations</p>
-            <div className="space-y-3">
-              <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Provider</label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {LLM_PROVIDERS.map(p => (
-                  <button key={p.id} onClick={() => setLlmProvider(p.id)}
-                    className={`p-3 rounded-xl border-2 text-left transition-all ${llmProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                      {p.badge && <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{p.badge}</span>}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{p.model}</p>
-                  </button>
-                ))}
+          {/* LLM Configuration — super-admin only
+              (Regular users / tenants pick a preset above; the preset
+              determines the LLM/STT/TTS stack behind the scenes.) */}
+          {isSuperAdmin && (
+            <Section title="LLM Configuration (Super Admin)" icon={Brain}>
+              <p className="text-xs text-gray-500 mb-3">
+                Override the preset's default LLM. Visible only to platform admins.
+              </p>
+              <div className="space-y-3">
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Provider</label>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {LLM_PROVIDERS.map(p => (
+                    <button key={p.id} onClick={() => setLlmProvider(p.id)}
+                      className={`p-3 rounded-xl border-2 text-left transition-all ${llmProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                        {p.badge && <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{p.badge}</span>}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{p.model}</p>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </Section>
+            </Section>
+          )}
 
           {/* Voice + Response Timing */}
           <Section title="Voice" icon={Volume2}>

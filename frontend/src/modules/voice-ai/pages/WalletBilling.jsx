@@ -13,10 +13,11 @@ import { motion } from 'framer-motion'
 import {
   Wallet as WalletIcon, Plus, Receipt, ArrowDownCircle, ArrowUpCircle,
   Zap, Sparkles, CreditCard, Globe, Crown, Loader2, CheckCircle, Calculator,
-  AlertTriangle, TrendingDown, TrendingUp, RefreshCw,
+  AlertTriangle, TrendingDown, TrendingUp, RefreshCw, Check,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { billingAPI } from '../../../services/api'
+import { useAuth } from '../../../contexts/AuthContext'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 10 },
@@ -29,35 +30,34 @@ const PRESET_ICONS = {
 }
 
 export default function WalletBilling() {
+  const { user } = useAuth()
+  const isSuperAdmin = !!user?.is_super_admin
   const [wallet, setWallet]     = useState(null)
   const [txns, setTxns]         = useState([])
   const [catalog, setCatalog]   = useState(null)
-  const [presets, setPresets]   = useState([])
+  const [pricedPresets, setPricedPresets] = useState([])
   const [packs, setPacks]       = useState([])
   const [plan, setPlan]         = useState(null)
   const [loading, setLoading]   = useState(true)
   const [recharging, setRechg]  = useState(false)
-
-  // Estimator config (starts from active rate plan once loaded)
-  const [est, setEst] = useState({ stt: '', llm: '', tts: '', telephony: '' })
-  const [estResult, setEstResult] = useState(null)
+  const [switching, setSwitching] = useState(null)
   const [monthlyMins, setMonthlyMins] = useState(1000)
 
   const loadAll = async () => {
     try {
-      const [w, c, t, p] = await Promise.all([
+      const [w, c, t, p, pp] = await Promise.all([
         billingAPI.wallet(),
         billingAPI.catalog(),
         billingAPI.transactions({ limit: 30 }),
         billingAPI.ratePlan(),
+        billingAPI.presetsWithPrices('user'),
       ])
       setWallet(w.data)
       setCatalog(c.data.catalog)
-      setPresets(c.data.presets)
       setPacks(c.data.recharge_packs)
       setTxns(t.data.transactions || [])
       setPlan(p.data)
-      setEst({ stt: p.data.stt, llm: p.data.llm, tts: p.data.tts, telephony: p.data.telephony })
+      setPricedPresets(pp.data.presets || [])
     } catch (e) {
       toast.error('Failed to load billing data')
     } finally {
@@ -67,13 +67,18 @@ export default function WalletBilling() {
 
   useEffect(() => { loadAll() }, [])
 
-  // Recalc whenever estimator config changes
-  useEffect(() => {
-    if (!est.stt || !est.llm || !est.tts || !est.telephony) return
-    billingAPI.calculate({ ...est, monthly_minutes: monthlyMins })
-      .then(({ data }) => setEstResult(data))
-      .catch(() => setEstResult(null))
-  }, [est, monthlyMins])
+  const switchPreset = async (presetId) => {
+    setSwitching(presetId)
+    try {
+      await billingAPI.selectPreset(presetId)
+      toast.success('Plan switched')
+      await loadAll()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Switch failed')
+    } finally {
+      setSwitching(null)
+    }
+  }
 
   const recharge = async (amount) => {
     setRechg(true)
@@ -127,8 +132,6 @@ export default function WalletBilling() {
   }, [wallet])
 
   if (loading) return <div className="flex items-center justify-center h-96"><Loader2 className="w-8 h-8 animate-spin text-indigo-500" /></div>
-
-  const estCat = catalog || {}
 
   return (
     <div className="space-y-6">
@@ -211,50 +214,53 @@ export default function WalletBilling() {
         </p>
       </motion.div>
 
-      {/* Cost estimator */}
+      {/* Plan selector — 5 preset cards with prices */}
       <motion.div variants={fadeUp} initial="hidden" animate="show"
         className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
         <h3 className="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <Calculator className="w-4 h-4 text-violet-500" /> Cost estimator
-          <span className="text-[11px] font-normal text-gray-400 ml-2">Simulate provider combos — your active plan stays unchanged</span>
+          <Sparkles className="w-4 h-4 text-violet-500" /> Choose your plan
+          <span className="text-[11px] font-normal text-gray-400 ml-2">Pick a performance tier — the price is per-minute all-inclusive</span>
         </h3>
 
-        {/* Presets */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mb-4">
-          {presets.map((p) => {
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          {pricedPresets.map((p) => {
             const Icon = PRESET_ICONS[p.id] || Sparkles
-            const active = est.stt === p.stt && est.llm === p.llm && est.tts === p.tts && est.telephony === p.telephony
+            const active = plan && (
+              (p.id === 'low_latency'  && plan.llm === 'groq_llama3_8b') ||
+              (p.id === 'high_quality' && plan.llm === 'claude_haiku') ||
+              (p.id === 'budget'       && plan.llm === 'gemini_flash') ||
+              (p.id === 'tamil_native' && plan.llm === 'claude_haiku' && plan.stt === 'sarvam') ||
+              (p.id === 'premium'      && plan.llm === 'claude_opus')
+            )
+            const busy = switching === p.id
             return (
               <button key={p.id}
-                onClick={() => setEst({ stt: p.stt, llm: p.llm, tts: p.tts, telephony: p.telephony })}
-                className={`flex items-center gap-2 p-3 rounded-xl border-2 text-left transition-all ${
-                  active ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'
-                }`}>
-                <Icon className={`w-4 h-4 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
-                <span className="text-xs font-semibold">{p.name}</span>
+                onClick={() => !active && switchPreset(p.id)}
+                disabled={busy || active}
+                className={`relative p-4 rounded-xl border-2 text-left transition-all ${
+                  active
+                    ? 'border-indigo-500 bg-indigo-50'
+                    : 'border-gray-200 hover:border-indigo-300 hover:-translate-y-0.5 hover:shadow-md'
+                } disabled:cursor-default`}
+              >
+                {active && (
+                  <span className="absolute top-2 right-2 flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-semibold">
+                    <Check className="w-3 h-3" /> Active
+                  </span>
+                )}
+                <Icon className={`w-5 h-5 mb-2 ${active ? 'text-indigo-600' : 'text-gray-400'}`} />
+                <p className="text-sm font-semibold text-gray-900">{p.name}</p>
+                <p className="text-2xl font-bold text-indigo-700 mt-2">₹{p.per_minute}<span className="text-xs text-gray-500 font-normal">/min</span></p>
+                <p className="text-[10px] text-gray-400 mt-1">~₹{(p.per_minute * monthlyMins).toLocaleString('en-IN')}/mo at {monthlyMins} min</p>
+                {busy && <Loader2 className="w-4 h-4 animate-spin text-indigo-500 mx-auto mt-2" />}
               </button>
             )
           })}
         </div>
 
-        {/* Provider dropdowns */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {['stt', 'llm', 'tts', 'telephony'].map((cat) => (
-            <div key={cat}>
-              <label className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{cat}</label>
-              <select value={est[cat]} onChange={(e) => setEst({ ...est, [cat]: e.target.value })}
-                className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-                {Object.entries(estCat[cat] || {}).map(([key, v]) => (
-                  <option key={key} value={key}>{v.label} · ₹{v.cost}/min</option>
-                ))}
-              </select>
-            </div>
-          ))}
-        </div>
-
         {/* Volume slider */}
-        <div className="mt-4">
-          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Expected monthly volume</label>
+        <div className="mt-5">
+          <label className="text-[11px] font-medium uppercase tracking-wide text-gray-500">Estimate monthly volume</label>
           <div className="flex items-center gap-4 mt-1">
             <input type="range" min="100" max="10000" step="100" value={monthlyMins}
               onChange={(e) => setMonthlyMins(Number(e.target.value))}
@@ -263,30 +269,29 @@ export default function WalletBilling() {
           </div>
         </div>
 
-        {/* Result */}
-        {estResult && (
-          <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100">
-              <p className="text-[11px] uppercase text-indigo-700 font-medium">Per minute</p>
-              <p className="text-2xl font-bold text-indigo-700 mt-1">₹{estResult.per_minute}</p>
+        {/* Super-admin advanced section */}
+        {isSuperAdmin && catalog && (
+          <div className="mt-5 p-4 rounded-xl bg-gray-50 border border-gray-200">
+            <p className="text-[11px] uppercase tracking-wide text-gray-500 font-semibold mb-3">Advanced (super-admin only)</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+              <div>
+                <p className="text-gray-500">Current STT</p>
+                <p className="font-medium">{catalog.stt?.[plan?.stt]?.label}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Current LLM</p>
+                <p className="font-medium">{catalog.llm?.[plan?.llm]?.label}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Current TTS</p>
+                <p className="font-medium">{catalog.tts?.[plan?.tts]?.label}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">Current Telephony</p>
+                <p className="font-medium">{catalog.telephony?.[plan?.telephony]?.label}</p>
+              </div>
             </div>
-            <div className="p-4 rounded-xl bg-violet-50 border border-violet-100">
-              <p className="text-[11px] uppercase text-violet-700 font-medium">AI stack</p>
-              <p className="text-sm font-semibold text-violet-700 mt-1">₹{estResult.breakdown.ai_total_billed}/min</p>
-              <p className="text-[10px] text-violet-600 mt-0.5">{estResult.breakdown.llm?.label}</p>
-            </div>
-            <div className="p-4 rounded-xl bg-blue-50 border border-blue-100">
-              <p className="text-[11px] uppercase text-blue-700 font-medium">Telephony</p>
-              <p className="text-sm font-semibold text-blue-700 mt-1">₹{estResult.breakdown.telephony?.billed}/min</p>
-              <p className="text-[10px] text-blue-600 mt-0.5">{estResult.breakdown.telephony?.label}</p>
-            </div>
-            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
-              <p className="text-[11px] uppercase text-emerald-700 font-medium">Monthly estimate</p>
-              <p className="text-2xl font-bold text-emerald-700 mt-1">
-                ₹{estResult.monthly_estimate?.toLocaleString('en-IN')}
-              </p>
-              <p className="text-[10px] text-emerald-600 mt-0.5">at {monthlyMins} min/mo</p>
-            </div>
+            <p className="text-[10px] text-gray-400 mt-2">Raw providers are hidden from clients. Use <a href="/admin/pricing" className="text-indigo-600 underline">/admin/pricing</a> to edit.</p>
           </div>
         )}
       </motion.div>

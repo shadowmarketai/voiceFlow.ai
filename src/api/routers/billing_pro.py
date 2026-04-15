@@ -68,6 +68,75 @@ def get_presets() -> dict[str, Any]:
     return {"presets": PRESETS}
 
 
+@router.get("/presets-with-prices")
+def get_presets_with_prices(
+    tenant_id: str = Depends(_current_tenant),
+    view: str = "user",
+) -> dict[str, Any]:
+    """
+    Return the 5 presets with computed per-minute price for the current
+    caller's rate plan. This is what every non-super-admin UI renders —
+    providers stay hidden.
+
+    view="user"   → end-user price (what they actually pay)
+    view="tenant" → "your cost" (what we charge a tenant)
+    """
+    plan = wallet_service.get_rate_plan(tenant_id)
+    out = []
+    for preset in PRESETS:
+        calc = pricing.calculate_cost(
+            stt=preset["stt"], llm=preset["llm"], tts=preset["tts"],
+            telephony=preset["telephony"],
+            platform_fee_paise=plan.platform_fee_paise,
+            ai_markup_pct=plan.ai_markup_pct,
+            telephony_markup_pct=plan.telephony_markup_pct,
+            min_floor_paise=plan.min_floor_paise,
+            tenant_fee_paise=plan.tenant_fee_paise,
+            tenant_ai_markup_pct=plan.tenant_ai_markup_pct,
+            view=view,
+        )
+        row = {
+            "id": preset["id"],
+            "name": preset["name"],
+            "icon": preset["icon"],
+            "per_minute": calc["per_minute"],
+        }
+        if view == "tenant":
+            row["tenant_cost"] = calc.get("tenant_cost")
+            row["user_price"] = calc.get("user_price")
+            row["tenant_margin"] = calc.get("tenant_margin")
+        out.append(row)
+    return {"presets": out}
+
+
+class SelectPresetRequest(BaseModel):
+    preset_id: str
+
+
+@router.post("/rate-plan/preset")
+def select_preset(req: SelectPresetRequest, tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
+    """User picks one of the 5 presets — backend updates stt/llm/tts/telephony accordingly."""
+    preset = next((p for p in PRESETS if p["id"] == req.preset_id), None)
+    if preset is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown preset: {req.preset_id}")
+    plan = wallet_service.get_rate_plan(tenant_id)
+    # Respect admin locks — if LLM/TTS is locked, reject switch that would change them
+    if plan.lock_llm and preset["llm"] != plan.llm_provider:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+            "LLM is locked by admin — contact support to change plan")
+    if plan.lock_tts and preset["tts"] != plan.tts_provider:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+            "TTS is locked by admin — contact support to change plan")
+    wallet_service.update_rate_plan(
+        tenant_id,
+        stt_provider=preset["stt"],
+        llm_provider=preset["llm"],
+        tts_provider=preset["tts"],
+        telephony_provider=preset["telephony"],
+    )
+    return {"success": True, "preset_id": req.preset_id, "providers": preset}
+
+
 # ─── Calculate (client-facing — hides platform fee) ────────────────────────
 
 class CalculateRequest(BaseModel):
