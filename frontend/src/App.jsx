@@ -34,6 +34,8 @@ const QualityDashboardPage = lazy(() => import('./modules/voice-ai/pages/Quality
 const IntegrationsPage = lazy(() => import('./modules/voice-ai/pages/Integrations'))
 const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDeveloper'))
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
+const WalletBillingPage = lazy(() => import('./modules/voice-ai/pages/WalletBilling'))
+const AgencyPricingPage = lazy(() => import('./modules/admin/AgencyPricingPage'))
 
 // ── Settings ──
 const Settings = lazy(() => import('./pages/Settings'))
@@ -99,6 +101,7 @@ function App() {
           <Route path="plans" element={<S><PlansPage /></S>} />
           <Route path="features" element={<S><FeatureFlagsPage /></S>} />
           <Route path="settings" element={<S><SuperAdminSettingsPage /></S>} />
+          <Route path="pricing" element={<S><AgencyPricingPage /></S>} />
         </Route>
 
         {/* ═══════════════════════════════════════════════════
@@ -133,6 +136,7 @@ function App() {
           <Route path="voice/integrations" element={<S><IntegrationsPage /></S>} />
           <Route path="voice/api" element={<S><ApiDeveloperPage /></S>} />
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />
+          <Route path="voice/wallet" element={<S><WalletBillingPage /></S>} />
 
           {/* Settings & Support */}
           <Route path="settings" element={<S><Settings /></S>} />

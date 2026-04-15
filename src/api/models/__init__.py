@@ -12,7 +12,7 @@ from api.models.base import Base  # noqa: F401
 # break the entire schema boot.
 for _mod in (
     "analytics", "campaign", "crm", "tenant", "user", "voice",
-    "voice_agent", "webhook", "quality_metrics",
+    "voice_agent", "webhook", "quality_metrics", "billing_wallet",
 ):
     try:
         __import__(f"api.models.{_mod}")

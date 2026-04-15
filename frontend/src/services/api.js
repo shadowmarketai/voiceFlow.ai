@@ -745,6 +745,33 @@ export const livekitAPI = {
 };
 
 // ============================================
+// BILLING PRO (wallet + cost calculator)
+// ============================================
+export const billingAPI = {
+  catalog: () => api.get('/api/v1/billing/catalog'),
+  presets: () => api.get('/api/v1/billing/presets'),
+  calculate: (data) => api.post('/api/v1/billing/calculate', data),
+  ratePlan: () => api.get('/api/v1/billing/rate-plan'),
+  updateProviders: (data) => api.post('/api/v1/billing/rate-plan/providers', data),
+  wallet: () => api.get('/api/v1/billing/wallet'),
+  transactions: (params) => api.get('/api/v1/billing/wallet/transactions', { params }),
+  rechargeOrder: (data) => api.post('/api/v1/billing/wallet/recharge/order', data),
+  verifyRecharge: (data) => api.post('/api/v1/billing/wallet/recharge/verify', data),
+  debit: (data) => api.post('/api/v1/billing/wallet/debit', data),
+  // Agency endpoints — require X-Admin-Token header
+  adminRatePlan: (tenantId, token) =>
+    api.get(`/api/v1/billing/admin/rate-plan/${tenantId}`, { headers: { 'X-Admin-Token': token } }),
+  adminUpdateRatePlan: (tenantId, data, token) =>
+    api.put(`/api/v1/billing/admin/rate-plan/${tenantId}`, data, { headers: { 'X-Admin-Token': token } }),
+  adminCalculate: (data, tenantId, token) =>
+    api.post('/api/v1/billing/admin/calculate', data, {
+      headers: { 'X-Admin-Token': token, 'X-Tenant-Id': tenantId }
+    }),
+  adminCredit: (data, token) =>
+    api.post('/api/v1/billing/admin/wallet/credit', data, { headers: { 'X-Admin-Token': token } }),
+};
+
+// ============================================
 // QUALITY & TESTING METRICS API
 // ============================================
 export const qualityAPI = {

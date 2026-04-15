@@ -4,9 +4,10 @@
  * 5 tabs: Overview | Voice & AI | Behavior | Tools | Integrations
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import CostCalculator from '../components/CostCalculator';
 import {
   Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
   Trash2, Plus, Copy, Check, ChevronDown, ChevronRight, Save,
@@ -68,6 +69,20 @@ const QUICK_PRESETS = [
   { id: 'budget', icon: CreditCard, label: 'Budget', desc: 'Cost-effective, Edge TTS + Whisper' },
   { id: 'native_audio', icon: AudioLines, label: 'Native Audio', desc: 'Gemini Live end-to-end' },
 ];
+
+/* Map AgentBuilder-internal provider ids → pricing catalog keys */
+const LLM_TO_CATALOG = {
+  groq: 'groq_llama3_8b',
+  anthropic: 'claude_haiku',
+  openai: 'gpt4o_mini',
+  gemini: 'gemini_25_hd',
+};
+const PRESET_TO_PIPELINE = {
+  low_latency:  { stt: 'deepgram_nova2', tts: 'cartesia',           telephony: 'exotel' },
+  high_quality: { stt: 'deepgram_nova2', tts: 'elevenlabs_flash',   telephony: 'twilio' },
+  budget:       { stt: 'groq_whisper',   tts: 'edge_tts',           telephony: 'airtel' },
+  native_audio: { stt: 'deepgram_nova2', tts: 'google_tts',         telephony: 'telecmi' },
+};
 
 const VOICES = [
   { id: 'priya', name: 'Priya', gender: 'Female', style: 'Natural', lang: 'Tamil' },
@@ -140,6 +155,12 @@ export default function AgentBuilder() {
 
   // Voice & AI
   const [quickPreset, setQuickPreset] = useState('low_latency');
+  // Track previous LLM catalog key for cost-impact warnings
+  const prevLlmRef = useRef(LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b');
+  const previousLlmCatalog = prevLlmRef.current;
+  useEffect(() => {
+    prevLlmRef.current = LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b';
+  }, [llmProvider]);
   const [llmProvider, setLlmProvider] = useState('groq');
   const [selectedVoice, setSelectedVoice] = useState('priya');
 
@@ -327,13 +348,15 @@ export default function AgentBuilder() {
               <span className="px-2 py-1 bg-emerald-50 rounded-lg text-emerald-700 font-medium">Audio Out</span>
             </div>
 
-            {/* Cost Breakdown */}
-            <div className="mt-4 p-3 bg-gray-50 rounded-xl grid grid-cols-4 gap-3 text-xs">
-              <div><span className="text-gray-400">Platform Fee</span><p className="font-semibold text-gray-900">₹0.00/min</p></div>
-              <div><span className="text-gray-400">AI Model</span><p className="font-semibold text-gray-900">{llmProvider === 'groq' ? '₹0.50' : '₹2.00'}/min</p></div>
-              <div><span className="text-gray-400">Telephony</span><p className="font-semibold text-gray-900">₹1.50/min</p></div>
-              <div><span className="text-gray-400 font-semibold">Total</span><p className="font-bold text-indigo-600">{llmProvider === 'groq' ? '₹2.00' : '₹3.50'}/min</p></div>
-            </div>
+            {/* Live cost calculator — uses backend pricing catalog + tenant rate plan */}
+            <CostCalculator
+              stt={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).stt}
+              llm={LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b'}
+              tts={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).tts}
+              telephony={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).telephony}
+              previousLlm={previousLlmCatalog}
+              monthlyMinutes={1000}
+            />
           </div>
 
           {/* Quick Setup */}

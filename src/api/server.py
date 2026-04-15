@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Billing Pro (wallet + cost calculator) ──────────────
+    try:
+        from api.routers.billing_pro import router as billing_pro_router
+        application.include_router(billing_pro_router)
+        logger.info("Billing Pro router loaded (wallet + pricing)")
+    except Exception as exc:
+        logger.warning("Billing Pro router not available: %s", exc)
+
     # ── Quality & Testing Metrics ────────────────────────────
     try:
         from api.routers.quality import router as quality_router

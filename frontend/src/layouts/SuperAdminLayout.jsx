@@ -49,6 +49,7 @@ const NAV_GROUPS = [
  label: 'Configure',
  items: [
  { path: '/admin/plans', label: 'Plans', icon: CreditCard },
+ { path: '/admin/pricing', label: 'Pricing & Fees', icon: CreditCard },
  { path: '/admin/features', label: 'Feature Flags', icon: ToggleLeft },
  { path: '/admin/settings', label: 'Settings', icon: Settings },
  ],

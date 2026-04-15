@@ -17,7 +17,7 @@ import { defaultTheme } from '../config/theme';
 import {
   LayoutDashboard, Bot, Wand2, BookOpen, Mic, Phone, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
-  FlaskConical, Gauge, Puzzle, Code, CreditCard, Settings,
+  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
   Bell, X,
@@ -69,6 +69,7 @@ const navSections = [
   {
     label: 'ACCOUNT',
     items: [
+      { icon: Wallet,     name: 'Wallet',   path: '/voice/wallet' },
       { icon: CreditCard, name: 'Billing',  path: '/voice/billing' },
       { icon: Settings,   name: 'Settings', path: '/settings' },
     ],
