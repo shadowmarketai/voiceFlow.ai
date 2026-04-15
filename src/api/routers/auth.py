@@ -329,16 +329,17 @@ async def google_auth(request: Request, body: GoogleAuthRequest) -> LoginRespons
 )
 @limiter.limit("3/minute")
 async def forgot_password(request: Request, body: ForgotPasswordRequest) -> MessageResponse:
-    """Generate a password reset token.
+    """Generate a password reset token and send email.
 
     Always returns success to prevent email enumeration.
-    In production, this would send an email with the reset link.
     """
+    from api.services.email_service import send_password_reset_email
+
     token = AuthService.create_password_reset_token(email=body.email)
     if token:
-        # TODO: Send email with reset link containing the token
-        # For now, log the token (remove in production)
-        logger.info("Password reset token for %s: %s", body.email, token[:20] + "...")
+        sent = send_password_reset_email(to_email=body.email, reset_token=token)
+        if not sent:
+            logger.warning("Password reset email not sent for %s (SMTP not configured?)", body.email)
     return MessageResponse(message="If an account exists with that email, a reset link has been sent")
 
 

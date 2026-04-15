@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
 
+    # ── Email (SMTP) ────────────────────────────────────────────
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "VoiceFlow AI"
+    FRONTEND_URL: str = "https://voice.shadowmarket.ai"
+
     # ── CORS ─────────────────────────────────────────────────────
     ALLOWED_ORIGINS: str = "*"
 
