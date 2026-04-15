@@ -1,18 +1,20 @@
 """
 Wallet operations — atomic credit/debit + transaction ledger.
 
-All amounts in PAISE. Uses row-level locking (FOR UPDATE) to avoid
-double-debits on concurrent calls.
+Uses SQLAlchemy Core (table objects, not ORM) to sidestep unrelated mapper
+configuration failures elsewhere in the codebase.
+All amounts in PAISE.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, select, text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from api.database import get_session_factory
+from api.database import get_engine, get_session_factory
 from api.models.billing_wallet import RatePlan, Wallet, WalletTransaction
 
 
@@ -24,131 +26,231 @@ class WalletBlockedError(Exception):
     pass
 
 
-def _get_or_create_wallet(session, tenant_id: str) -> Wallet:
-    w = session.get(Wallet, ident=None, options=None) if False else None
-    w = session.execute(select(Wallet).where(Wallet.tenant_id == tenant_id)).scalar_one_or_none()
-    if w is None:
-        w = Wallet(tenant_id=tenant_id, balance_paise=0)
-        session.add(w)
-        try:
-            session.flush()
-        except IntegrityError:
-            session.rollback()
-            w = session.execute(select(Wallet).where(Wallet.tenant_id == tenant_id)).scalar_one()
-    return w
+# ── Schema bootstrap ────────────────────────────────────────────────────────
+# Run create_all only for billing tables. This avoids triggering ORM mapper
+# configuration for unrelated (possibly broken) models.
+_TABLES_ENSURED = False
 
+
+def _ensure_tables() -> None:
+    global _TABLES_ENSURED
+    if _TABLES_ENSURED:
+        return
+    engine = get_engine()
+    # Only create these four tables, not the whole Base.metadata
+    Wallet.__table__.create(bind=engine, checkfirst=True)
+    WalletTransaction.__table__.create(bind=engine, checkfirst=True)
+    RatePlan.__table__.create(bind=engine, checkfirst=True)
+    # RechargeOrder is imported at module level; create it too if available
+    try:
+        from api.models.billing_wallet import RechargeOrder
+        RechargeOrder.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+    _TABLES_ENSURED = True
+
+
+# ── Balance ────────────────────────────────────────────────────────────────
 
 def get_balance(tenant_id: str) -> dict[str, Any]:
-    with get_session_factory()() as s:
-        w = _get_or_create_wallet(s, tenant_id)
-        s.commit()
-        return {
-            "tenant_id": tenant_id,
-            "balance_paise": int(w.balance_paise),
-            "balance_inr": round(w.balance_paise / 100, 2),
-            "status": w.status,
-            "low_balance_threshold_inr": round(w.low_balance_threshold_paise / 100, 2),
-            "auto_recharge_enabled": w.auto_recharge_enabled,
-            "auto_recharge_amount_inr": round(w.auto_recharge_amount_paise / 100, 2),
-        }
+    _ensure_tables()
+    engine = get_engine()
+    w_table = Wallet.__table__
+    with engine.begin() as conn:
+        row = conn.execute(
+            select(w_table).where(w_table.c.tenant_id == tenant_id)
+        ).first()
+        if row is None:
+            conn.execute(w_table.insert().values(
+                tenant_id=tenant_id, balance_paise=0, status="active",
+                low_balance_threshold_paise=5000,
+                auto_recharge_enabled=False, auto_recharge_amount_paise=0,
+                auto_recharge_threshold_paise=0,
+                created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+            ))
+            balance = 0
+            status = "active"
+            threshold = 5000
+            auto_en = False
+            auto_amt = 0
+        else:
+            balance = int(row._mapping["balance_paise"])
+            status = row._mapping["status"]
+            threshold = int(row._mapping["low_balance_threshold_paise"])
+            auto_en = bool(row._mapping["auto_recharge_enabled"])
+            auto_amt = int(row._mapping["auto_recharge_amount_paise"])
+    return {
+        "tenant_id": tenant_id,
+        "balance_paise": balance,
+        "balance_inr": round(balance / 100, 2),
+        "status": status,
+        "low_balance_threshold_inr": round(threshold / 100, 2),
+        "auto_recharge_enabled": auto_en,
+        "auto_recharge_amount_inr": round(auto_amt / 100, 2),
+    }
 
+
+# ── Credit / debit ─────────────────────────────────────────────────────────
 
 def credit(tenant_id: str, amount_paise: int, reference_id: str, description: str = "Credit") -> dict[str, Any]:
     if amount_paise <= 0:
         raise ValueError("amount must be positive")
-    with get_session_factory()() as s:
-        w = _get_or_create_wallet(s, tenant_id)
-        w.balance_paise = int(w.balance_paise) + amount_paise
-        if w.status == "suspended":
-            w.status = "active"
-        s.add(WalletTransaction(
+    _ensure_tables()
+    engine = get_engine()
+    w, t = Wallet.__table__, WalletTransaction.__table__
+    with engine.begin() as conn:
+        row = conn.execute(select(w).where(w.c.tenant_id == tenant_id)).first()
+        if row is None:
+            conn.execute(w.insert().values(
+                tenant_id=tenant_id, balance_paise=amount_paise, status="active",
+                low_balance_threshold_paise=5000,
+                auto_recharge_enabled=False, auto_recharge_amount_paise=0,
+                auto_recharge_threshold_paise=0,
+                created_at=datetime.utcnow(), updated_at=datetime.utcnow(),
+            ))
+            new_bal = amount_paise
+        else:
+            new_bal = int(row._mapping["balance_paise"]) + amount_paise
+            conn.execute(w.update().where(w.c.tenant_id == tenant_id).values(
+                balance_paise=new_bal, status="active", updated_at=datetime.utcnow(),
+            ))
+        conn.execute(t.insert().values(
             tenant_id=tenant_id, type="credit", amount_paise=amount_paise,
-            balance_after_paise=w.balance_paise, reference_id=reference_id,
-            description=description,
+            balance_after_paise=new_bal, reference_id=reference_id,
+            description=description, meta=None, created_at=datetime.utcnow(),
         ))
-        s.commit()
-        return {"success": True, "balance_paise": int(w.balance_paise)}
+    return {"success": True, "balance_paise": new_bal}
 
 
 def debit(tenant_id: str, amount_paise: int, reference_id: str, description: str = "Debit") -> dict[str, Any]:
     if amount_paise <= 0:
         raise ValueError("amount must be positive")
-    with get_session_factory()() as s:
-        # Lock the row
-        row = s.execute(
-            select(Wallet).where(Wallet.tenant_id == tenant_id).with_for_update()
-        ).scalar_one_or_none()
+    _ensure_tables()
+    engine = get_engine()
+    w, t = Wallet.__table__, WalletTransaction.__table__
+    with engine.begin() as conn:
+        # Use FOR UPDATE on dialects that support it (Postgres); SQLite falls through silently
+        stmt = select(w).where(w.c.tenant_id == tenant_id)
+        try:
+            stmt = stmt.with_for_update()
+        except Exception:
+            pass
+        row = conn.execute(stmt).first()
         if row is None:
-            row = Wallet(tenant_id=tenant_id, balance_paise=0)
-            s.add(row)
-            s.flush()
-        if row.status == "blocked":
+            raise InsufficientFundsError("Wallet empty (no record)")
+        if row._mapping["status"] == "blocked":
             raise WalletBlockedError("Wallet is blocked")
-        if int(row.balance_paise) < amount_paise:
-            raise InsufficientFundsError(
-                f"Need ₹{amount_paise/100:.2f}, have ₹{row.balance_paise/100:.2f}"
-            )
-        row.balance_paise = int(row.balance_paise) - amount_paise
-        s.add(WalletTransaction(
-            tenant_id=tenant_id, type="debit", amount_paise=amount_paise,
-            balance_after_paise=row.balance_paise, reference_id=reference_id,
-            description=description,
+        current = int(row._mapping["balance_paise"])
+        if current < amount_paise:
+            raise InsufficientFundsError(f"Need ₹{amount_paise/100:.2f}, have ₹{current/100:.2f}")
+        new_bal = current - amount_paise
+        conn.execute(w.update().where(w.c.tenant_id == tenant_id).values(
+            balance_paise=new_bal, updated_at=datetime.utcnow(),
         ))
-        s.commit()
-        return {"success": True, "balance_paise": int(row.balance_paise)}
+        conn.execute(t.insert().values(
+            tenant_id=tenant_id, type="debit", amount_paise=amount_paise,
+            balance_after_paise=new_bal, reference_id=reference_id,
+            description=description, meta=None, created_at=datetime.utcnow(),
+        ))
+    return {"success": True, "balance_paise": new_bal}
 
 
 def list_transactions(tenant_id: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-    with get_session_factory()() as s:
-        rows = s.execute(
-            select(WalletTransaction)
-            .where(WalletTransaction.tenant_id == tenant_id)
-            .order_by(WalletTransaction.created_at.desc())
-            .limit(limit).offset(offset)
-        ).scalars().all()
-        return [
-            {
-                "id": r.id,
-                "type": r.type,
-                "amount_inr": round(r.amount_paise / 100, 2),
-                "balance_after_inr": round(r.balance_after_paise / 100, 2),
-                "reference_id": r.reference_id,
-                "description": r.description,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in rows
-        ]
+    _ensure_tables()
+    engine = get_engine()
+    t = WalletTransaction.__table__
+    with engine.begin() as conn:
+        rows = conn.execute(
+            select(t).where(t.c.tenant_id == tenant_id)
+            .order_by(t.c.created_at.desc()).limit(limit).offset(offset)
+        ).fetchall()
+    return [
+        {
+            "id": r._mapping["id"], "type": r._mapping["type"],
+            "amount_inr": round(r._mapping["amount_paise"] / 100, 2),
+            "balance_after_inr": round(r._mapping["balance_after_paise"] / 100, 2),
+            "reference_id": r._mapping["reference_id"],
+            "description": r._mapping["description"],
+            "created_at": r._mapping["created_at"].isoformat() if r._mapping["created_at"] else None,
+        }
+        for r in rows
+    ]
 
 
-# ─── Rate plans ────────────────────────────────────────────────────────────
+# ── Rate plans ─────────────────────────────────────────────────────────────
 
-def get_rate_plan(tenant_id: str) -> RatePlan:
-    with get_session_factory()() as s:
-        plan = s.get(RatePlan, tenant_id)
-        if plan is None:
-            plan = RatePlan(tenant_id=tenant_id)
-            s.add(plan)
-            s.commit()
-            s.refresh(plan)
-        s.expunge(plan)
-        return plan
+class _RatePlanDTO:
+    """Simple dataclass-ish holder so router code can use attribute access."""
+    def __init__(self, m: dict[str, Any]):
+        self.tenant_id = m["tenant_id"]
+        self.stt_provider = m["stt_provider"]
+        self.llm_provider = m["llm_provider"]
+        self.tts_provider = m["tts_provider"]
+        self.telephony_provider = m["telephony_provider"]
+        self.platform_fee_paise = int(m["platform_fee_paise"] or 100)
+        self.ai_markup_pct = int(m["ai_markup_pct"] or 20)
+        self.telephony_markup_pct = int(m["telephony_markup_pct"] or 10)
+        self.min_floor_paise = int(m["min_floor_paise"] or 250)
+        self.lock_llm = bool(m["lock_llm"])
+        self.lock_tts = bool(m["lock_tts"])
+        self.tier = m["tier"]
+
+    # back-compat alias used by wallet router: plan.stt / .llm / .tts / .telephony
+    @property
+    def stt(self): return self.stt_provider
+    @property
+    def llm(self): return self.llm_provider
+    @property
+    def tts(self): return self.tts_provider
+    @property
+    def telephony(self): return self.telephony_provider
 
 
-def update_rate_plan(tenant_id: str, **updates) -> RatePlan:
+_DEFAULT_PLAN = {
+    "stt_provider": "deepgram_nova2", "llm_provider": "groq_llama3_8b",
+    "tts_provider": "cartesia", "telephony_provider": "exotel",
+    "platform_fee_paise": 100, "ai_markup_pct": 20,
+    "telephony_markup_pct": 10, "min_floor_paise": 250,
+    "lock_llm": False, "lock_tts": False, "tier": "starter",
+}
+
+
+def get_rate_plan(tenant_id: str) -> _RatePlanDTO:
+    _ensure_tables()
+    engine = get_engine()
+    rp = RatePlan.__table__
+    with engine.begin() as conn:
+        row = conn.execute(select(rp).where(rp.c.tenant_id == tenant_id)).first()
+        if row is None:
+            conn.execute(rp.insert().values(
+                tenant_id=tenant_id, **_DEFAULT_PLAN,
+                updated_at=datetime.utcnow(),
+            ))
+            data = {"tenant_id": tenant_id, **_DEFAULT_PLAN}
+        else:
+            data = dict(row._mapping)
+    return _RatePlanDTO(data)
+
+
+def update_rate_plan(tenant_id: str, **updates) -> _RatePlanDTO:
     allowed = {
         "stt_provider", "llm_provider", "tts_provider", "telephony_provider",
         "platform_fee_paise", "ai_markup_pct", "telephony_markup_pct",
         "min_floor_paise", "lock_llm", "lock_tts", "tier",
     }
-    with get_session_factory()() as s:
-        plan = s.get(RatePlan, tenant_id)
-        if plan is None:
-            plan = RatePlan(tenant_id=tenant_id)
-            s.add(plan)
-        for k, v in updates.items():
-            if k in allowed and v is not None:
-                setattr(plan, k, v)
-        s.commit()
-        s.refresh(plan)
-        s.expunge(plan)
-        return plan
+    clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
+    _ensure_tables()
+    engine = get_engine()
+    rp = RatePlan.__table__
+    with engine.begin() as conn:
+        row = conn.execute(select(rp).where(rp.c.tenant_id == tenant_id)).first()
+        if row is None:
+            conn.execute(rp.insert().values(
+                tenant_id=tenant_id, **_DEFAULT_PLAN, **clean,
+                updated_at=datetime.utcnow(),
+            ))
+        else:
+            conn.execute(rp.update().where(rp.c.tenant_id == tenant_id).values(
+                **clean, updated_at=datetime.utcnow(),
+            ))
+    return get_rate_plan(tenant_id)
