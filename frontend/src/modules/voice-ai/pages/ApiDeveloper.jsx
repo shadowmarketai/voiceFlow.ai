@@ -117,7 +117,7 @@ function generateApiKey(prefix = 'vf_sk') {
 }
 
 /* ─── Main Component ──────────────────────────────────────────────── */
-export default function ApiDeveloper() {
+export default function ApiDeveloper({ embedded = false } = {}) {
   const [activeTab, setActiveTab] = useState('endpoints') // endpoints | keys | embed | webhooks
   const [apiKeys, setApiKeys] = useState(() => {
     const saved = localStorage.getItem('vf_api_keys')
@@ -266,29 +266,33 @@ export default function ApiDeveloper() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">API & Developer</h1>
-          <p className="text-gray-500 mt-1">Manage keys, test endpoints, embed widgets, configure webhooks</p>
+      {/* Header — hidden when embedded in another page (e.g. Channels / Developer) */}
+      {!embedded && (
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">API & Developer</h1>
+            <p className="text-gray-500 mt-1">Manage keys, test endpoints, embed widgets, configure webhooks</p>
+          </div>
+          <a
+            href={`${API_BASE}/docs`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-200 hover:shadow-md transition-all"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Swagger Docs
+          </a>
         </div>
-        <a
-          href={`${API_BASE}/docs`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-sm shadow-indigo-200 hover:shadow-md transition-all"
-        >
-          <ExternalLink className="w-4 h-4" />
-          Swagger Docs
-        </a>
-      </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-gray-200">
         {[
           { key: 'endpoints', label: 'API Endpoints', icon: Terminal, count: API_SECTIONS.reduce((a, s) => a + s.endpoints.length, 0) },
           { key: 'keys', label: 'API Keys', icon: Key, count: apiKeys.length },
-          { key: 'embed', label: 'Embed Widget', icon: Code },
+          // Hide the Embed sub-tab when rendered inside Channels — the web-widget
+          // editor already lives there as a first-class channel card.
+          ...(embedded ? [] : [{ key: 'embed', label: 'Embed Widget', icon: Code }]),
           { key: 'webhooks', label: 'Webhooks', icon: Webhook, count: webhooks.length },
         ].map(tab => (
           <button

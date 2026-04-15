@@ -138,7 +138,8 @@ function App() {
           <Route path="voice/testing" element={<S><TestingPage /></S>} />
           <Route path="voice/quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="voice/integrations" element={<S><IntegrationsPage /></S>} />
-          <Route path="voice/api" element={<S><ApiDeveloperPage /></S>} />
+          {/* /voice/api → redirect to the Channels page's Developer tab */}
+          <Route path="voice/api" element={<Navigate to="/voice/channels?view=developer" replace />} />
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />
           <Route path="voice/wallet" element={<S><WalletBillingPage /></S>} />
           <Route path="voice/tenant-pricing" element={<S><TenantPricingPage /></S>} />

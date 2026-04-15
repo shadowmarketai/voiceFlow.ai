@@ -62,7 +62,7 @@ const navSections = [
     label: 'CONNECT',
     items: [
       { icon: Puzzle, name: 'Integrations',    path: '/voice/integrations' },
-      { icon: Code,   name: 'API & Developer', path: '/voice/api' },
+      // API & Developer merged into Channels page — user menu link below still works via redirect.
     ],
   },
   {

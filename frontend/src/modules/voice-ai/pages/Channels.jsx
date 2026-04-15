@@ -8,10 +8,11 @@ import { useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Globe, MessageCircle, Phone, Code, CheckCircle, Clock, Copy, Check,
-  X, ExternalLink, Save, Loader2, Settings, Zap, AlertCircle,
+  X, ExternalLink, Save, Loader2, Settings, Zap, AlertCircle, Terminal,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../../services/api'
+import ApiDeveloper from './ApiDeveloper'
 
 /* ─────────── Helpers ─────────────────────────────────────────── */
 
@@ -310,77 +311,25 @@ function PhoneConfig({ onGo }) {
   )
 }
 
-function ApiConfig({ onGo }) {
-  const baseUrl = `${window.location.origin}/api/v1`
-  const wsUrl = `${window.location.origin.replace(/^http/, 'ws')}/api/v1/realtime/ws`
-  const curl = `curl -X POST ${baseUrl}/voice/respond \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -F "file=@audio.wav" \\
-  -F "language=en" \\
-  -F "llm_provider=groq"`
-
-  const [copied, setCopied] = useState('')
-  const copy = (text, id) => {
-    navigator.clipboard.writeText(text)
-    setCopied(id)
-    toast.success('Copied')
-    setTimeout(() => setCopied(''), 2000)
-  }
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">REST API base</label>
-        <div className="flex items-center gap-2 mt-1">
-          <code className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono">{baseUrl}</code>
-          <button onClick={() => copy(baseUrl, 'rest')} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
-            {copied === 'rest' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-      <div>
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">WebSocket (real-time streaming)</label>
-        <div className="flex items-center gap-2 mt-1">
-          <code className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono">{wsUrl}</code>
-          <button onClick={() => copy(wsUrl, 'ws')} className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50">
-            {copied === 'ws' ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-      <div>
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Example cURL</label>
-        <div className="relative mt-1">
-          <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 text-xs font-mono whitespace-pre-wrap">{curl}</pre>
-          <button onClick={() => copy(curl, 'curl')}
-            className="absolute top-2 right-2 p-1.5 rounded bg-white/10 hover:bg-white/20 text-white">
-            {copied === 'curl' ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-          </button>
-        </div>
-      </div>
-      <div className="flex justify-end gap-2">
-        <a href={`${window.location.origin}/docs`} target="_blank" rel="noreferrer"
-          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 text-sm hover:bg-gray-50">
-          Open API docs <ExternalLink className="w-3 h-3" />
-        </a>
-        <button onClick={onGo}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700">
-          <Code className="w-4 h-4" /> API keys & Developer
-        </button>
-      </div>
-    </div>
-  )
-}
+// ApiConfig sub-component removed — the Developer tab on this page
+// now owns all API / keys / webhooks UX.
 
 /* ─────────── Main page ───────────────────────────────────────── */
 
 export default function Channels() {
   const navigate = useNavigate()
+  // Top-level view switcher: no-code channels vs developer API.
+  // URL `?view=developer` lands directly on the Developer pane so old
+  // /voice/api bookmarks still resolve cleanly.
+  const searchView = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('view')
+    : null
+  const [view, setView] = useState(searchView === 'developer' ? 'developer' : 'channels')
   const [open, setOpen] = useState(null)             // channel id currently being configured
   const [statuses, setStatuses] = useState({
     'web-widget': 'ready',
     'whatsapp': 'checking',
     'phone': 'checking',
-    'api': 'ready',
   })
   const [savedConfig, setSavedConfig] = useState(loadSavedConfig())
   const [agents, setAgents] = useState([])
@@ -464,15 +413,8 @@ export default function Channels() {
       check: 'text-blue-500',
       features: ['Inbound routing', 'Outbound dialing', 'Call transfer to humans', 'Real-time transcription'],
     },
-    {
-      id: 'api',
-      name: 'API / WebSocket',
-      description: 'Direct REST + WebSocket integration for custom apps. Streaming audio, webhooks, and SDKs for Python/Node/Go.',
-      icon: Code,
-      gradient: 'from-violet-500 to-violet-600',
-      check: 'text-violet-500',
-      features: ['REST API', 'WebSocket streaming', 'Python / Node / Go SDKs', 'Webhook events'],
-    },
+    // NOTE: "API / WebSocket" card intentionally removed — the Developer
+    // tab above covers endpoints / keys / webhooks comprehensively.
   ]
 
   const handleSave = (id, data) => {
@@ -492,25 +434,64 @@ export default function Channels() {
         return <WhatsAppConfig initial={initial} onSave={(d) => handleSave(id, d)} onRefresh={refreshStatuses} />
       case 'phone':
         return <PhoneConfig onGo={() => { setOpen(null); navigate('/voice/phone-numbers') }} />
-      case 'api':
-        return <ApiConfig onGo={() => { setOpen(null); navigate('/voice/api') }} />
       default: return null
     }
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Channels</h1>
-          <p className="text-gray-500 mt-1">Deploy your AI agents across multiple communication channels</p>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
+            Channels <span className="text-gray-300">/</span> Developer
+          </h1>
+          <p className="text-gray-500 mt-1">
+            {view === 'channels'
+              ? 'Deploy your AI agents across multiple communication channels'
+              : 'API endpoints, keys, and webhooks for direct integration'}
+          </p>
         </div>
-        <button onClick={refreshStatuses}
-          className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm text-gray-700">
-          <Settings className="w-4 h-4" /> Refresh
-        </button>
+        {view === 'channels' && (
+          <button onClick={refreshStatuses}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-sm text-gray-700">
+            <Settings className="w-4 h-4" /> Refresh
+          </button>
+        )}
       </div>
+
+      {/* Section switcher */}
+      <div className="flex items-center gap-1 border-b border-gray-200">
+        {[
+          { key: 'channels',  label: 'Channels',  icon: Globe,
+            desc: 'Web widget · WhatsApp · Phone' },
+          { key: 'developer', label: 'Developer', icon: Terminal,
+            desc: 'API · Keys · Webhooks' },
+        ].map((t) => (
+          <button key={t.key}
+            onClick={() => {
+              setView(t.key)
+              const url = new URL(window.location)
+              if (t.key === 'developer') url.searchParams.set('view', 'developer')
+              else url.searchParams.delete('view')
+              window.history.replaceState({}, '', url)
+            }}
+            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all ${
+              view === t.key
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <t.icon className="w-4 h-4" />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Developer pane delegates to the existing ApiDeveloper component. */}
+      {view === 'developer' && <ApiDeveloper embedded />}
+
+      {view === 'channels' && <>
 
       {/* Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -567,6 +548,7 @@ export default function Channels() {
       >
         {open && renderModalBody(open)}
       </Modal>
+      </>}
     </div>
   )
 }
