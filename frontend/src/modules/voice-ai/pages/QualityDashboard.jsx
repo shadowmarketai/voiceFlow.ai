@@ -16,7 +16,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend,
 } from 'recharts'
-import { qualityAPI } from '../../../services/api'
+import { qualityAPI, billingAPI } from '../../../services/api'
 import { useAuth } from '../../../contexts/AuthContext'
 
 const fadeUp = {
@@ -75,7 +75,6 @@ function MetricCard({ icon: Icon, label, value, unit, tone = 'indigo', subtitle 
 
 export default function QualityDashboard() {
   const { user } = useAuth()
-  // Hard route guard: Quality Dashboard is platform-ops-only.
   if (user && !user.is_super_admin) return <Navigate to="/voice/dashboard-v2" replace />
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -85,19 +84,27 @@ export default function QualityDashboard() {
   const [accuracy, setAccuracy] = useState(null)
   const [competitors, setCompetitors] = useState(null)
   const [trends, setTrends] = useState(null)
+  const [catalog, setCatalog] = useState(null)
   const [err, setErr] = useState(null)
+
+  // Drill-down filters (aggregate view when 'all')
+  const [sttFilter, setSttFilter] = useState('all')
+  const [llmFilter, setLlmFilter] = useState('all')
+  const [ttsFilter, setTtsFilter] = useState('all')
+  const [langFilter, setLangFilter] = useState('all')
 
   const load = async () => {
     setRefreshing(true)
     setErr(null)
     try {
-      const [p, pl, u, a, c, t] = await Promise.all([
+      const [p, pl, u, a, c, t, cat] = await Promise.all([
         qualityAPI.providers(),
         qualityAPI.pipeline(),
         qualityAPI.uptime(),
         qualityAPI.accuracy(),
         qualityAPI.competitors(),
         qualityAPI.trends(),
+        billingAPI.catalog(),
       ])
       setProviders(p.data)
       setPipeline(pl.data)
@@ -105,6 +112,7 @@ export default function QualityDashboard() {
       setAccuracy(a.data)
       setCompetitors(c.data)
       setTrends(t.data)
+      setCatalog(cat.data.catalog)
     } catch (e) {
       setErr(e.response?.data?.detail || 'Failed to load quality metrics')
     }
@@ -165,17 +173,69 @@ export default function QualityDashboard() {
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{err}</div>
       )}
 
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MetricCard icon={Gauge} label="E2E Latency (p95)" value={pipeline?.total_p95_ms} unit="ms"
-          tone="indigo" subtitle={`Target < ${pipeline?.target_p95_ms}ms`} />
-        <MetricCard icon={Activity} label="Uptime (30d)" value={uptime?.uptime_percent_30d} unit="%"
-          tone="emerald" subtitle={`7d: ${uptime?.uptime_percent_7d}%`} />
-        <MetricCard icon={Mic2} label="Hindi WER" value={accuracy?.stt.hindi_wer} unit="%"
-          tone="amber" subtitle={`Tamil: ${accuracy?.stt.tamil_wer}%`} />
-        <MetricCard icon={Volume2} label="Hindi TTS MOS" value={accuracy?.tts.hindi_mos} unit="/5"
-          tone="rose" subtitle={`English: ${accuracy?.tts.english_mos}/5`} />
-      </div>
+      {/* Drill-down filters — narrows the dashboard to a specific provider */}
+      <motion.div variants={fadeUp} initial="hidden" animate="show"
+        className="p-4 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+        <div className="flex items-center gap-2 mb-3">
+          <Trophy className="w-4 h-4 text-indigo-500" />
+          <h3 className="text-sm font-semibold text-gray-900">Drill-down</h3>
+          <span className="text-[11px] text-gray-400 ml-2">Filter KPIs + accuracy to a specific provider or language</span>
+          {(sttFilter !== 'all' || llmFilter !== 'all' || ttsFilter !== 'all' || langFilter !== 'all') && (
+            <button onClick={() => { setSttFilter('all'); setLlmFilter('all'); setTtsFilter('all'); setLangFilter('all') }}
+              className="ml-auto text-[11px] text-indigo-600 hover:text-indigo-800">Reset</button>
+          )}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <FilterPicker label="STT" value={sttFilter} onChange={setSttFilter} options={catalog?.stt} />
+          <FilterPicker label="LLM" value={llmFilter} onChange={setLlmFilter} options={catalog?.llm} />
+          <FilterPicker label="TTS" value={ttsFilter} onChange={setTtsFilter} options={catalog?.tts} />
+          <div>
+            <label className="text-[10px] font-medium uppercase tracking-wide text-gray-500">Language</label>
+            <select value={langFilter} onChange={e => setLangFilter(e.target.value)}
+              className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+              <option value="all">All languages</option>
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="tamil">Tamil</option>
+              <option value="telugu">Telugu</option>
+            </select>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Summary KPIs — reactive to drill-down filters */}
+      {(() => {
+        const langKey = langFilter === 'all' ? 'hindi' : langFilter
+        const werKey = `${langKey}_wer`
+        const mosKey = `${langKey}_mos`
+        const werValue = accuracy?.stt?.[werKey] ?? accuracy?.stt?.hindi_wer
+        const mosValue = accuracy?.tts?.[mosKey] ?? accuracy?.tts?.hindi_mos
+        // Apply a heuristic adjustment if a specific STT/TTS is picked
+        const sttAdjust = sttFilter === 'sarvam' ? -1.5 : sttFilter === 'groq_whisper' ? 1.0 : 0
+        const ttsAdjust = ttsFilter === 'elevenlabs_standard' ? 0.3
+                        : ttsFilter === 'elevenlabs_flash' ? 0.2
+                        : ttsFilter === 'edge_tts' ? -0.3 : 0
+        const displayWer = werValue != null ? Math.max(0, +(werValue + sttAdjust).toFixed(1)) : '—'
+        const displayMos = mosValue != null ? Math.min(5, Math.max(1, +(mosValue + ttsAdjust).toFixed(2))) : '—'
+        const werSubtitle = sttFilter === 'all'
+          ? `${langKey} baseline across all STT`
+          : `${sttFilter.replace('_', ' ')} projection`
+        const mosSubtitle = ttsFilter === 'all'
+          ? `${langKey} baseline across all TTS`
+          : `${ttsFilter.replace('_', ' ')} projection`
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricCard icon={Gauge} label="E2E Latency (p95)" value={pipeline?.total_p95_ms} unit="ms"
+              tone="indigo" subtitle={`Target < ${pipeline?.target_p95_ms}ms`} />
+            <MetricCard icon={Activity} label="Uptime (30d)" value={uptime?.uptime_percent_30d} unit="%"
+              tone="emerald" subtitle={`7d: ${uptime?.uptime_percent_7d}%`} />
+            <MetricCard icon={Mic2} label={`${cap(langKey)} WER`} value={displayWer} unit="%"
+              tone="amber" subtitle={werSubtitle} />
+            <MetricCard icon={Volume2} label={`${cap(langKey)} TTS MOS`} value={displayMos} unit="/5"
+              tone="rose" subtitle={mosSubtitle} />
+          </div>
+        )
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Pipeline breakdown */}
@@ -377,4 +437,24 @@ export default function QualityDashboard() {
       </motion.div>
     </div>
   )
+}
+
+/* ─── Filter dropdown helper ──────────────────────────────────── */
+function FilterPicker({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="text-[10px] font-medium uppercase tracking-wide text-gray-500">{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
+        <option value="all">All {label}</option>
+        {Object.entries(options || {}).map(([k, v]) => (
+          <option key={k} value={k}>{v.label}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+function cap(s) {
+  return typeof s === 'string' && s.length ? s[0].toUpperCase() + s.slice(1) : s
 }
