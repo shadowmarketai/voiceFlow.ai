@@ -13,11 +13,12 @@ Env vars needed:
 """
 
 import base64
+import json
 import logging
 import os
 import tempfile
 import time
-from typing import Any, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, Optional
 
 import httpx
 
@@ -305,6 +306,81 @@ async def call_llm_api(
 
     return {"text": "Thank you for calling. Could you please share more details?",
             "provider": "stub", "latency_ms": 0}
+
+
+# ─── W1.2 Streaming LLM — yields token deltas as SSE events arrive ───
+
+async def call_llm_stream(
+    system_prompt: str,
+    user_message: str,
+    provider: str = "auto",
+    model: str = None,
+) -> AsyncGenerator[str, None]:
+    """Async generator of partial text chunks. Falls back to full-response
+    for providers that don't support streaming.
+
+    Streaming paths:
+      - groq        -> SSE /chat/completions?stream=true  (OpenAI-compat)
+      - openai      -> SSE /chat/completions?stream=true
+      - deepseek    -> SSE /chat/completions?stream=true
+
+    Non-streaming paths fall back to call_llm_api() — the whole response is
+    yielded as a single chunk so the downstream pipeline still works.
+    """
+    providers_list = [
+        ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions",
+         model or "llama-3.1-8b-instant"),
+        ("openai", "OPENAI_API_KEY", "https://api.openai.com/v1/chat/completions",
+         model or "gpt-4o-mini"),
+        ("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1/chat/completions",
+         model or "deepseek-chat"),
+    ]
+
+    for name, env_key, url, chosen_model in providers_list:
+        if provider not in ("auto", name):
+            continue
+        api_key = os.environ.get(env_key, "")
+        if not api_key:
+            continue
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                async with client.stream(
+                    "POST", url,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": chosen_model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_message},
+                        ],
+                        "max_tokens": 200,
+                        "temperature": 0.7,
+                        "stream": True,
+                    },
+                ) as resp:
+                    if resp.status_code != 200:
+                        raise RuntimeError(f"{name} stream HTTP {resp.status_code}")
+                    async for raw_line in resp.aiter_lines():
+                        if not raw_line or not raw_line.startswith("data:"):
+                            continue
+                        payload = raw_line[5:].strip()
+                        if payload == "[DONE]":
+                            return
+                        try:
+                            obj = json.loads(payload)
+                            delta = obj["choices"][0].get("delta", {}).get("content")
+                            if delta:
+                                yield delta
+                        except (KeyError, IndexError, json.JSONDecodeError):
+                            continue
+            return
+        except Exception as e:
+            logger.warning("%s stream failed, trying next: %s", name, e)
+
+    # Fallback: non-streaming call, yield whole response as one chunk
+    result = await call_llm_api(system_prompt, user_message, provider=provider, model=model)
+    if result.get("text"):
+        yield result["text"]
 
 
 async def _groq_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:

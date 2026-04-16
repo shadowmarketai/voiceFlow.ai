@@ -447,6 +447,50 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             turn = await svc.handle_turn(req)
             return turn.to_dict()
 
+        # W1.2 — Parallel LLM+TTS streaming (SSE). Client plays audio
+        # chunks as they arrive instead of waiting for full reply.
+        @application.post("/api/v1/voice/respond-stream")
+        async def voice_respond_stream(
+            file: UploadFile = File(...),
+            language: Optional[str] = None,
+            system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
+            llm_provider: str = "groq",
+            tts_language: str = "en",
+            voice_id: Optional[str] = None,
+        ):
+            """Streaming voice turn — yields SSE events with audio chunks.
+
+            Events: stt | llm_partial | audio_chunk | done.
+            TTFA (time-to-first-audio) is reported in the `done` event.
+            """
+            import json as _json
+
+            from fastapi.responses import StreamingResponse
+
+            audio_bytes = await file.read()
+            req = VoiceTurnRequest(
+                audio_bytes=audio_bytes,
+                language=language,
+                system_prompt=system_prompt,
+                llm_provider=llm_provider,
+                tts_language=tts_language,
+                voice_id=voice_id,
+            )
+            svc = get_voice_ai_service()
+
+            async def event_stream():
+                async for event in svc.handle_turn_stream(req):
+                    yield f"data: {_json.dumps(event)}\n\n"
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
         @application.post("/api/v1/voice/analyze-and-speak")
         async def analyze_and_speak(
             file: UploadFile = File(...),
