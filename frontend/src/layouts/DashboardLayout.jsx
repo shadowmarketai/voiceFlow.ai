@@ -55,7 +55,7 @@ const navSections = [
       { icon: MessageSquare, name: 'Conversations', path: '/voice/call-logs' },
       { icon: FileAudio,     name: 'Recordings',     path: '/voice/recordings' },
       { icon: FlaskConical,  name: 'Testing',        path: '/voice/testing' },
-      { icon: Gauge,         name: 'Quality',        path: '/voice/quality' },
+      { icon: Gauge,         name: 'Quality',        path: '/voice/quality', superAdminOnly: true },
     ],
   },
   {
@@ -352,7 +352,11 @@ export default function DashboardLayout() {
               )}
               <div className="space-y-0.5">
                 {section.items
-                  .filter((item) => !item.tenantOnly || !!user?.tenant_id)
+                  .filter((item) => {
+                    if (item.tenantOnly && !user?.tenant_id) return false;
+                    if (item.superAdminOnly && !user?.is_super_admin) return false;
+                    return true;
+                  })
                   .map((item) => (
                     <SidebarNavItem key={item.path} item={item} mobile={mobile} />
                   ))}

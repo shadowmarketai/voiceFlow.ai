@@ -6,6 +6,7 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Navigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   Activity, Gauge, CheckCircle2, AlertTriangle, XCircle, TrendingUp,
@@ -16,6 +17,7 @@ import {
   BarChart, Bar, Legend,
 } from 'recharts'
 import { qualityAPI } from '../../../services/api'
+import { useAuth } from '../../../contexts/AuthContext'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 10 },
@@ -72,6 +74,9 @@ function MetricCard({ icon: Icon, label, value, unit, tone = 'indigo', subtitle 
 }
 
 export default function QualityDashboard() {
+  const { user } = useAuth()
+  // Hard route guard: Quality Dashboard is platform-ops-only.
+  if (user && !user.is_super_admin) return <Navigate to="/voice/dashboard-v2" replace />
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [providers, setProviders] = useState(null)

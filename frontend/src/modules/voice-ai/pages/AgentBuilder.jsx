@@ -58,11 +58,43 @@ function Section({ title, icon: Icon, children, collapsible = false, defaultOpen
 
 /* ─── Constants ───────────────────────────────────────────────── */
 const LLM_PROVIDERS = [
-  { id: 'groq', name: 'Groq', model: 'llama3-8b-8192', badge: 'Fastest' },
+  { id: 'groq', name: 'Groq', model: 'llama-3.1-8b-instant', badge: 'Fastest' },
   { id: 'anthropic', name: 'Anthropic Claude', model: 'claude-haiku-4-5-20251001', badge: 'Quality' },
   { id: 'openai', name: 'OpenAI', model: 'gpt-4o-mini' },
   { id: 'gemini', name: 'Gemini Live 2.5 HD', model: 'gemini-2.5-flash', badge: 'Native Audio' },
 ];
+
+/* Per-provider model options shown in the Advanced Settings dropdown. */
+const MODEL_OPTIONS = {
+  groq: [
+    { id: 'default',                   label: 'Llama 3.1 8B Instant (Recommended)' },
+    { id: 'llama-3.1-8b-instant',       label: 'Llama 3.1 8B Instant — fastest' },
+    { id: 'llama-3.1-70b-versatile',    label: 'Llama 3.1 70B — higher quality' },
+    { id: 'mixtral-8x7b-32768',         label: 'Mixtral 8x7B — long context' },
+  ],
+  anthropic: [
+    { id: 'default',                     label: 'Claude Haiku 4.5 (Recommended)' },
+    { id: 'claude-haiku-4-5-20251001',    label: 'Claude Haiku 4.5 — fast' },
+    { id: 'claude-sonnet-4-6',            label: 'Claude Sonnet 4.6 — premium' },
+    { id: 'claude-opus-4-6',              label: 'Claude Opus 4.6 — ultra (expensive)' },
+  ],
+  openai: [
+    { id: 'default',       label: 'GPT-4o Mini (Recommended)' },
+    { id: 'gpt-4o-mini',    label: 'GPT-4o Mini — fast' },
+    { id: 'gpt-4o',         label: 'GPT-4o — premium' },
+    { id: 'gpt-4-turbo',    label: 'GPT-4 Turbo' },
+  ],
+  gemini: [
+    { id: 'default',                  label: 'Gemini 2.5 Flash Live (Recommended)' },
+    { id: 'gemini-2.5-flash',          label: 'Gemini 2.5 Flash — fast, native audio' },
+    { id: 'gemini-2.5-pro',            label: 'Gemini 2.5 Pro — premium' },
+    { id: 'gemini-2.0-flash',          label: 'Gemini 2.0 Flash' },
+  ],
+};
+
+function getModelOptions(providerId) {
+  return MODEL_OPTIONS[providerId] || [{ id: 'default', label: 'Default' }];
+}
 
 const QUICK_PRESETS = [
   { id: 'low_latency', icon: Zap, label: 'Low Latency', desc: 'Fastest response, Groq + Deepgram' },
@@ -163,8 +195,17 @@ export default function AgentBuilder() {
   const previousLlmCatalog = prevLlmRef.current;
   useEffect(() => {
     prevLlmRef.current = LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b';
+    // Reset model to default when the provider changes so we don't keep a
+    // stale model id from the previous provider's catalog.
+    setLlmModel('default');
   }, [llmProvider]);
   const [llmProvider, setLlmProvider] = useState('groq');
+  // Advanced LLM settings (shown in an expandable "Advanced Settings" block)
+  const [llmModel, setLlmModel] = useState('default');      // specific model within provider
+  const [temperature, setTemperature] = useState(0.7);
+  const [maxTokens, setMaxTokens] = useState(2000);
+  const [topP, setTopP] = useState(0.95);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('priya');
 
   // Load agent data in edit mode
@@ -180,6 +221,10 @@ export default function AgentBuilder() {
       if (agent.config) {
         if (agent.config.prompt) setSystemPrompt(agent.config.prompt);
         if (agent.config.llmProvider) setLlmProvider(agent.config.llmProvider);
+        if (agent.config.llmModel) setLlmModel(agent.config.llmModel);
+        if (agent.config.temperature != null) setTemperature(agent.config.temperature);
+        if (agent.config.maxTokens != null) setMaxTokens(agent.config.maxTokens);
+        if (agent.config.topP != null) setTopP(agent.config.topP);
         if (agent.config.voice) setSelectedVoice(agent.config.voice);
         if (agent.config.accent) setSpeechAccent(agent.config.accent);
       }
@@ -220,7 +265,43 @@ export default function AgentBuilder() {
 
   const handleSave = () => {
     setSaving(true);
-    setTimeout(() => { setSaving(false); toast.success(`Agent "${agentName}" saved`); }, 800);
+    try {
+      const id = agentId || `agent-${Date.now()}`;
+      const agentData = {
+        id,
+        name: agentName,
+        language: agentLang,
+        status: agentStatus,
+        updatedAt: new Date().toISOString(),
+        config: {
+          prompt: systemPrompt,
+          llmProvider,
+          llmModel,
+          temperature,
+          maxTokens,
+          topP,
+          voice: selectedVoice,
+          accent: speechAccent,
+          quickPreset,
+          responseTiming,
+          allowInterruptions,
+          maxDuration,
+          inactivityTimeout,
+        },
+      };
+      // Upsert into vf_custom_agents
+      const saved = JSON.parse(localStorage.getItem('vf_custom_agents') || '[]');
+      const filtered = saved.filter((a) => a.id !== id);
+      localStorage.setItem('vf_custom_agents', JSON.stringify([agentData, ...filtered]));
+      localStorage.removeItem('vf_editing_agent');
+      toast.success(`Agent "${agentName}" saved`);
+      // Navigate back to agents list so the user sees the saved row
+      setTimeout(() => navigate('/voice/agents-list'), 400);
+    } catch (e) {
+      toast.error('Failed to save agent');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const applyTemplate = (t) => { setSelectedTemplate(t.id); setSystemPrompt(t.prompt); toast.success(`"${t.name}" template applied`); };
@@ -402,6 +483,71 @@ export default function AgentBuilder() {
               </div>
             </Section>
           )}
+
+          {/* Advanced Settings — everyone sees this (temperature / max tokens / model) */}
+          <div className="bg-white rounded-2xl border border-gray-200/60 shadow-sm p-5">
+            <button onClick={() => setAdvancedOpen(o => !o)}
+              className="w-full flex items-center justify-between text-left">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-4 h-4 text-gray-500" />
+                <h3 className="text-sm font-semibold text-gray-900">Advanced Settings</h3>
+              </div>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {advancedOpen && (
+              <div className="mt-4 space-y-5">
+                {/* Model */}
+                <div>
+                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Model</label>
+                  <select value={llmModel} onChange={(e) => setLlmModel(e.target.value)}
+                    className="mt-1.5 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-indigo-300">
+                    {getModelOptions(llmProvider).map(m => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Model used for {LLM_PROVIDERS.find(p => p.id === llmProvider)?.name || 'this provider'}
+                  </p>
+                </div>
+
+                {/* Temperature */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Temperature</label>
+                    <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded-md bg-gray-100 text-gray-700">
+                      {temperature.toFixed(2)}
+                    </span>
+                  </div>
+                  <input type="range" min="0" max="2" step="0.05" value={temperature}
+                    onChange={(e) => setTemperature(Number(e.target.value))}
+                    className="w-full accent-indigo-600" />
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                    <span>Focused · deterministic</span>
+                    <span>Creative · varied</span>
+                  </div>
+                </div>
+
+                {/* Max Tokens + Top P */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Max Tokens</label>
+                    <input type="number" min="100" max="32000" step="100" value={maxTokens}
+                      onChange={(e) => setMaxTokens(Number(e.target.value) || 2000)}
+                      className="mt-1.5 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-300" />
+                    <p className="text-[10px] text-gray-400 mt-1">Longest reply the LLM can produce.</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Top P</label>
+                    <input type="number" min="0" max="1" step="0.05" value={topP}
+                      onChange={(e) => setTopP(Number(e.target.value) || 0.95)}
+                      className="mt-1.5 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-300" />
+                    <p className="text-[10px] text-gray-400 mt-1">Nucleus-sampling probability. Leave 0.95 if unsure.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Voice + Response Timing */}
           <Section title="Voice" icon={Volume2}>
