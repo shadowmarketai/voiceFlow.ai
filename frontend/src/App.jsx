@@ -106,6 +106,8 @@ function App() {
           <Route path="users" element={<S><CrossTenantUsersPage /></S>} />
           <Route path="settings" element={<S><SuperAdminSettingsPage /></S>} />
           <Route path="pricing" element={<S><AgencyPricingPage /></S>} />
+          <Route path="quality" element={<S><QualityDashboardPage /></S>} />
+          <Route path="combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
         </Route>
 
         {/* ═══════════════════════════════════════════════════

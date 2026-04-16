@@ -49,8 +49,8 @@ const NAV_GROUPS = [
  {
  label: 'Platform Ops',
  items: [
- { path: '/voice/quality',          label: 'Quality Dashboard', icon: Gauge },
- { path: '/voice/combo-benchmark',  label: 'Combo Benchmark',   icon: BarChart3 },
+ { path: '/admin/quality',          label: 'Quality Dashboard', icon: Gauge },
+ { path: '/admin/combo-benchmark',  label: 'Combo Benchmark',   icon: BarChart3 },
  ],
  },
  {
