@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 
 from api.database import get_session_factory
 from api.models.quality_metrics import CallMetric, CsatRating, ProviderProbe, UptimeProbe
@@ -48,6 +48,41 @@ def record_call(**kwargs) -> None:
 
 
 # ── Readers ────────────────────────────────────────────────────────────
+
+def provider_uptime_summary(hours: int = 24) -> dict[str, Any]:
+    """Per-provider uptime % + avg latency over the last `hours` window.
+
+    Returns { category: [ {provider, ok_pct, avg_latency_ms, samples} ... ] }.
+    """
+    since = datetime.utcnow() - timedelta(hours=hours)
+    out: dict[str, list[dict[str, Any]]] = {"stt": [], "llm": [], "tts": []}
+    try:
+        with get_session_factory()() as s:
+            rows = s.execute(
+                select(
+                    ProviderProbe.category,
+                    ProviderProbe.provider,
+                    func.count(ProviderProbe.id).label("total"),
+                    func.sum(ProviderProbe.ok.cast(Integer)).label("ok_count"),
+                    func.avg(ProviderProbe.latency_ms).label("avg_ms"),
+                ).where(ProviderProbe.ts >= since)
+                .group_by(ProviderProbe.category, ProviderProbe.provider)
+            ).all()
+            for r in rows:
+                if r.category not in out:
+                    continue
+                total = int(r.total or 0)
+                ok_count = int(r.ok_count or 0)
+                out[r.category].append({
+                    "provider": r.provider,
+                    "ok_pct": round(ok_count / total * 100, 2) if total else None,
+                    "avg_latency_ms": round(float(r.avg_ms), 1) if r.avg_ms else None,
+                    "samples": total,
+                })
+    except Exception:
+        pass
+    return out
+
 
 def uptime_percent(service: str = "api", hours: int = 24 * 30) -> float:
     since = datetime.utcnow() - timedelta(hours=hours)

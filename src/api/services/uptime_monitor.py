@@ -3,6 +3,9 @@ Background uptime monitor — polls internal endpoints every N seconds and
 persists each tick to `quality_uptime_probes`. Rolled up by
 quality_store.uptime_percent().
 
+W3.2 — also probes each STT/LLM/TTS provider every PROVIDER_PROBE_INTERVAL
+seconds (default 300s / 5 min) and records into `quality_provider_probes`.
+
 Started in api.server._register_lifecycle on app startup.
 """
 
@@ -15,15 +18,16 @@ import time
 
 import httpx
 
-from api.services.quality_store import record_uptime_probe
+from api.services.quality_store import record_provider_probe, record_uptime_probe
 
 log = logging.getLogger(__name__)
 
 
 DEFAULT_INTERVAL_SEC = int(os.getenv("UPTIME_PROBE_INTERVAL", "60"))
+PROVIDER_PROBE_INTERVAL_SEC = int(os.getenv("PROVIDER_PROBE_INTERVAL", "300"))
 DEFAULT_BASE_URL = os.getenv("UPTIME_PROBE_BASE_URL", "http://127.0.0.1:8001")
 
-# (service-key, relative-url, expected-status-max)
+# Self-probe checks (cheap — no auth, no external network)
 CHECKS = [
     ("api", "/api/health", 500),
     ("docs", "/docs", 500),
@@ -31,7 +35,8 @@ CHECKS = [
 ]
 
 
-async def _tick(client: httpx.AsyncClient, base_url: str):
+async def _self_tick(client: httpx.AsyncClient, base_url: str):
+    """Probe local endpoints and record uptime_probe rows."""
     for service, path, max_ok in CHECKS:
         t0 = time.perf_counter()
         ok = False
@@ -44,15 +49,50 @@ async def _tick(client: httpx.AsyncClient, base_url: str):
         record_uptime_probe(service=service, ok=ok, latency_ms=latency_ms)
 
 
+async def _provider_tick():
+    """Probe each STT/LLM/TTS provider once and persist results.
+
+    Imported lazily so app startup isn't blocked by quality router import errors.
+    """
+    try:
+        from api.routers.quality import PROBES, _probe
+    except Exception as exc:
+        log.warning("provider probe skipped — quality router import failed: %s", exc)
+        return
+
+    for category, probes in PROBES.items():
+        tasks = [_probe(*p) for p in probes]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for r in results:
+            if isinstance(r, Exception) or not isinstance(r, dict):
+                continue
+            if r.get("status") == "not_configured":
+                continue
+            record_provider_probe(
+                category=category,
+                provider=r["name"],
+                latency_ms=r.get("latency_ms"),
+                ok=r.get("ok", False),
+                http_status=r.get("http_status"),
+                note=r.get("status"),
+            )
+
+
 async def run_forever(interval: int = DEFAULT_INTERVAL_SEC,
                       base_url: str = DEFAULT_BASE_URL) -> None:
-    log.info("uptime monitor starting — %s every %ds", base_url, interval)
+    log.info("uptime monitor starting — self=%ds provider=%ds base=%s",
+             interval, PROVIDER_PROBE_INTERVAL_SEC, base_url)
+    ticks = 0
+    provider_every = max(1, PROVIDER_PROBE_INTERVAL_SEC // max(1, interval))
     async with httpx.AsyncClient() as client:
         while True:
             try:
-                await _tick(client, base_url)
+                await _self_tick(client, base_url)
+                if ticks % provider_every == 0:
+                    await _provider_tick()
             except Exception as exc:
                 log.warning("uptime probe tick failed: %s", exc)
+            ticks += 1
             await asyncio.sleep(interval)
 
 

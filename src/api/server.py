@@ -164,12 +164,19 @@ def _register_lifecycle(application: FastAPI) -> None:
             application.state.voice_engine = None
             logger.warning("Voice engine not available: %s", exc)
 
-        # Start synthetic uptime monitor (every 60s)
+        # Start synthetic uptime monitor (every 60s) + provider probes (5 min)
         try:
             from api.services.uptime_monitor import start_in_background
             start_in_background()
         except Exception as exc:
             logger.warning("Uptime monitor not started: %s", exc)
+
+        # Start synthetic pipeline probe (opt-in via SYNTHETIC_PROBE_ENABLED=true)
+        try:
+            from api.services.synthetic_probe import start_in_background as start_synth
+            start_synth()
+        except Exception as exc:
+            logger.warning("Synthetic probe not started: %s", exc)
 
         logger.info("%s ready!", settings.APP_NAME)
 
@@ -301,6 +308,14 @@ def _include_routers(application: FastAPI) -> None:
         logger.info("Quality router loaded")
     except Exception as exc:
         logger.warning("Quality router not available: %s", exc)
+
+    # ── Public Status Page (status.shadowmarket.ai) ──────────
+    try:
+        from api.routers.status_page import router as status_page_router
+        application.include_router(status_page_router)
+        logger.info("Status page router loaded")
+    except Exception as exc:
+        logger.warning("Status page router not available: %s", exc)
 
     # ── Webhooks & API Keys ──────────────────────────────────
     try:

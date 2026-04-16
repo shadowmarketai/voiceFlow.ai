@@ -148,6 +148,7 @@ def setup_sentry():
         sentry_sdk.init(
             dsn=sentry_dsn,
             environment=os.environ.get("APP_ENV", "development"),
+            release=os.environ.get("APP_VERSION") or os.environ.get("GIT_SHA") or "voiceflow@dev",
             traces_sample_rate=0.1,  # 10% of transactions
             profiles_sample_rate=0.05,  # 5% of profiles
             integrations=[
