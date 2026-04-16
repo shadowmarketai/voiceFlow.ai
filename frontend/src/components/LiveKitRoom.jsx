@@ -8,14 +8,31 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LiveKitRoom as LKRoom, useRoomContext, useParticipants, AudioTrack, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, Loader2, Captions } from 'lucide-react';
 import { livekitAPI } from '../services/api';
+import useDeepgramStream from '../hooks/useDeepgramStream';
+import { qualityAPI } from '../services/api';
+import toast from 'react-hot-toast';
 
-function CallUI({ onEnd }) {
+function CallUI({ onEnd, language = 'en', agentId }) {
   const room = useRoomContext();
   const participants = useParticipants();
   const [muted, setMuted] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [showCaptions, setShowCaptions] = useState(true);
+  const [showCsat, setShowCsat] = useState(false);
+
+  // Phase-1 W1.1: streaming STT on top of the LiveKit WebRTC call.
+  // Deepgram Nova-2 gives us ~200ms first-word latency vs ~1100ms batch.
+  const { start: startStt, stop: stopStt, partial, finals, error: sttError } =
+    useDeepgramStream({ language, diarize: true });
+
+  // Start streaming once the call is connected; stop on unmount
+  useEffect(() => {
+    startStt();
+    return () => stopStt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Track duration
   useEffect(() => {
@@ -32,14 +49,59 @@ function CallUI({ onEnd }) {
   }, [room, muted]);
 
   const handleEnd = useCallback(() => {
+    // Before tearing down, show a quick CSAT rating; the actual disconnect
+    // happens once the user picks a score (or dismisses).
+    if (duration >= 10 && !showCsat) {
+      setShowCsat(true);
+      stopStt();
+      return;
+    }
     room.disconnect();
     onEnd?.();
-  }, [room, onEnd]);
+  }, [room, onEnd, duration, showCsat, stopStt]);
+
+  const submitCsat = async (score) => {
+    try {
+      await qualityAPI.submitCsat({
+        score,
+        agent_id: agentId || null,
+        language: language || null,
+        call_id: room?.name || null,
+      });
+      toast.success(`Thanks — rated ${score}★`);
+    } catch {
+      // silent — telemetry never blocks
+    }
+    setShowCsat(false);
+    room.disconnect();
+    onEnd?.();
+  };
 
   const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   // Render audio tracks from remote participants (AI agent)
   const audioTracks = useTracks([Track.Source.Microphone], { onlySubscribed: true });
+
+  // CSAT modal — lands after the user hits "End"
+  if (showCsat) {
+    return (
+      <div className="flex flex-col items-center gap-4 p-6">
+        <p className="text-sm text-gray-500">Call ended · {formatTime(duration)}</p>
+        <h3 className="text-lg font-semibold text-gray-900">How was this call?</h3>
+        <p className="text-xs text-gray-500 -mt-2">Your rating helps us improve — 30d average is shown on the Quality dashboard.</p>
+        <div className="flex items-center gap-2">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} onClick={() => submitCsat(n)}
+              className="w-12 h-12 rounded-full border-2 border-gray-200 hover:border-indigo-500 hover:bg-indigo-50 text-lg font-bold text-gray-700">
+              {n}★
+            </button>
+          ))}
+        </div>
+        <button onClick={() => { setShowCsat(false); room.disconnect(); onEnd?.() }}
+          className="text-xs text-gray-400 hover:text-gray-600">Skip</button>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col items-center gap-4 p-6">
@@ -62,6 +124,33 @@ function CallUI({ onEnd }) {
         {participants.length} participant{participants.length !== 1 ? 's' : ''} in room
       </p>
 
+      {/* Live captions (Deepgram streaming STT) */}
+      {showCaptions && (
+        <div className="w-full max-w-md min-h-[80px] p-3 rounded-xl bg-gray-50 border border-gray-200 space-y-1.5 max-h-[140px] overflow-y-auto">
+          {finals.slice(-4).map((f, i) => (
+            <p key={i} className="text-xs text-gray-800 leading-snug">
+              {f.speaker != null && (
+                <span className="inline-block px-1 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[9px] font-mono mr-1">
+                  S{f.speaker}
+                </span>
+              )}
+              {f.text}
+            </p>
+          ))}
+          {partial && (
+            <p className="text-xs text-gray-400 italic leading-snug">
+              {partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" />
+            </p>
+          )}
+          {!finals.length && !partial && (
+            <p className="text-xs text-gray-400 text-center">Listening — live captions will appear here</p>
+          )}
+          {sttError && (
+            <p className="text-xs text-red-600">{sttError}</p>
+          )}
+        </div>
+      )}
+
       {/* Controls */}
       <div className="flex items-center gap-3">
         <button
@@ -82,15 +171,19 @@ function CallUI({ onEnd }) {
           <PhoneOff className="w-6 h-6" />
         </button>
 
-        <button className="p-4 rounded-full bg-gray-100 text-gray-700">
-          <Volume2 className="w-6 h-6" />
+        <button
+          onClick={() => setShowCaptions(v => !v)}
+          className={`p-4 rounded-full transition-all ${showCaptions ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+          title="Toggle live captions"
+        >
+          <Captions className="w-6 h-6" />
         </button>
       </div>
     </div>
   );
 }
 
-export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assistant', userName = 'User', onEnd }) {
+export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assistant', userName = 'User', language = 'en', onEnd }) {
   const [token, setToken] = useState(null);
   const [livekitUrl, setLivekitUrl] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -161,7 +254,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
       video={false}
       onDisconnected={handleEnd}
     >
-      <CallUI onEnd={handleEnd} />
+      <CallUI onEnd={handleEnd} language={language} agentId={agentId} />
     </LKRoom>
   );
 }

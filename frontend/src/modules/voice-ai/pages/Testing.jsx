@@ -420,6 +420,7 @@ export default function Testing() {
               <LiveKitVoiceRoom
                 agentId={selectedAgent}
                 agentName={mockAgents.find(a => a.id === selectedAgent)?.name || 'AI Agent'}
+                language={langCode || 'en'}
                 onEnd={() => setIsWebRTCCall(false)}
               />
             </Suspense>
