@@ -816,6 +816,9 @@ export const qualityAPI = {
   competitors: () => api.get('/api/v1/quality/competitors'),
   trends: () => api.get('/api/v1/quality/trends'),
   summary: () => api.get('/api/v1/quality/summary'),
+  csat: () => api.get('/api/v1/quality/csat'),
+  submitCsat: (data) => api.post('/api/v1/quality/csat', data),
+  operational: () => api.get('/api/v1/quality/operational'),
 };
 
 export default api;

@@ -11,6 +11,7 @@ import { motion } from 'framer-motion'
 import {
   Activity, Gauge, CheckCircle2, AlertTriangle, XCircle, TrendingUp,
   Zap, Mic2, Brain, Volume2, RefreshCw, Loader2, Clock, Trophy,
+  Smile, Star, Users, PhoneCall, Timer,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -85,6 +86,8 @@ export default function QualityDashboard() {
   const [competitors, setCompetitors] = useState(null)
   const [trends, setTrends] = useState(null)
   const [catalog, setCatalog] = useState(null)
+  const [csat, setCsat] = useState(null)
+  const [ops, setOps] = useState(null)
   const [err, setErr] = useState(null)
 
   // Drill-down filters (aggregate view when 'all')
@@ -97,7 +100,7 @@ export default function QualityDashboard() {
     setRefreshing(true)
     setErr(null)
     try {
-      const [p, pl, u, a, c, t, cat] = await Promise.all([
+      const [p, pl, u, a, c, t, cat, csatR, opsR] = await Promise.all([
         qualityAPI.providers(),
         qualityAPI.pipeline(),
         qualityAPI.uptime(),
@@ -105,6 +108,8 @@ export default function QualityDashboard() {
         qualityAPI.competitors(),
         qualityAPI.trends(),
         billingAPI.catalog(),
+        qualityAPI.csat(),
+        qualityAPI.operational(),
       ])
       setProviders(p.data)
       setPipeline(pl.data)
@@ -113,6 +118,8 @@ export default function QualityDashboard() {
       setCompetitors(c.data)
       setTrends(t.data)
       setCatalog(cat.data.catalog)
+      setCsat(csatR.data)
+      setOps(opsR.data)
     } catch (e) {
       setErr(e.response?.data?.detail || 'Failed to load quality metrics')
     }
@@ -389,6 +396,55 @@ export default function QualityDashboard() {
           Lower is better for latency, WER, and cost. Higher is better for MOS scores.
         </p>
       </motion.div>
+
+      {/* ─── New KPI row: CSAT + Operational (FCR / completion / AHT) ─── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard icon={Smile} label="CSAT (30d)"
+          value={csat?.avg != null ? csat.avg : '—'} unit="/5"
+          tone={csat?.avg >= 4.2 ? 'emerald' : csat?.avg >= 3.5 ? 'amber' : 'rose'}
+          subtitle={csat?.count ? `${csat.count} ratings · ${csat.promoters_pct}% promoters` : 'No ratings yet'} />
+        <MetricCard icon={PhoneCall} label="Call completion"
+          value={ops?.completion_rate != null ? ops.completion_rate : '—'} unit="%"
+          tone={ops?.completion_rate >= 95 ? 'emerald' : ops?.completion_rate >= 90 ? 'amber' : 'rose'}
+          subtitle={ops?.total_calls ? `${ops.total_calls} calls (30d)` : 'No call data yet'} />
+        <MetricCard icon={Users} label="FCR (First-Call Resolution)"
+          value={ops?.fcr_rate != null ? ops.fcr_rate : '—'} unit="%"
+          tone={ops?.fcr_rate >= 75 ? 'emerald' : ops?.fcr_rate >= 60 ? 'amber' : 'rose'}
+          subtitle="Issue resolved in 1 call" />
+        <MetricCard icon={Timer} label="Avg Handle Time"
+          value={ops?.avg_handle_time_sec != null ? Math.round(ops.avg_handle_time_sec) : '—'} unit="s"
+          tone="indigo"
+          subtitle="Mean call duration" />
+      </div>
+
+      {/* CSAT distribution */}
+      {csat?.count > 0 && (
+        <motion.div variants={fadeUp} initial="hidden" animate="show"
+          className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Star className="w-4 h-4 text-amber-500" /> CSAT score distribution
+            <span className="text-[11px] text-gray-400 ml-2">Rolling 30 days · {csat.count} ratings</span>
+          </h3>
+          <div className="space-y-2">
+            {[5, 4, 3, 2, 1].map((score) => {
+              const count = csat.distribution?.[score] || 0
+              const pct = csat.count ? Math.round((count / csat.count) * 100) : 0
+              const colors = { 5: 'bg-emerald-500', 4: 'bg-emerald-400', 3: 'bg-amber-400', 2: 'bg-orange-400', 1: 'bg-red-500' }
+              return (
+                <div key={score} className="flex items-center gap-3 text-xs">
+                  <span className="w-16 text-gray-600">
+                    {'★'.repeat(score)}{'☆'.repeat(5 - score)}
+                  </span>
+                  <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div className={`h-full ${colors[score]} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="w-16 text-right font-mono text-gray-700">{count} ({pct}%)</span>
+                </div>
+              )
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* Accuracy matrix */}
       <motion.div variants={fadeUp} initial="hidden" animate="show"

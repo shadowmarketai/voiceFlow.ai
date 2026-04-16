@@ -64,5 +64,25 @@ class CallMetric(Base):
 
     # Accuracy (optional — filled in from benchmark runs)
     wer: Mapped[float | None] = mapped_column(Float, nullable=True)
+    der: Mapped[float | None] = mapped_column(Float, nullable=True)          # Diarization Error Rate %
     tts_mos: Mapped[float | None] = mapped_column(Float, nullable=True)
+    utmos: Mapped[float | None] = mapped_column(Float, nullable=True)         # Automated MOS predictor
     intent_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    # Operational outcomes (Vapi/Zendesk-style)
+    completed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)   # call ended normally
+    resolved_first_call: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # FCR
+    csat_score: Mapped[int | None] = mapped_column(Integer, nullable=True)   # 1–5 from user
+
+
+class CsatRating(Base):
+    """Post-call customer satisfaction rating (1–5) + optional free-text."""
+    __tablename__ = "quality_csat_ratings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    call_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    score: Mapped[int] = mapped_column(Integer)               # 1–5
+    comment: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    language: Mapped[str | None] = mapped_column(String(8), nullable=True)

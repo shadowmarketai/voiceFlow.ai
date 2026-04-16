@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from api.database import get_session_factory
-from api.models.quality_metrics import CallMetric, ProviderProbe, UptimeProbe
+from api.models.quality_metrics import CallMetric, CsatRating, ProviderProbe, UptimeProbe
 
 
 # ── Writers ────────────────────────────────────────────────────────────
@@ -169,3 +169,82 @@ def pipeline_stage_snapshot(hours: int = 24) -> list[dict[str, Any]] | None:
     except Exception:
         return None
     return out
+
+
+# ── CSAT (customer satisfaction) ──────────────────────────────────────────
+
+def record_csat(score: int, call_id: str | None = None, agent_id: str | None = None,
+                comment: str | None = None, language: str | None = None) -> None:
+    try:
+        score = max(1, min(5, int(score)))
+        with get_session_factory()() as s:
+            s.add(CsatRating(
+                score=score, call_id=call_id, agent_id=agent_id,
+                comment=comment, language=language,
+            ))
+            s.commit()
+    except Exception:
+        pass
+
+
+def csat_summary(days: int = 30) -> dict[str, Any]:
+    since = datetime.utcnow() - timedelta(days=days)
+    try:
+        with get_session_factory()() as s:
+            rows = s.execute(
+                select(CsatRating.score).where(CsatRating.ts >= since)
+            ).scalars().all()
+            if not rows:
+                return {"count": 0, "avg": None, "distribution": {i: 0 for i in range(1, 6)}, "promoters_pct": None}
+            count = len(rows)
+            avg = round(sum(rows) / count, 2)
+            dist = {i: 0 for i in range(1, 6)}
+            for r in rows:
+                if 1 <= r <= 5:
+                    dist[r] += 1
+            # NPS-style promoter % (scores 4–5)
+            promoters = sum(1 for r in rows if r >= 4)
+            return {
+                "count": count, "avg": avg, "distribution": dist,
+                "promoters_pct": round(promoters / count * 100, 1),
+            }
+    except Exception:
+        return {"count": 0, "avg": None, "distribution": {i: 0 for i in range(1, 6)}, "promoters_pct": None}
+
+
+# ── Operational metrics — completion / FCR / AHT ──────────────────────────
+
+def operational_summary(days: int = 30) -> dict[str, Any]:
+    since = datetime.utcnow() - timedelta(days=days)
+    try:
+        with get_session_factory()() as s:
+            total = s.execute(
+                select(func.count(CallMetric.id)).where(CallMetric.ts >= since)
+            ).scalar() or 0
+            if total == 0:
+                return {"total_calls": 0, "completion_rate": None,
+                        "fcr_rate": None, "avg_handle_time_sec": None}
+            completed = s.execute(
+                select(func.count(CallMetric.id)).where(
+                    CallMetric.ts >= since, CallMetric.completed.is_(True)
+                )
+            ).scalar() or 0
+            fcr = s.execute(
+                select(func.count(CallMetric.id)).where(
+                    CallMetric.ts >= since, CallMetric.resolved_first_call.is_(True)
+                )
+            ).scalar() or 0
+            aht = s.execute(
+                select(func.avg(CallMetric.duration_sec)).where(
+                    CallMetric.ts >= since, CallMetric.duration_sec.is_not(None)
+                )
+            ).scalar()
+            return {
+                "total_calls": int(total),
+                "completion_rate": round(completed / total * 100, 1),
+                "fcr_rate": round(fcr / total * 100, 1),
+                "avg_handle_time_sec": round(float(aht), 1) if aht else None,
+            }
+    except Exception:
+        return {"total_calls": 0, "completion_rate": None,
+                "fcr_rate": None, "avg_handle_time_sec": None}
