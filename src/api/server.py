@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Deepgram streaming STT (live WebSocket transcription) ──
+    try:
+        from api.routers.deepgram_streaming import router as dg_stream_router
+        application.include_router(dg_stream_router)
+        logger.info("Deepgram streaming STT router loaded")
+    except Exception as exc:
+        logger.warning("Deepgram streaming router not available: %s", exc)
+
     # ── Tenant team management (tenant owner adds/removes users) ─
     try:
         from api.routers.tenant_users import router as tenant_users_router

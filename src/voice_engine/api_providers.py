@@ -57,11 +57,23 @@ async def transcribe_audio_api(
             "error": "No STT provider available"}
 
 
-async def _deepgram_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
-    """Deepgram Nova-2 — fastest, real-time streaming capable."""
+async def _deepgram_stt(
+    audio_bytes: bytes,
+    api_key: str,
+    language: Optional[str],
+    diarize: bool = False,
+) -> Dict[str, Any]:
+    """Deepgram Nova-2 — fastest, real-time streaming capable.
+
+    diarize=True → returns per-word speaker tags (0, 1, 2…) and a
+    `speakers` list with one segment per speaker turn. Useful for
+    call-recording analysis + multi-party conferences.
+    """
     params = {"model": "nova-2", "smart_format": "true", "punctuate": "true"}
     if language:
         params["language"] = language
+    if diarize:
+        params["diarize"] = "true"
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
@@ -74,11 +86,34 @@ async def _deepgram_stt(audio_bytes: bytes, api_key: str, language: Optional[str
 
     ch = data.get("results", {}).get("channels", [{}])
     alt = ch[0].get("alternatives", [{}])[0] if ch else {}
-    return {
+
+    result: Dict[str, Any] = {
         "text": alt.get("transcript", ""),
         "language": ch[0].get("detected_language", language or "en") if ch else language or "en",
-        "provider": "deepgram", "confidence": alt.get("confidence", 0.0),
+        "provider": "deepgram",
+        "confidence": alt.get("confidence", 0.0),
     }
+
+    if diarize:
+        # Fold consecutive same-speaker words into one segment.
+        segments: list[Dict[str, Any]] = []
+        cur: Dict[str, Any] | None = None
+        for w in alt.get("words", []):
+            sp = w.get("speaker", 0)
+            if cur is None or cur["speaker"] != sp:
+                if cur:
+                    segments.append(cur)
+                cur = {"speaker": sp, "text": w.get("punctuated_word") or w.get("word", ""),
+                       "start": w.get("start", 0), "end": w.get("end", 0)}
+            else:
+                cur["text"] += " " + (w.get("punctuated_word") or w.get("word", ""))
+                cur["end"] = w.get("end", cur["end"])
+        if cur:
+            segments.append(cur)
+        result["speakers"] = segments
+        result["speaker_count"] = len({s["speaker"] for s in segments}) if segments else 0
+
+    return result
 
 
 async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:

@@ -876,3 +876,42 @@ async def list_tts_voices(
     if language:
         voices = [v for v in voices if v["language"] == language]
     return {"voices": voices}
+
+
+# ─── Speaker diarization (Deepgram Nova-2 `diarize=true`) ──────────────────
+
+@router.post("/stt/diarize", summary="Transcribe audio with speaker separation")
+async def stt_diarize(
+    file: UploadFile = File(...),
+    language: Optional[str] = Query(None, description="Optional language hint (e.g. 'en', 'hi', 'ta')"),
+    current_user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """
+    Run Deepgram Nova-2 with diarization enabled. Returns one segment
+    per speaker turn with timestamps — ideal for analyzing call
+    recordings, multi-party conferences, or quality scoring.
+
+    Response shape:
+      {
+        "text":  "full transcript",
+        "speakers": [
+          {"speaker": 0, "text": "Hello, how may I help?", "start": 0.1, "end": 2.3},
+          {"speaker": 1, "text": "I'd like to cancel",      "start": 2.8, "end": 4.2},
+        ],
+        "speaker_count": 2, ...
+      }
+    """
+    import os
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="Deepgram API key not configured")
+
+    audio = await file.read()
+    if not audio:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
+    from voice_engine.api_providers import _deepgram_stt
+    try:
+        return await _deepgram_stt(audio, api_key, language, diarize=True)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Diarization failed: {exc}")
