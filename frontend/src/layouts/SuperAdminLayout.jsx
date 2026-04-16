@@ -27,6 +27,8 @@ import {
  Menu,
  Bell,
  Search,
+ Gauge,
+ BarChart3,
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -42,6 +44,13 @@ const NAV_GROUPS = [
  { path: '/admin/tenants', label: 'Tenants', icon: Building2 },
  { path: '/admin/users', label: 'Users', icon: Users },
  { path: '/admin/tickets', label: 'Support Tickets', icon: Ticket },
+ ],
+ },
+ {
+ label: 'Platform Ops',
+ items: [
+ { path: '/voice/quality',          label: 'Quality Dashboard', icon: Gauge },
+ { path: '/voice/combo-benchmark',  label: 'Combo Benchmark',   icon: BarChart3 },
  ],
  },
  {
