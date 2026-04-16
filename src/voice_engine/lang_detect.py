@@ -39,7 +39,15 @@ _SCRIPT_RANGES: list[tuple[int, int, str]] = [
     (0x0600, 0x06FF, "ur"),   # Arabic script — Urdu (closest match)
 ]
 
-_INDIC_LANG_CODES = {"hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or", "as", "ur"}
+_INDIC_LANG_CODES = {"hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or",
+                     "as", "ur", "ne", "kok", "mni", "sd", "sa"}
+
+# Devanagari is shared by Hindi / Marathi / Nepali / Konkani / Sanskrit.
+# When the user's channel hint is one of these, honour it — script alone
+# can't disambiguate without a much heavier language-ID model.
+_DEVANAGARI_FAMILY = {"hi", "mr", "ne", "kok", "sa"}
+# Bengali script is shared by Bengali / Assamese / Manipuri (Meitei).
+_BENGALI_SCRIPT_FAMILY = {"bn", "as", "mni"}
 
 # Minimum Indic-script ratio before we flip away from English. Below this,
 # stray Indic characters in an otherwise-English sentence (loanwords, names)
@@ -101,21 +109,36 @@ def pick_tts_language(
     Priority (highest first):
       1. STT-detected language if confident and Indic (STT has audio context).
       2. Text-script majority when it's Indic and beats the user hint.
+         Script-ambiguous families (Devanagari, Bengali) honour the channel
+         hint to disambiguate Marathi/Nepali/Konkani vs Hindi, Assamese/
+         Manipuri vs Bengali.
       3. Channel-level user hint (dashboard setting).
       4. Default 'en'.
 
     Returns (chosen_language, reason). Reason is useful for debugging
     language-flip bugs and for surfacing in the `done` event.
     """
-    hint = (user_hint or "").lower()[:2] or None
-    stt = (stt_detected or "").lower()[:2] or None
+    # Accept 2-letter (en, hi) and 3-letter (mni, kok) codes.
+    def _norm(x):
+        if not x:
+            return None
+        return str(x).lower().split("-")[0]
+
+    hint = _norm(user_hint)
+    stt = _norm(stt_detected)
     text_detect = detect_language_text(text or "") if text else None
 
     if stt and stt in _INDIC_LANG_CODES:
         return stt, "stt_detected"
 
     if text_detect and text_detect["language"] in _INDIC_LANG_CODES:
-        return text_detect["language"], "text_script_majority"
+        detected = text_detect["language"]
+        # Disambiguate script-family collisions via the channel hint.
+        if detected == "hi" and hint in _DEVANAGARI_FAMILY:
+            return hint, "script_family_hint"
+        if detected == "bn" and hint in _BENGALI_SCRIPT_FAMILY:
+            return hint, "script_family_hint"
+        return detected, "text_script_majority"
 
     if hint:
         return hint, "user_hint"

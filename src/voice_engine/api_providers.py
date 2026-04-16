@@ -193,10 +193,18 @@ async def _deepgram_stt(
 
 async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
     """Sarvam AI — built for Indian languages (Tamil, Hindi, Telugu, etc.)."""
+    # Sarvam confirmed supports these 11 Indic locales as of 2026.
+    # Others (as/ur/ne/kok/mni/sd/sa) route to OpenAI Whisper via
+    # the chain in transcribe_audio_api().
     lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
                 "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
                 "en": "en-IN", "pa": "pa-IN", "or": "or-IN"}
-    sarvam_lang = lang_map.get(language, "hi-IN")
+    # Devanagari-family langs (Nepali, Konkani, Sanskrit) — fall back to Hindi
+    # locale at Sarvam. Accuracy drops but voice still intelligible.
+    devanagari_fallback = {"ne", "kok", "sa"}
+    sarvam_lang = lang_map.get(
+        language, "hi-IN" if (language or "") in devanagari_fallback else "hi-IN"
+    )
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)

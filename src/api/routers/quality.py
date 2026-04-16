@@ -219,6 +219,17 @@ async def submit_csat(req: CsatPayload):
     return {"status": "ok"}
 
 
+@router.get("/languages")
+async def supported_languages():
+    """W5 — return the full 18-language coverage matrix.
+
+    Used by the dashboard's 'Supported languages' panel and by any
+    external partner who wants to know which languages route where.
+    """
+    from voice_engine.languages import coverage_matrix
+    return {"languages": coverage_matrix()}
+
+
 @router.get("/latency")
 async def latency_metrics(hours: int = 24 * 7):
     """W1.4 — rolling p50/p95/p99 vs 900ms target.

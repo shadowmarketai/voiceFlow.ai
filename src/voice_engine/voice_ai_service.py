@@ -58,20 +58,54 @@ _LANG_HINT = {
     "or": "Reply in Odia.",
     "as": "Reply in Assamese.",
     "ur": "Reply in Urdu.",
+    "ne": "Reply in Nepali.",
+    "kok": "Reply in Konkani (prefer Goan variety unless told otherwise).",
+    "mni": "Reply in Manipuri (Meitei).",
+    "sd": "Reply in Sindhi.",
+    "sa": "Reply in Sanskrit only if specifically requested; otherwise Hindi.",
+}
+
+# W5.3 — lightweight dialect hints fed into the LLM system prompt.
+# Keys match the dialect_hints in languages.py. Keeping these terse —
+# long style guides waste tokens and the LLM already knows these varieties.
+_DIALECT_HINT = {
+    ("hi", "haryanvi"): "Use Haryanvi flavour — direct tone, drop honorifics.",
+    ("hi", "bhojpuri"): "Use Bhojpuri-flavoured Hindi — warm, village-register vocabulary.",
+    ("hi", "bihari"): "Use Bihari-flavoured Hindi — colloquial, add regional markers where natural.",
+    ("ta", "chennai"): "Use Chennai Tamil — urban, mixes English loanwords freely.",
+    ("ta", "madurai"): "Use Madurai Tamil — rural-warm register, fewer English loans.",
+    ("ta", "sri_lankan"): "Use Sri Lankan Tamil conventions — more formal, older vocabulary.",
+    ("mr", "puneri"): "Use Puneri Marathi — slightly formal, educated-urban register.",
+    ("mr", "varhadi"): "Use Varhadi Marathi — Vidarbha dialect, rural warmth.",
+    ("bn", "bangladeshi"): "Use Bangladeshi Bengali conventions (Dhaka register).",
+    ("gu", "kathiyawadi"): "Use Kathiyawadi Gujarati — Saurashtra region flavour.",
+    ("pa", "majhi"): "Use Majhi Punjabi — Amritsar/Lahore register (the 'standard').",
+    ("en", "indian_english"): "Use Indian English phrasing ('do the needful', 'prepone', 'revert back').",
 }
 
 
-def _ground_prompt_india(system_prompt: str, language: str | None = None) -> str:
+def _ground_prompt_india(
+    system_prompt: str,
+    language: str | None = None,
+    dialect: str | None = None,
+) -> str:
     """Prepend India-locale grounding to an agent's system prompt.
 
     Cheap, stateless — zero latency cost. Measurably reduces hallucinations
     on currency/date/phone answers vs unanchored prompts.
+
+    W5.3 — when `dialect` is set (e.g. 'chennai' for Tamil, 'haryanvi' for
+    Hindi) an extra one-liner is appended so the model matches regional tone.
     """
     base = (system_prompt or "").rstrip()
     extras = _INDIA_GROUND_SUFFIX
-    lang_key = (language or "").lower()[:2]
+    lang_key = (language or "").lower().split("-")[0]
     if lang_key in _LANG_HINT:
         extras += "\n- " + _LANG_HINT[lang_key]
+    if dialect:
+        hint = _DIALECT_HINT.get((lang_key, dialect.lower()))
+        if hint:
+            extras += "\n- " + hint
     return base + extras
 
 
@@ -153,6 +187,7 @@ class VoiceTurnRequest:
         llm_model: Optional[str] = None,
         tts_language: str = "en",
         tts_emotion: Optional[str] = None,
+        dialect: Optional[str] = None,
     ):
         self.audio_bytes = audio_bytes
         self.language = language
@@ -163,6 +198,7 @@ class VoiceTurnRequest:
         self.llm_model = llm_model
         self.tts_language = tts_language
         self.tts_emotion = tts_emotion
+        self.dialect = dialect
 
 
 class VoiceTurnResponse:
@@ -501,6 +537,7 @@ class VoiceAIService:
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
             language=chosen_lang,
+            dialect=getattr(request, "dialect", None),
         )
 
         # Stream LLM tokens, emit TTS per sentence boundary.
@@ -681,6 +718,7 @@ class VoiceAIService:
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
             language=chosen_lang,
+            dialect=getattr(request, "dialect", None),
         )
 
         # --- Step 2: Generate LLM response (tries all providers) ---
