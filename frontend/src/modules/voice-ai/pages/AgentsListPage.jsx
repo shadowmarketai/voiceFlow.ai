@@ -12,6 +12,7 @@ import {
   CheckCircle, Languages, Clock, Star, TrendingUp,
   MessageSquare, ChevronDown, X
 } from 'lucide-react';
+import { agentsAPI } from '../../../services/api';
 
 /* ─── Demo/Template Agents ────────────────────────────────────── */
 
@@ -56,15 +57,32 @@ export default function AgentsListPage() {
   const [viewMode, setViewMode] = useState('grid');
   const [menuOpen, setMenuOpen] = useState(null);
 
-  // Load custom agents from localStorage
+  // Load custom agents from backend DB; fall back to localStorage if API down
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('vf_custom_agents');
-      if (saved) {
-        const custom = JSON.parse(saved);
-        setAgents(prev => [...custom, ...prev]);
-      }
-    } catch {}
+    let cancelled = false;
+    agentsAPI.list()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const dbAgents = (data?.agents || []).map(a => ({
+          id: a.id, name: a.name, language: a.language || 'English',
+          status: a.status || 'active', isDemo: false,
+          conversations: a.conversations || 0, icon: a.icon || '🤖',
+          config: a.config || {},
+        }));
+        if (dbAgents.length > 0) {
+          setAgents(prev => [...dbAgents, ...prev.filter(p => p.isDemo)]);
+        }
+      })
+      .catch(() => {
+        try {
+          const saved = localStorage.getItem('vf_custom_agents');
+          if (saved) {
+            const custom = JSON.parse(saved);
+            setAgents(prev => [...custom, ...prev]);
+          }
+        } catch {}
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const activeCount = agents.filter(a => a.status === 'active').length;
@@ -81,10 +99,17 @@ export default function AgentsListPage() {
     });
   }, [agents, search, statusFilter, languageFilter]);
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     setAgents(prev => prev.filter(a => a.id !== id));
     setMenuOpen(null);
-    toast.success('Agent deleted');
+    try {
+      if (!String(id).startsWith('demo-')) {
+        await agentsAPI.delete(id);
+      }
+      toast.success('Agent deleted');
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Delete failed (kept locally)');
+    }
   };
 
   const handleDuplicate = (agent) => {

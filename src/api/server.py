@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Persistent Agents + Call Logs + Channel Configs ─────
+    try:
+        from api.routers.agents_db import router as agents_db_router
+        application.include_router(agents_db_router)
+        logger.info("Agents DB router loaded")
+    except Exception as exc:
+        logger.warning("Agents DB router not available: %s", exc)
+
     # ── Chat (single-turn LLM for Testing page) ──────────────
     try:
         from api.routers.chat import router as chat_router

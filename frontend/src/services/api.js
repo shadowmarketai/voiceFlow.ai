@@ -778,6 +778,23 @@ export const billingAPI = {
 };
 
 // ============================================
+// VOICE AGENTS (persistent)
+// ============================================
+export const agentsAPI = {
+  list:    () => api.get('/api/v1/agents'),
+  get:     (id) => api.get(`/api/v1/agents/${id}`),
+  create:  (data) => api.post('/api/v1/agents', data),
+  update:  (id, data) => api.put(`/api/v1/agents/${id}`, data),
+  delete:  (id) => api.delete(`/api/v1/agents/${id}`),
+  // Call logs
+  callLogs: (params) => api.get('/api/v1/call-logs', { params }),
+  logCall:  (data) => api.post('/api/v1/call-logs', data),
+  // Channel configs
+  listChannels: () => api.get('/api/v1/channels-configs'),
+  saveChannel:  (channel, data) => api.put(`/api/v1/channels-configs/${channel}`, data),
+};
+
+// ============================================
 // TENANT TEAM MANAGEMENT (tenant owner)
 // ============================================
 export const tenantTeamAPI = {

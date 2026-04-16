@@ -55,7 +55,8 @@ const navSections = [
       { icon: MessageSquare, name: 'Conversations', path: '/voice/call-logs' },
       { icon: FileAudio,     name: 'Recordings',     path: '/voice/recordings' },
       { icon: FlaskConical,  name: 'Testing',        path: '/voice/testing' },
-      { icon: Gauge,         name: 'Quality',        path: '/voice/quality', superAdminOnly: true },
+      { icon: Gauge,         name: 'Quality',          path: '/voice/quality', superAdminOnly: true },
+      { icon: BarChart3,     name: 'Combo Benchmark',  path: '/voice/combo-benchmark', superAdminOnly: true },
     ],
   },
   {

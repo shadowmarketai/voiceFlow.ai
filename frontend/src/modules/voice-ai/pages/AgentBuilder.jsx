@@ -9,6 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CostCalculator from '../components/CostCalculator';
 import { useAuth } from '../../../contexts/AuthContext';
+import { agentsAPI } from '../../../services/api';
 import {
   Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
   Trash2, Plus, Copy, Check, ChevronDown, ChevronRight, Save,
@@ -214,13 +215,9 @@ export default function AgentBuilder() {
     setLlmModel('default');
   }, [llmProvider]);
 
-  // Load agent data in edit mode
-  useEffect(() => {
-    if (!isEditMode) return;
-    try {
-      const saved = localStorage.getItem('vf_editing_agent');
-      if (!saved) return;
-      const agent = JSON.parse(saved);
+  // Load agent data in edit mode — prefer backend, fall back to localStorage handoff
+  const applyAgent = (agent) => {
+      if (!agent) return;
       setAgentName(agent.name || 'My Voice Agent');
       setAgentLang(agent.language || 'English');
       setAgentStatus(agent.status || 'active');
@@ -261,8 +258,19 @@ export default function AgentBuilder() {
         if (c.audioRecordingFormat) setAudioRecordingFormat(c.audioRecordingFormat);
         if (c.videoRecording != null) setVideoRecording(c.videoRecording);
       }
-    } catch {}
-  }, [isEditMode]);
+  };
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    // 1. Try the backend
+    agentsAPI.get(agentId).then(({ data }) => applyAgent(data)).catch(() => {
+      // 2. Fall back to localStorage handoff (set by AgentsListPage on Edit click)
+      try {
+        const saved = localStorage.getItem('vf_editing_agent');
+        if (saved) applyAgent(JSON.parse(saved));
+      } catch {}
+    });
+  }, [isEditMode, agentId]);
   const [responseTiming, setResponseTiming] = useState('balanced');
   const [speechAccent, setSpeechAccent] = useState('default');
   const [noiseFilter, setNoiseFilter] = useState(true);
@@ -322,7 +330,7 @@ export default function AgentBuilder() {
   const [webhookHeaders, setWebhookHeaders] = useState('');
   const [knowledgeLinked, setKnowledgeLinked] = useState(false);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
     try {
       const id = agentId || `agent-${Date.now()}`;
@@ -374,16 +382,27 @@ export default function AgentBuilder() {
           videoRecording,
         },
       };
-      // Upsert into vf_custom_agents
-      const saved = JSON.parse(localStorage.getItem('vf_custom_agents') || '[]');
-      const filtered = saved.filter((a) => a.id !== id);
-      localStorage.setItem('vf_custom_agents', JSON.stringify([agentData, ...filtered]));
+      // Persist to backend DB (survives redeploys + works across devices).
+      // Falls back to localStorage if the API is unreachable.
+      try {
+        if (isEditMode) {
+          await agentsAPI.update(id, agentData);
+        } else {
+          await agentsAPI.create(agentData);
+        }
+      } catch (apiErr) {
+        // Backend unavailable — write to localStorage as a soft fallback so
+        // the user doesn't lose their work; they can re-sync later.
+        const saved = JSON.parse(localStorage.getItem('vf_custom_agents') || '[]');
+        const filtered = saved.filter((a) => a.id !== id);
+        localStorage.setItem('vf_custom_agents', JSON.stringify([agentData, ...filtered]));
+        toast(`Saved offline — backend unreachable (${apiErr.response?.status || 'no net'})`, { icon: '⚠️' });
+      }
       localStorage.removeItem('vf_editing_agent');
       toast.success(`Agent "${agentName}" saved`);
-      // Navigate back to agents list so the user sees the saved row
       setTimeout(() => navigate('/voice/agents-list'), 400);
     } catch (e) {
-      toast.error('Failed to save agent');
+      toast.error('Failed to save agent: ' + (e.message || ''));
     } finally {
       setSaving(false);
     }

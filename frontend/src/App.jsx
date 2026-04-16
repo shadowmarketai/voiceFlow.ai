@@ -32,6 +32,7 @@ const VoiceAnalyticsDashboardPage = lazy(() => import('./modules/voice-ai/pages/
 const RecordingsPage = lazy(() => import('./modules/voice-ai/Recordings'))
 const TestingPage = lazy(() => import('./modules/voice-ai/pages/Testing'))
 const QualityDashboardPage = lazy(() => import('./modules/voice-ai/pages/QualityDashboard'))
+const ComboBenchmarkPage = lazy(() => import('./modules/voice-ai/pages/ComboBenchmark'))
 const IntegrationsPage = lazy(() => import('./modules/voice-ai/pages/Integrations'))
 const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDeveloper'))
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
@@ -135,6 +136,7 @@ function App() {
           <Route path="voice/recordings" element={<S><RecordingsPage /></S>} />
           <Route path="voice/testing" element={<S><TestingPage /></S>} />
           <Route path="voice/quality" element={<S><QualityDashboardPage /></S>} />
+          <Route path="voice/combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
           <Route path="voice/integrations" element={<S><IntegrationsPage /></S>} />
           {/* /voice/api → redirect to the Channels page's Developer tab */}
           <Route path="voice/api" element={<Navigate to="/voice/channels?view=developer" replace />} />
