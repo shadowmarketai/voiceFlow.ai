@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Chat (single-turn LLM for Testing page) ──────────────
+    try:
+        from api.routers.chat import router as chat_router
+        application.include_router(chat_router)
+        logger.info("Chat router loaded")
+    except Exception as exc:
+        logger.warning("Chat router not available: %s", exc)
+
     # ── Deepgram streaming STT (live WebSocket transcription) ──
     try:
         from api.routers.deepgram_streaming import router as dg_stream_router

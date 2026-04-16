@@ -2,10 +2,11 @@
  * Testing Playground — Premium AI agent testing interface
  */
 
-import { useEffect, useState, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck, Loader2, AlertTriangle } from 'lucide-react'
 import useDeepgramStream from '../../../hooks/useDeepgramStream'
+import api from '../../../services/api'
 
 const LiveKitVoiceRoom = lazy(() => import('../../../components/LiveKitRoom'))
 
@@ -38,44 +39,87 @@ export default function Testing() {
     else start()
   }
 
-  // Auto-append every final utterance into the chat as a user message.
+  // Auto-feed every final utterance into the LLM and append the reply.
+  const lastSentIndexRef = useRef(-1)
   useEffect(() => {
     if (!finals.length || !selectedAgent) return
-    const last = finals[finals.length - 1]
+    const idx = finals.length - 1
+    if (lastSentIndexRef.current === idx) return
+    const last = finals[idx]
     if (!last?.text) return
-    setConversation((prev) => {
-      // Avoid double-append on re-renders
-      if (prev.length && prev[prev.length - 1]?.sttFinalIndex === finals.length - 1) return prev
-      return [
-        ...prev,
-        { role: 'user', text: last.text, timestamp: new Date().toLocaleTimeString(), sttFinalIndex: finals.length - 1 },
-        {
-          role: 'agent',
-          text: 'Live transcript captured. Connect your LLM pipeline to respond automatically.',
-          timestamp: new Date().toLocaleTimeString(),
-          emotion: 'neutral',
-          intent: 'transcribed',
-          confidence: last.confidence || 0.9,
-        },
-      ]
-    })
-  }, [finals, selectedAgent])
+    lastSentIndexRef.current = idx
 
-  const handleSend = () => {
-    if (!message.trim() || !selectedAgent) return
+    const ts = () => new Date().toLocaleTimeString()
     setConversation((prev) => [
       ...prev,
-      { role: 'user', text: message, timestamp: new Date().toLocaleTimeString() },
-      {
-        role: 'agent',
-        text: 'This is a placeholder response. Connect your backend to enable real agent testing.',
-        timestamp: new Date().toLocaleTimeString(),
-        emotion: 'neutral',
-        intent: 'general_inquiry',
-        confidence: 0.92,
-      },
+      { role: 'user', text: last.text, timestamp: ts() },
+      { role: 'agent', text: '…', timestamp: ts(), pending: true },
     ])
+
+    api.post('/api/v1/chat', {
+      message: last.text,
+      system_prompt: 'You are a helpful AI voice assistant. Keep replies short and natural.',
+      language: agentLang.toLowerCase() || undefined,
+    }).then(({ data }) => {
+      setConversation((prev) => {
+        const out = prev.slice(0, -1)
+        out.push({
+          role: 'agent', text: data.text || '(empty reply)', timestamp: ts(),
+          emotion: 'neutral', intent: 'voice_reply', confidence: last.confidence || 0.9,
+          provider: data.provider, latency: Math.round(data.latency_ms || 0),
+        })
+        return out
+      })
+    }).catch((e) => {
+      const detail = e.response?.data?.detail || 'LLM call failed'
+      setConversation((prev) => {
+        const out = prev.slice(0, -1)
+        out.push({ role: 'agent', text: `Error: ${detail}`, timestamp: ts(), emotion: 'neutral', intent: 'error' })
+        return out
+      })
+    })
+  }, [finals, selectedAgent, agentLang])
+
+  const [sending, setSending] = useState(false)
+  const handleSend = async () => {
+    const text = message.trim()
+    if (!text || !selectedAgent) return
     setMessage('')
+    setSending(true)
+    const ts = () => new Date().toLocaleTimeString()
+    setConversation((prev) => [
+      ...prev,
+      { role: 'user', text, timestamp: ts() },
+      { role: 'agent', text: '…', timestamp: ts(), pending: true },
+    ])
+    try {
+      const { data } = await api.post('/api/v1/chat', {
+        message: text,
+        system_prompt: 'You are a helpful AI voice assistant. Keep replies short and natural.',
+        language: agentLang.toLowerCase() || undefined,
+      })
+      setConversation((prev) => {
+        const out = prev.slice(0, -1)
+        out.push({
+          role: 'agent', text: data.text || '(empty reply)', timestamp: ts(),
+          emotion: 'neutral', intent: 'reply', confidence: 0.95,
+          provider: data.provider, latency: Math.round(data.latency_ms || 0),
+        })
+        return out
+      })
+    } catch (e) {
+      const detail = e.response?.data?.detail || 'LLM call failed'
+      setConversation((prev) => {
+        const out = prev.slice(0, -1)
+        out.push({
+          role: 'agent', text: `Error: ${detail}`, timestamp: ts(),
+          emotion: 'neutral', intent: 'error', confidence: 0,
+        })
+        return out
+      })
+    } finally {
+      setSending(false)
+    }
   }
 
   const lastAgentMsg = conversation.filter((m) => m.role === 'agent').slice(-1)[0]
