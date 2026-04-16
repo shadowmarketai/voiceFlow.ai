@@ -256,6 +256,40 @@ def init_models():
     except Exception as e:
         logger.warning(f"Users schema migration skipped: {e}")
 
+    try:
+        _migrate_quality_schema(engine)
+    except Exception as e:
+        logger.warning(f"Quality metrics schema migration skipped: {e}")
+
+
+def _migrate_quality_schema(engine):
+    """Add W1.4 TTFA + pipeline_mode columns to quality_call_metrics if missing."""
+    from sqlalchemy import inspect as sa_inspect, text
+
+    inspector = sa_inspect(engine)
+    if "quality_call_metrics" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("quality_call_metrics")}
+    new_columns = [
+        ("ttfa_ms", "INTEGER"),
+        ("pipeline_mode", "VARCHAR(16)"),
+    ]
+
+    added = []
+    with engine.begin() as conn:
+        for col_name, col_def in new_columns:
+            if col_name not in existing:
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE quality_call_metrics ADD COLUMN {col_name} {col_def}"
+                    ))
+                    added.append(col_name)
+                except Exception as e:
+                    logger.warning(f"Could not add quality_call_metrics.{col_name}: {e}")
+    if added:
+        logger.info(f"quality_call_metrics extended with columns: {', '.join(added)}")
+
 
 def _migrate_users_schema(engine):
     """Add OAuth and verification columns to users table if missing."""

@@ -598,16 +598,19 @@ class VoiceAIService:
         total_ms = (t_end - t_start) * 1000
         ttfa_ms = int((t_first_audio - t_start) * 1000) if t_first_audio else int(total_ms)
 
-        # Record metrics (agent_id marked streaming so dashboards can split).
+        # Record metrics. Streaming mode reports the real perceived-latency
+        # (ttfa_ms) separately so dashboards can track the p95 900ms target.
         try:
             from api.services.quality_store import record_call
             record_call(
                 agent_id=getattr(request, "assistant_id", None),
-                language=request.language or request.tts_language,
+                language=chosen_lang,
                 stt_ms=int((t_after_stt - t_start) * 1000),
-                llm_ms=ttfa_ms - int((t_after_stt - t_start) * 1000),
-                tts_ms=int(total_ms) - ttfa_ms,
+                llm_ms=max(0, ttfa_ms - int((t_after_stt - t_start) * 1000)),
+                tts_ms=max(0, int(total_ms) - ttfa_ms),
                 total_ms=int(total_ms),
+                ttfa_ms=int(ttfa_ms),
+                pipeline_mode="stream",
             )
         except Exception:
             pass
@@ -712,17 +715,20 @@ class VoiceAIService:
         total_ms = (t_end - t_start) * 1000
         logger.info(f"TTS done in {(t_end - t_after_llm)*1000:.0f}ms. Total: {total_ms:.0f}ms")
 
-        # Record call metrics for the Quality Dashboard (best-effort, non-blocking)
+        # Record call metrics for the Quality Dashboard (best-effort, non-blocking).
+        # For serial turns, TTFA == total_ms (user hears nothing until everything is done).
         try:
             from api.services.quality_store import record_call
             record_call(
                 agent_id=getattr(request, "assistant_id", None),
-                language=request.language or request.tts_language,
+                language=chosen_lang,
                 noise_ms=int((locals().get("t_preprocess", t_start) - t_start) * 1000),
                 stt_ms=int((t_after_stt - t_start) * 1000),
                 llm_ms=int((t_after_llm - t_after_stt) * 1000),
                 tts_ms=int((t_end - t_after_llm) * 1000),
                 total_ms=int(total_ms),
+                ttfa_ms=int(total_ms),
+                pipeline_mode="serial",
             )
         except Exception:
             pass

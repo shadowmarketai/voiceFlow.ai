@@ -61,6 +61,11 @@ class CallMetric(Base):
     tts_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     eos_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # W1.4 — Time to first audio. For streaming turns this is the perceived
+    # latency; for serial turns ttfa_ms == total_ms. Target p95: 900ms.
+    ttfa_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # "stream" | "serial" — lets dashboards compare the two.
+    pipeline_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     # Accuracy (optional — filled in from benchmark runs)
     wer: Mapped[float | None] = mapped_column(Float, nullable=True)

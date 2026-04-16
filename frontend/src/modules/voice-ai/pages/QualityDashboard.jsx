@@ -88,6 +88,7 @@ export default function QualityDashboard() {
   const [catalog, setCatalog] = useState(null)
   const [csat, setCsat] = useState(null)
   const [ops, setOps] = useState(null)
+  const [latency, setLatency] = useState(null)
   const [err, setErr] = useState(null)
 
   // Drill-down filters (aggregate view when 'all')
@@ -100,7 +101,7 @@ export default function QualityDashboard() {
     setRefreshing(true)
     setErr(null)
     try {
-      const [p, pl, u, a, c, t, cat, csatR, opsR] = await Promise.all([
+      const [p, pl, u, a, c, t, cat, csatR, opsR, lat] = await Promise.all([
         qualityAPI.providers(),
         qualityAPI.pipeline(),
         qualityAPI.uptime(),
@@ -110,6 +111,7 @@ export default function QualityDashboard() {
         billingAPI.catalog(),
         qualityAPI.csat(),
         qualityAPI.operational(),
+        qualityAPI.latency(),
       ])
       setProviders(p.data)
       setPipeline(pl.data)
@@ -120,6 +122,7 @@ export default function QualityDashboard() {
       setCatalog(cat.data.catalog)
       setCsat(csatR.data)
       setOps(opsR.data)
+      setLatency(lat.data)
     } catch (e) {
       setErr(e.response?.data?.detail || 'Failed to load quality metrics')
     }
@@ -442,6 +445,78 @@ export default function QualityDashboard() {
                 </div>
               )
             })}
+          </div>
+        </motion.div>
+      )}
+
+      {/* ─── W1.4 Latency — real call_log p95 vs 900ms target ─── */}
+      {latency && (latency.overall?.count > 0 || latency.stream?.count > 0) && (
+        <motion.div variants={fadeUp} initial="hidden" animate="show"
+          className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Gauge className="w-4 h-4 text-indigo-500" /> Latency vs 900ms target
+            <span className="text-[11px] text-gray-400 ml-2">
+              Rolling {Math.round(latency.window_hours / 24)}d · {(latency.overall?.count || 0).toLocaleString()} calls
+            </span>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Overall */}
+            <div className="p-4 rounded-xl border border-gray-100 bg-gradient-to-br from-indigo-50/60 to-white">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Overall p95</div>
+              <div className="text-2xl font-bold text-gray-900">
+                {latency.overall?.p95 != null ? `${latency.overall.p95}ms` : '—'}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                p50 {latency.overall?.p50 ?? '—'}ms · p99 {latency.overall?.p99 ?? '—'}ms
+              </div>
+              {latency.overall?.pct_under_target != null && (
+                <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500" style={{
+                    width: `${Math.min(100, latency.overall.pct_under_target)}%`
+                  }} />
+                </div>
+              )}
+              <div className="text-[11px] text-gray-500 mt-1">
+                {latency.overall?.pct_under_target ?? 0}% of calls ≤ 900ms
+              </div>
+            </div>
+            {/* Streaming TTFA */}
+            <div className="p-4 rounded-xl border border-gray-100 bg-gradient-to-br from-emerald-50/60 to-white">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
+                Streaming TTFA p95
+              </div>
+              <div className="text-2xl font-bold text-emerald-700">
+                {latency.stream?.ttfa_p95 != null ? `${latency.stream.ttfa_p95}ms` : '—'}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {latency.stream?.count ? `${latency.stream.count} streamed turns` : 'No streaming data yet'}
+              </div>
+              {latency.stream?.pct_under_target != null && (
+                <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500" style={{
+                    width: `${Math.min(100, latency.stream.pct_under_target)}%`
+                  }} />
+                </div>
+              )}
+              <div className="text-[11px] text-gray-500 mt-1">
+                {latency.stream?.pct_under_target ?? 0}% ≤ 900ms · time-to-first-audio
+              </div>
+            </div>
+            {/* Serial */}
+            <div className="p-4 rounded-xl border border-gray-100 bg-gradient-to-br from-amber-50/60 to-white">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">Serial p95</div>
+              <div className="text-2xl font-bold text-amber-700">
+                {latency.serial?.p95 != null ? `${latency.serial.p95}ms` : '—'}
+              </div>
+              <div className="text-xs text-gray-500 mt-0.5">
+                {latency.serial?.count ? `${latency.serial.count} serial turns` : 'No serial data yet'}
+              </div>
+              {latency.stream?.ttfa_p95 && latency.serial?.p95 && (
+                <div className="text-[11px] text-emerald-600 mt-2 font-medium">
+                  Streaming is {Math.round((1 - latency.stream.ttfa_p95 / latency.serial.p95) * 100)}% faster
+                </div>
+              )}
+            </div>
           </div>
         </motion.div>
       )}

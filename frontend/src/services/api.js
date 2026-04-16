@@ -819,6 +819,7 @@ export const qualityAPI = {
   csat: () => api.get('/api/v1/quality/csat'),
   submitCsat: (data) => api.post('/api/v1/quality/csat', data),
   operational: () => api.get('/api/v1/quality/operational'),
+  latency: (hours = 168) => api.get('/api/v1/quality/latency', { params: { hours } }),
 };
 
 export default api;

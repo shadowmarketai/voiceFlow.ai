@@ -219,6 +219,16 @@ async def submit_csat(req: CsatPayload):
     return {"status": "ok"}
 
 
+@router.get("/latency")
+async def latency_metrics(hours: int = 24 * 7):
+    """W1.4 — rolling p50/p95/p99 vs 900ms target.
+
+    Split by pipeline_mode so the dashboard can show the streaming uplift
+    (TTFA p95 vs serial total p95) in a single view.
+    """
+    return quality_store.latency_summary(hours=hours)
+
+
 @router.get("/operational")
 async def operational_metrics():
     """End-to-end voice-AI operational KPIs per ISO/industry standard:
@@ -323,6 +333,7 @@ async def ingest_call(payload: dict):
     allowed = {
         "agent_id", "language", "duration_sec",
         "noise_ms", "vad_ms", "stt_ms", "emotion_ms", "llm_ms", "tts_ms", "eos_ms", "total_ms",
+        "ttfa_ms", "pipeline_mode",
         "wer", "tts_mos", "intent_ok",
     }
     clean = {k: v for k, v in payload.items() if k in allowed}

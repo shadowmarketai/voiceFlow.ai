@@ -177,6 +177,92 @@ def daily_trends(days: int = 7) -> dict[str, list[Any]]:
     }
 
 
+def latency_summary(hours: int = 24 * 7) -> dict[str, Any]:
+    """W1.4 — rolling p50/p95/p99 for total_ms and ttfa_ms, split by pipeline_mode.
+
+    Returns:
+      {
+        "window_hours": int,
+        "target_p95_ms": 900,
+        "overall": {p50,p95,p99,count, pct_under_target},
+        "stream":  {ttfa_p50,ttfa_p95,ttfa_p99,total_p95,count,pct_under_target},
+        "serial":  {p50,p95,p99,count,pct_under_target},
+      }
+    """
+    since = datetime.utcnow() - timedelta(hours=hours)
+    target = 900
+    empty_row = {"p50": None, "p95": None, "p99": None, "count": 0,
+                 "pct_under_target": None}
+    out: dict[str, Any] = {
+        "window_hours": hours,
+        "target_p95_ms": target,
+        "overall": dict(empty_row),
+        "stream": {**empty_row, "ttfa_p50": None, "ttfa_p95": None, "ttfa_p99": None},
+        "serial": dict(empty_row),
+    }
+
+    def _pcts(vals: list[int]) -> dict[str, Any]:
+        if not vals:
+            return dict(empty_row)
+        n = len(vals)
+        vals = sorted(vals)
+        p50 = vals[n // 2]
+        p95 = vals[min(n - 1, max(0, int(n * 0.95) - 1))]
+        p99 = vals[min(n - 1, max(0, int(n * 0.99) - 1))]
+        under = sum(1 for v in vals if v <= target)
+        return {
+            "p50": int(p50), "p95": int(p95), "p99": int(p99),
+            "count": n, "pct_under_target": round(under / n * 100, 1),
+        }
+
+    try:
+        with get_session_factory()() as s:
+            # Overall (total_ms across all modes)
+            totals = s.execute(
+                select(CallMetric.total_ms).where(
+                    CallMetric.ts >= since, CallMetric.total_ms.is_not(None),
+                )
+            ).scalars().all()
+            out["overall"] = _pcts([int(v) for v in totals])
+
+            # Serial (pipeline_mode='serial' or NULL for legacy rows)
+            serial_totals = s.execute(
+                select(CallMetric.total_ms).where(
+                    CallMetric.ts >= since, CallMetric.total_ms.is_not(None),
+                    (CallMetric.pipeline_mode == "serial") | (CallMetric.pipeline_mode.is_(None)),
+                )
+            ).scalars().all()
+            out["serial"] = _pcts([int(v) for v in serial_totals])
+
+            # Stream — both ttfa and total
+            stream_ttfa = s.execute(
+                select(CallMetric.ttfa_ms).where(
+                    CallMetric.ts >= since, CallMetric.pipeline_mode == "stream",
+                    CallMetric.ttfa_ms.is_not(None),
+                )
+            ).scalars().all()
+            stream_total = s.execute(
+                select(CallMetric.total_ms).where(
+                    CallMetric.ts >= since, CallMetric.pipeline_mode == "stream",
+                    CallMetric.total_ms.is_not(None),
+                )
+            ).scalars().all()
+            ttfa_stats = _pcts([int(v) for v in stream_ttfa])
+            total_stats = _pcts([int(v) for v in stream_total])
+            out["stream"] = {
+                "ttfa_p50": ttfa_stats["p50"],
+                "ttfa_p95": ttfa_stats["p95"],
+                "ttfa_p99": ttfa_stats["p99"],
+                "total_p95": total_stats["p95"],
+                "count": ttfa_stats["count"],
+                "pct_under_target": ttfa_stats["pct_under_target"],
+            }
+    except Exception:
+        pass
+
+    return out
+
+
 def pipeline_stage_snapshot(hours: int = 24) -> list[dict[str, Any]] | None:
     """Compute p50 / p95 per pipeline stage from the last N hours of calls."""
     since = datetime.utcnow() - timedelta(hours=hours)
