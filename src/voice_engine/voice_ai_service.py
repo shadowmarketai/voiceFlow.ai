@@ -487,9 +487,20 @@ class VoiceAIService:
                    "ttfa_ms": 0, "text": "", "reason": "empty_transcript"}
             return
 
+        # W2.2 — language auto-switch
+        from voice_engine.lang_detect import pick_tts_language
+        chosen_lang, lang_reason = pick_tts_language(
+            user_hint=request.tts_language,
+            stt_detected=analysis.get("language"),
+            text=user_text,
+        )
+        if chosen_lang != (request.tts_language or "en"):
+            yield {"type": "language", "from": request.tts_language,
+                   "to": chosen_lang, "reason": lang_reason}
+
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
-            language=request.language or analysis.get("language") or "en",
+            language=chosen_lang,
         )
 
         # Stream LLM tokens, emit TTS per sentence boundary.
@@ -509,7 +520,7 @@ class VoiceAIService:
             t_tts_start = time.time()
             result = await self.generate_response_audio(
                 text=text,
-                language=request.tts_language,
+                language=chosen_lang,
                 detected_customer_emotion=detected_emotion,
                 voice_id=request.voice_id,
                 use_case="sales_bot",
@@ -648,12 +659,25 @@ class VoiceAIService:
         t_after_stt = time.time()
         logger.info(f"STT done in {(t_after_stt - t_start)*1000:.0f}ms: '{user_text[:60]}'")
 
+        # W2.2 — per-utterance language detection. If the user flipped
+        # languages mid-call (common on multilingual accounts), override
+        # the TTS language so the voice matches what was actually spoken.
+        from voice_engine.lang_detect import pick_tts_language
+        chosen_lang, lang_reason = pick_tts_language(
+            user_hint=request.tts_language,
+            stt_detected=analysis.get("language"),
+            text=user_text,
+        )
+        if chosen_lang != (request.tts_language or "en"):
+            logger.info("Language switch: %s -> %s (reason=%s)",
+                        request.tts_language, chosen_lang, lang_reason)
+
         # Phase 1 W2.3: India-grounded system prompt — prepend locale context
         # so the LLM defaults to INR, DD/MM dates, IST, and Indic-safe tone.
         # Cuts hallucination/wrong-format answers by ~40% in our benchmark set.
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
-            language=request.language or analysis.get("language") or "en",
+            language=chosen_lang,
         )
 
         # --- Step 2: Generate LLM response (tries all providers) ---
@@ -679,7 +703,7 @@ class VoiceAIService:
         # --- Step 3: TTS ---
         tts_result = await self.generate_response_audio(
             text=ai_text,
-            language=request.tts_language,
+            language=chosen_lang,
             detected_customer_emotion=detected_emotion,
             voice_id=request.voice_id,
             use_case="sales_bot",

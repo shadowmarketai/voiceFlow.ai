@@ -447,6 +447,18 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             turn = await svc.handle_turn(req)
             return turn.to_dict()
 
+        # W2.2 — Text-only language detector (fast probe for the Testing page).
+        @application.post("/api/v1/voice/detect-language")
+        async def detect_language(payload: dict):
+            """Detect language + TTS-switch decision for a text snippet."""
+            from voice_engine.lang_detect import detect_language_text, pick_tts_language
+            text = (payload or {}).get("text", "")
+            hint = (payload or {}).get("hint")
+            stt = (payload or {}).get("stt_language")
+            detected = detect_language_text(text)
+            chosen, reason = pick_tts_language(user_hint=hint, stt_detected=stt, text=text)
+            return {"detected": detected, "chosen_tts_language": chosen, "reason": reason}
+
         # W1.2 — Parallel LLM+TTS streaming (SSE). Client plays audio
         # chunks as they arrive instead of waiting for full reply.
         @application.post("/api/v1/voice/respond-stream")
