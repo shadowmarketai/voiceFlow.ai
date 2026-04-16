@@ -57,6 +57,80 @@ async def transcribe_audio_api(
             "error": "No STT provider available"}
 
 
+# Indic language codes — ensemble routes these to both Deepgram + Sarvam in
+# parallel. English stays Deepgram-only (faster, lower WER for EN).
+_INDIC_LANG_CODES = {"hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or", "as", "ur"}
+
+
+async def transcribe_ensemble(
+    audio_bytes: bytes,
+    language: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Ensemble STT — race Deepgram + Sarvam, pick the higher-confidence result.
+
+    Rationale (Phase 1 W2.1): Deepgram nails English (~4% WER) but weaker on
+    Indic. Sarvam is purpose-built for Indic (~5-7% Hindi WER). Running them
+    in parallel + picking by confidence gives us industry-lowest WER without
+    paying latency cost (slower of the two wins, which is basically the same
+    as calling one).
+    """
+    import asyncio
+
+    dg_key = os.environ.get("DEEPGRAM_API_KEY", "")
+    sv_key = os.environ.get("SARVAM_API_KEY", "")
+
+    # If only one provider is configured, short-circuit
+    if dg_key and not sv_key:
+        return await _deepgram_stt(audio_bytes, dg_key, language)
+    if sv_key and not dg_key:
+        return await _sarvam_stt(audio_bytes, sv_key, language)
+    if not dg_key and not sv_key:
+        return await transcribe_audio_api(audio_bytes, language=language)
+
+    # For non-Indic languages, skip Sarvam (Deepgram is faster + as accurate)
+    lang = (language or "").lower()[:2]
+    if lang and lang not in _INDIC_LANG_CODES:
+        return await _deepgram_stt(audio_bytes, dg_key, language)
+
+    async def _safe(name, coro):
+        try:
+            r = await coro
+            r["_provider_name"] = name
+            return r
+        except Exception as exc:
+            logger.warning("%s STT failed in ensemble: %s", name, exc)
+            return None
+
+    results = await asyncio.gather(
+        _safe("deepgram", _deepgram_stt(audio_bytes, dg_key, language)),
+        _safe("sarvam", _sarvam_stt(audio_bytes, sv_key, language)),
+        return_exceptions=False,
+    )
+    good = [r for r in results if r and r.get("text")]
+    if not good:
+        # Both empty — fall back to the cascade
+        return await transcribe_audio_api(audio_bytes, language=language)
+
+    # Pick highest confidence. If confidence not exposed, prefer Sarvam for
+    # Indic (it's purpose-built) and Deepgram otherwise.
+    def _score(r):
+        c = r.get("confidence")
+        if c is None or c == 0:
+            # Heuristic when confidence isn't returned
+            if lang in _INDIC_LANG_CODES and r.get("_provider_name") == "sarvam":
+                return 0.85
+            return 0.7
+        return float(c)
+
+    best = max(good, key=_score)
+    best["ensemble"] = True
+    best["ensemble_candidates"] = [
+        {"provider": r["_provider_name"], "text_len": len(r.get("text") or ""), "confidence": r.get("confidence")}
+        for r in good
+    ]
+    return best
+
+
 async def _deepgram_stt(
     audio_bytes: bytes,
     api_key: str,
