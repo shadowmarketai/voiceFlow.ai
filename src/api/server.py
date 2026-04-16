@@ -69,6 +69,18 @@ def create_app() -> FastAPI:
     register_exception_handlers(application)
     _register_lifecycle(application)
 
+    # ── status.shadowmarket.ai host router ───────────────────
+    # When the request arrives on the status subdomain, root path renders the
+    # public status HTML instead of the SPA. All other paths still work so the
+    # JSON API (/api/v1/status/*) is reachable from the same host.
+    @application.middleware("http")
+    async def _status_host_router(request: Request, call_next):
+        host = (request.headers.get("host") or "").split(":")[0].lower()
+        if host.startswith("status.") and request.url.path in ("", "/"):
+            from api.routers.status_page import status_html
+            return await status_html()
+        return await call_next(request)
+
     # ── API info endpoint ────────────────────────────────────
     @application.get("/api/info")
     async def api_info():
