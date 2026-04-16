@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CostCalculator from '../components/CostCalculator';
+import AgentVoicePicker from '../components/AgentVoicePicker';
 import { useAuth } from '../../../contexts/AuthContext';
 import { agentsAPI } from '../../../services/api';
 import {
@@ -59,37 +60,56 @@ function Section({ title, icon: Icon, children, collapsible = false, defaultOpen
 
 /* ─── Constants ───────────────────────────────────────────────── */
 const LLM_PROVIDERS = [
-  { id: 'groq', name: 'Groq', model: 'llama-3.1-8b-instant', badge: 'Fastest' },
-  { id: 'anthropic', name: 'Anthropic Claude', model: 'claude-haiku-4-5-20251001', badge: 'Quality' },
-  { id: 'openai', name: 'OpenAI', model: 'gpt-4o-mini' },
-  { id: 'gemini', name: 'Gemini Live 2.5 HD', model: 'gemini-2.5-flash', badge: 'Native Audio' },
+  { id: 'groq',      name: 'Groq',              model: 'llama-3.1-8b-instant',     badge: 'Fastest' },
+  { id: 'anthropic', name: 'Anthropic Claude',  model: 'claude-haiku-4-5-20251001', badge: 'Quality' },
+  { id: 'openai',    name: 'OpenAI',            model: 'gpt-4o-mini' },
+  { id: 'gemini',    name: 'Gemini Live 2.5 HD', model: 'gemini-2.5-flash',         badge: 'Native Audio' },
+  { id: 'deepseek',  name: 'DeepSeek',          model: 'deepseek-chat',             badge: 'Budget' },
 ];
 
-/* Per-provider model options shown in the Advanced Settings dropdown. */
+/* Per-provider model catalog — every model the backend chain supports. */
 const MODEL_OPTIONS = {
   groq: [
-    { id: 'default',                   label: 'Llama 3.1 8B Instant (Recommended)' },
-    { id: 'llama-3.1-8b-instant',       label: 'Llama 3.1 8B Instant — fastest' },
-    { id: 'llama-3.1-70b-versatile',    label: 'Llama 3.1 70B — higher quality' },
-    { id: 'mixtral-8x7b-32768',         label: 'Mixtral 8x7B — long context' },
+    { id: 'default',                          label: 'Llama 3.1 8B Instant (Recommended) · ₹0.04/min',  cost: 0.04 },
+    { id: 'llama-3.1-8b-instant',              label: 'Llama 3.1 8B Instant · fastest · ₹0.04/min',      cost: 0.04 },
+    { id: 'llama-3.1-70b-versatile',           label: 'Llama 3.1 70B Versatile · ₹0.25/min',             cost: 0.25 },
+    { id: 'llama-3.3-70b-versatile',           label: 'Llama 3.3 70B Versatile · ₹0.25/min',             cost: 0.25 },
+    { id: 'mixtral-8x7b-32768',                label: 'Mixtral 8x7B · long context · ₹0.18/min',         cost: 0.18 },
+    { id: 'gemma2-9b-it',                      label: 'Gemma2 9B IT · ₹0.06/min',                         cost: 0.06 },
   ],
   anthropic: [
-    { id: 'default',                     label: 'Claude Haiku 4.5 (Recommended)' },
-    { id: 'claude-haiku-4-5-20251001',    label: 'Claude Haiku 4.5 — fast' },
-    { id: 'claude-sonnet-4-6',            label: 'Claude Sonnet 4.6 — premium' },
-    { id: 'claude-opus-4-6',              label: 'Claude Opus 4.6 — ultra (expensive)' },
+    { id: 'default',                           label: 'Claude Haiku 4.5 (Recommended) · ₹0.50/min',       cost: 0.50 },
+    { id: 'claude-haiku-4-5-20251001',          label: 'Claude Haiku 4.5 · ₹0.50/min',                    cost: 0.50 },
+    { id: 'claude-haiku-3-5',                   label: 'Claude Haiku 3.5 (older) · ₹0.40/min',             cost: 0.40 },
+    { id: 'claude-sonnet-4-6',                  label: 'Claude Sonnet 4.6 · premium · ₹3.80/min',         cost: 3.80 },
+    { id: 'claude-sonnet-4-5',                  label: 'Claude Sonnet 4.5 (older) · ₹3.50/min',            cost: 3.50 },
+    { id: 'claude-opus-4-6',                    label: 'Claude Opus 4.6 · ultra · ₹19.00/min',            cost: 19.00 },
+    { id: 'claude-opus-4-5',                    label: 'Claude Opus 4.5 (older) · ₹15.00/min',             cost: 15.00 },
   ],
   openai: [
-    { id: 'default',       label: 'GPT-4o Mini (Recommended)' },
-    { id: 'gpt-4o-mini',    label: 'GPT-4o Mini — fast' },
-    { id: 'gpt-4o',         label: 'GPT-4o — premium' },
-    { id: 'gpt-4-turbo',    label: 'GPT-4 Turbo' },
+    { id: 'default',                           label: 'GPT-4o Mini (Recommended) · ₹0.42/min',           cost: 0.42 },
+    { id: 'gpt-4o-mini',                        label: 'GPT-4o Mini · ₹0.42/min',                        cost: 0.42 },
+    { id: 'gpt-4o',                             label: 'GPT-4o · premium · ₹6.33/min',                    cost: 6.33 },
+    { id: 'gpt-4-turbo',                        label: 'GPT-4 Turbo · ₹4.50/min',                         cost: 4.50 },
+    { id: 'gpt-4',                              label: 'GPT-4 (legacy) · ₹7.00/min',                      cost: 7.00 },
+    { id: 'gpt-3.5-turbo',                      label: 'GPT-3.5 Turbo · ₹0.30/min',                       cost: 0.30 },
+    { id: 'o1-mini',                            label: 'o1-mini · reasoning · ₹2.00/min',                 cost: 2.00 },
+    { id: 'o1-preview',                         label: 'o1-preview · advanced reasoning · ₹12.00/min',    cost: 12.00 },
   ],
   gemini: [
-    { id: 'default',                  label: 'Gemini 2.5 Flash Live (Recommended)' },
-    { id: 'gemini-2.5-flash',          label: 'Gemini 2.5 Flash — fast, native audio' },
-    { id: 'gemini-2.5-pro',            label: 'Gemini 2.5 Pro — premium' },
-    { id: 'gemini-2.0-flash',          label: 'Gemini 2.0 Flash' },
+    { id: 'default',                           label: 'Gemini 2.5 Flash (Recommended) · ₹0.08/min',      cost: 0.08 },
+    { id: 'gemini-2.5-flash',                   label: 'Gemini 2.5 Flash · native audio · ₹0.08/min',     cost: 0.08 },
+    { id: 'gemini-2.5-pro',                     label: 'Gemini 2.5 Pro · premium · ₹1.27/min',            cost: 1.27 },
+    { id: 'gemini-2.0-flash',                   label: 'Gemini 2.0 Flash · ₹0.07/min',                    cost: 0.07 },
+    { id: 'gemini-2.0-flash-thinking',          label: 'Gemini 2.0 Flash Thinking · reasoning · ₹0.20/min', cost: 0.20 },
+    { id: 'gemini-1.5-pro',                     label: 'Gemini 1.5 Pro (legacy) · ₹1.00/min',              cost: 1.00 },
+    { id: 'gemini-1.5-flash',                   label: 'Gemini 1.5 Flash (legacy) · ₹0.05/min',            cost: 0.05 },
+  ],
+  deepseek: [
+    { id: 'default',                           label: 'DeepSeek Chat (Recommended) · ₹0.35/min',         cost: 0.35 },
+    { id: 'deepseek-chat',                      label: 'DeepSeek Chat · ₹0.35/min',                       cost: 0.35 },
+    { id: 'deepseek-reasoner',                  label: 'DeepSeek Reasoner · reasoning · ₹0.60/min',       cost: 0.60 },
+    { id: 'deepseek-coder',                     label: 'DeepSeek Coder · code-focused · ₹0.30/min',        cost: 0.30 },
   ],
 };
 
@@ -110,6 +130,7 @@ const LLM_TO_CATALOG = {
   anthropic: 'claude_haiku',
   openai: 'gpt4o_mini',
   gemini: 'gemini_25_hd',
+  deepseek: 'deepseek',
 };
 const PRESET_TO_PIPELINE = {
   low_latency:  { stt: 'deepgram_nova2', tts: 'cartesia',           telephony: 'exotel' },
@@ -703,21 +724,11 @@ export default function AgentBuilder() {
           </div>
 
           {/* Voice + Response Timing */}
-          <Section title="Voice" icon={Volume2}>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
-              {VOICES.map(v => (
-                <button key={v.id} onClick={() => setSelectedVoice(v.id)}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${selectedVoice === v.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
-                  <span className={`inline-block w-6 h-6 rounded-full text-[10px] font-bold leading-6 ${v.gender === 'Female' ? 'bg-pink-100 text-pink-600' : 'bg-blue-100 text-blue-600'}`}>
-                    {v.gender === 'Female' ? '♀' : '♂'}
-                  </span>
-                  <p className="text-[11px] font-medium text-gray-900 mt-1">{v.name}</p>
-                  <p className="text-[9px] text-gray-400">{v.gender} · {v.style}</p>
-                </button>
-              ))}
-            </div>
+          <Section title="Voice" icon={Volume2} badge={`${selectedVoice}`}>
+            <p className="text-xs text-gray-500 mb-3">Pick from {50}+ built-in voices across 6 providers, or your tenant's cloned voices.</p>
+            <AgentVoicePicker selected={selectedVoice} onSelect={setSelectedVoice} />
 
-            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2 block">Response Timing</label>
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2 block mt-5">Response Timing</label>
             <div className="grid grid-cols-3 gap-2">
               {['Low Latency', 'Balanced', 'Conservative'].map(t => (
                 <button key={t} onClick={() => setResponseTiming(t.toLowerCase().replace(' ', '_'))}
