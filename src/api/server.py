@@ -246,6 +246,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Super Admin router not available: %s", exc)
 
+    # ── Platform Support (tenant-side tickets + SLA + attachments) ──
+    try:
+        from api.routers.platform_support import router as platform_support_router
+        application.include_router(platform_support_router)
+        logger.info("Platform Support router loaded")
+    except Exception as exc:
+        logger.warning("Platform Support router not available: %s", exc)
+
     # ── Persistent Agents + Call Logs + Channel Configs ─────
     try:
         from api.routers.agents_db import router as agents_db_router

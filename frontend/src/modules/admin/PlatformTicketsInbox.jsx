@@ -227,6 +227,22 @@ export default function PlatformTicketsInbox() {
  Urgent
  </span>
  )}
+ {/* SLA breach badges */}
+ {t.sla_first_response_breached && !t.first_response_at && (
+   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200">
+     ⚠ SLA (response {t.sla_first_response_hours}h)
+   </span>
+ )}
+ {t.sla_resolve_breached && t.status !== 'resolved' && t.status !== 'closed' && (
+   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
+     ⚠ SLA (resolve {t.sla_resolve_hours}h)
+   </span>
+ )}
+ {(t.attachments || []).length > 0 && (
+   <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+     📎 {(t.attachments || []).length}
+   </span>
+ )}
  </div>
  <p className="font-semibold text-slate-900 truncate">{t.subject}</p>
  <p className="text-sm text-slate-500 truncate mt-0.5">{t.body}</p>

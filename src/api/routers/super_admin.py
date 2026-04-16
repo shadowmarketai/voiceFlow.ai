@@ -6,6 +6,7 @@ activate/deactivate), feature toggles, plans, platform stats.
 """
 
 import logging
+import datetime
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -569,6 +570,31 @@ async def reply_to_platform_ticket(
             await manager.to_tenant(ticket_tenant_id, "ticket.reply.created", payload)
     except Exception as exc:
         logger.warning("WS broadcast (ticket.reply.created) failed: %s", exc)
+
+    # Mark first_response_at + email the ticket creator
+    try:
+        with db() as conn:
+            tk = conn.execute(
+                f"SELECT * FROM platform_tickets WHERE id={_ph}", (ticket_id,)
+            ).fetchone()
+            if tk:
+                tkd = dict(tk)
+                if not tkd.get("first_response_at"):
+                    conn.execute(
+                        f"UPDATE platform_tickets SET first_response_at={_ph} WHERE id={_ph}",
+                        (datetime.datetime.utcnow().isoformat(), ticket_id),
+                    )
+                # Find the creator's email
+                creator = conn.execute(
+                    f"SELECT email FROM users WHERE id={_ph}", (tkd.get("created_by"),)
+                ).fetchone()
+                if creator:
+                    from api.services import notifications
+                    notifications.notify_ticket_reply(
+                        tkd, reply_body, dict(creator)["email"], is_from_admin=True,
+                    )
+    except Exception as exc:
+        logger.warning("notify ticket reply failed: %s", exc)
 
     return payload
 
