@@ -76,9 +76,13 @@ def create_app() -> FastAPI:
     @application.middleware("http")
     async def _status_host_router(request: Request, call_next):
         host = (request.headers.get("host") or "").split(":")[0].lower()
-        if host.startswith("status.") and request.url.path in ("", "/"):
-            from api.routers.status_page import status_html
-            return await status_html()
+        if request.url.path in ("", "/"):
+            if host.startswith("status."):
+                from api.routers.status_page import status_html
+                return await status_html()
+            if host.startswith("metrics."):
+                from api.routers.metrics_page import metrics_html
+                return await metrics_html()
         return await call_next(request)
 
     # ── API info endpoint ────────────────────────────────────
@@ -328,6 +332,14 @@ def _include_routers(application: FastAPI) -> None:
         logger.info("Status page router loaded")
     except Exception as exc:
         logger.warning("Status page router not available: %s", exc)
+
+    # ── Public Metrics Page (metrics.shadowmarket.ai) ────────
+    try:
+        from api.routers.metrics_page import router as metrics_page_router
+        application.include_router(metrics_page_router)
+        logger.info("Metrics page router loaded")
+    except Exception as exc:
+        logger.warning("Metrics page router not available: %s", exc)
 
     # ── Webhooks & API Keys ──────────────────────────────────
     try:
