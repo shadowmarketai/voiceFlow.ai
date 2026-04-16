@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { LiveKitRoom as LKRoom, useRoomContext, useParticipants, AudioTrack, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, Loader2, Captions } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2, Loader2, MessageSquare } from 'lucide-react';
 import { livekitAPI } from '../services/api';
 import useDeepgramStream from '../hooks/useDeepgramStream';
 import { qualityAPI } from '../services/api';
@@ -176,7 +176,7 @@ function CallUI({ onEnd, language = 'en', agentId }) {
           className={`p-4 rounded-full transition-all ${showCaptions ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
           title="Toggle live captions"
         >
-          <Captions className="w-6 h-6" />
+          <MessageSquare className="w-6 h-6" />
         </button>
       </div>
     </div>
