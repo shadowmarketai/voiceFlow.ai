@@ -190,15 +190,8 @@ export default function AgentBuilder() {
   const { user } = useAuth();
   const isSuperAdmin = !!user?.is_super_admin;
   const [quickPreset, setQuickPreset] = useState('low_latency');
-  // Track previous LLM catalog key for cost-impact warnings
-  const prevLlmRef = useRef(LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b');
-  const previousLlmCatalog = prevLlmRef.current;
-  useEffect(() => {
-    prevLlmRef.current = LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b';
-    // Reset model to default when the provider changes so we don't keep a
-    // stale model id from the previous provider's catalog.
-    setLlmModel('default');
-  }, [llmProvider]);
+
+  // ── LLM state (must be declared BEFORE the ref/effects that read it) ──
   const [llmProvider, setLlmProvider] = useState('groq');
   // Advanced LLM settings (shown in an expandable "Advanced Settings" block)
   const [llmModel, setLlmModel] = useState('default');      // specific model within provider
@@ -207,6 +200,17 @@ export default function AgentBuilder() {
   const [topP, setTopP] = useState(0.95);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('priya');
+
+  // Track previous LLM catalog key for cost-impact warnings.
+  // This must come AFTER llmProvider is declared (TDZ).
+  const prevLlmRef = useRef(LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b');
+  const previousLlmCatalog = prevLlmRef.current;
+  useEffect(() => {
+    prevLlmRef.current = LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b';
+    // Reset model to default when the provider changes so we don't keep a
+    // stale model id from the previous provider's catalog.
+    setLlmModel('default');
+  }, [llmProvider]);
 
   // Load agent data in edit mode
   useEffect(() => {
