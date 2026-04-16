@@ -2,9 +2,10 @@
  * Testing Playground — Premium AI agent testing interface
  */
 
-import { useState, lazy, Suspense } from 'react'
+import { useEffect, useState, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck, Loader2 } from 'lucide-react'
+import { Mic, MicOff, Send, Bot, Activity, Brain, ChevronDown, Sparkles, Phone, PhoneOff, Wifi, Volume2, AudioLines, ShieldCheck, Loader2, AlertTriangle } from 'lucide-react'
+import useDeepgramStream from '../../../hooks/useDeepgramStream'
 
 const LiveKitVoiceRoom = lazy(() => import('../../../components/LiveKitRoom'))
 
@@ -22,9 +23,43 @@ const fadeUp = {
 export default function Testing() {
   const [selectedAgent, setSelectedAgent] = useState('')
   const [message, setMessage] = useState('')
-  const [isRecording, setIsRecording] = useState(false)
   const [conversation, setConversation] = useState([])
   const [isWebRTCCall, setIsWebRTCCall] = useState(false)
+
+  // Deepgram streaming STT — live captions as the user speaks.
+  const agentLang = mockAgents.find((a) => a.id === selectedAgent)?.language || ''
+  const langCode = { English: 'en', Hindi: 'hi', Tamil: 'ta', Telugu: 'te' }[agentLang] || ''
+  const { start, stop, recording, partial, finals, error: sttError } =
+    useDeepgramStream({ language: langCode, diarize: false })
+  const isRecording = recording
+
+  const toggleRecording = () => {
+    if (recording) stop()
+    else start()
+  }
+
+  // Auto-append every final utterance into the chat as a user message.
+  useEffect(() => {
+    if (!finals.length || !selectedAgent) return
+    const last = finals[finals.length - 1]
+    if (!last?.text) return
+    setConversation((prev) => {
+      // Avoid double-append on re-renders
+      if (prev.length && prev[prev.length - 1]?.sttFinalIndex === finals.length - 1) return prev
+      return [
+        ...prev,
+        { role: 'user', text: last.text, timestamp: new Date().toLocaleTimeString(), sttFinalIndex: finals.length - 1 },
+        {
+          role: 'agent',
+          text: 'Live transcript captured. Connect your LLM pipeline to respond automatically.',
+          timestamp: new Date().toLocaleTimeString(),
+          emotion: 'neutral',
+          intent: 'transcribed',
+          confidence: last.confidence || 0.9,
+        },
+      ]
+    })
+  }, [finals, selectedAgent])
 
   const handleSend = () => {
     if (!message.trim() || !selectedAgent) return
@@ -147,7 +182,7 @@ export default function Testing() {
           <div className="p-4 border-t border-gray-100 bg-white">
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsRecording(!isRecording)}
+                onClick={toggleRecording}
                 disabled={!selectedAgent}
                 className={`p-3 rounded-xl transition-all duration-200 ${
                   isRecording
@@ -195,17 +230,43 @@ export default function Testing() {
               </div>
               <h3 className="text-sm font-semibold text-gray-900">Live Transcription</h3>
             </div>
-            <div className="min-h-[120px] p-4 rounded-xl bg-gray-50/80 border border-gray-200/60">
-              {isRecording ? (
-                <div className="flex items-center gap-2.5">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                  </span>
-                  <p className="text-sm text-gray-600">Listening...</p>
+            <div className="min-h-[160px] p-4 rounded-xl bg-gray-50/80 border border-gray-200/60 space-y-2 max-h-[260px] overflow-y-auto">
+              {/* Committed utterances */}
+              {finals.map((f, i) => (
+                <p key={i} className="text-sm text-gray-800 leading-relaxed">
+                  {f.speaker != null && (
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-mono mr-1.5">
+                      S{f.speaker}
+                    </span>
+                  )}
+                  {f.text}
+                </p>
+              ))}
+              {/* In-flight partial */}
+              {partial && (
+                <p className="text-sm text-gray-400 italic leading-relaxed">
+                  {partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" />
+                </p>
+              )}
+              {/* Status + errors */}
+              {!finals.length && !partial && (
+                isRecording ? (
+                  <div className="flex items-center gap-2.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                    </span>
+                    <p className="text-sm text-gray-600">Listening... speak now</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-400">Click the mic and speak — transcripts appear live via Deepgram Nova-2.</p>
+                )
+              )}
+              {sttError && (
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>{sttError}</span>
                 </div>
-              ) : (
-                <p className="text-sm text-gray-400">Start recording to see live transcription</p>
               )}
             </div>
           </motion.div>
