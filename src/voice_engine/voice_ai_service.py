@@ -564,11 +564,19 @@ class VoiceAIService:
             )
             return idx, text, result, t_tts_start
 
+        # W6.1 — smart model routing for streaming turns too.
+        from voice_engine.smart_llm import pick_model
+        chosen_provider_s, chosen_model_s, _reason_s = pick_model(
+            user_message=user_text,
+            requested_provider=request.llm_provider,
+            requested_model=request.llm_model,
+        )
+
         async for delta in call_llm_stream(
             system_prompt=grounded_prompt,
             user_message=user_text,
-            provider=request.llm_provider,
-            model=request.llm_model,
+            provider=chosen_provider_s,
+            model=chosen_model_s or None,
         ):
             buf += delta
             full_text += delta
@@ -721,22 +729,53 @@ class VoiceAIService:
             dialect=getattr(request, "dialect", None),
         )
 
+        # W6.2 — response cache check. Skip entire LLM+TTS when short
+        # FAQ-y questions have been answered before.
+        from voice_engine import response_cache
+        cached = response_cache.lookup(
+            agent_id=getattr(request, "assistant_id", None),
+            language=chosen_lang,
+            text=user_text,
+        )
+        if cached:
+            logger.info("Response cache HIT — skipping LLM+TTS")
+            total_ms = (time.time() - t_start) * 1000
+            return VoiceTurnResponse(
+                text=cached["ai_text"],
+                audio_base64=cached["audio_base64"],
+                audio_format=cached.get("audio_format", "mp3"),
+                sample_rate=cached.get("sample_rate", 24000),
+                analysis=analysis,
+                latency_ms=total_ms,
+                tts_engine=cached.get("engine_used", "cache"),
+            )
+
+        # W6.1 — smart model routing. Short turns use Groq 8B; long or
+        # policy-loaded ones escalate to 70B / Claude Haiku.
+        from voice_engine.smart_llm import pick_model
+        chosen_provider, chosen_model, route_reason = pick_model(
+            user_message=user_text,
+            requested_provider=request.llm_provider,
+            requested_model=request.llm_model,
+        )
+        logger.info("LLM routing: %s/%s (%s)", chosen_provider, chosen_model, route_reason)
+
         # --- Step 2: Generate LLM response (tries all providers) ---
         try:
             from voice_engine.api_providers import call_llm_api
             llm_result = await call_llm_api(
                 system_prompt=grounded_prompt,
                 user_message=user_text,
-                provider=request.llm_provider,
-                model=request.llm_model,
+                provider=chosen_provider,
+                model=chosen_model or None,
             )
             ai_text = llm_result["text"]
         except Exception:
             ai_text = await _call_llm(
                 system_prompt=grounded_prompt,
                 user_message=user_text,
-                provider=request.llm_provider,
-                model=request.llm_model,
+                provider=chosen_provider,
+                model=chosen_model or None,
             )
         t_after_llm = time.time()
         logger.info(f"LLM done in {(t_after_llm - t_after_stt)*1000:.0f}ms: '{ai_text[:60]}'")
@@ -748,6 +787,20 @@ class VoiceAIService:
             detected_customer_emotion=detected_emotion,
             voice_id=request.voice_id,
             use_case="sales_bot",
+        )
+
+        # W6.2 — store in cache for next time.
+        response_cache.store(
+            agent_id=getattr(request, "assistant_id", None),
+            language=chosen_lang,
+            text=user_text,
+            payload={
+                "ai_text": ai_text,
+                "audio_base64": tts_result.get("audio_base64", ""),
+                "audio_format": tts_result.get("audio_format", "mp3"),
+                "sample_rate": tts_result.get("sample_rate", 24000),
+                "engine_used": tts_result.get("engine_used", "unknown"),
+            },
         )
         t_end = time.time()
         total_ms = (t_end - t_start) * 1000

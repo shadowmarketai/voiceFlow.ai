@@ -219,6 +219,13 @@ async def submit_csat(req: CsatPayload):
     return {"status": "ok"}
 
 
+@router.get("/cache-stats")
+async def cache_stats():
+    """W6.2 — response cache hit-rate + backend info."""
+    from voice_engine import response_cache
+    return response_cache.stats()
+
+
 @router.get("/languages")
 async def supported_languages():
     """W5 — return the full 18-language coverage matrix.
