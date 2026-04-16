@@ -13,8 +13,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, TrendingUp } from 'lucide-react'
 import { billingAPI } from '../../../services/api'
+import { useAuth } from '../../../contexts/AuthContext'
 
 export default function CostCalculator({ stt, llm, tts, telephony, previousLlm, monthlyMinutes = 1000 }) {
+  const { user } = useAuth()
+  const isSuperAdmin = !!user?.is_super_admin
   const [catalog, setCatalog] = useState(null)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -62,34 +65,52 @@ export default function CostCalculator({ stt, llm, tts, telephony, previousLlm, 
   const b = result.breakdown
   const perMin = result.per_minute
   const monthly = result.monthly_estimate || (perMin * monthlyMinutes).toFixed(2)
-  // Platform fee is hidden from client view — derive "agent platform portion" from residual
   const aiBilled = b.ai_total_billed || 0
   const telBilled = b.telephony?.billed || 0
   const platformLine = Math.max(0, perMin - aiBilled - telBilled)
 
   return (
     <>
-      <div className="mt-4 p-3 bg-gray-50 rounded-xl grid grid-cols-4 gap-3 text-xs">
-        <div>
-          <span className="text-gray-400">Platform Fee</span>
-          <p className="font-semibold text-gray-900">₹{platformLine.toFixed(2)}/min</p>
+      {isSuperAdmin ? (
+        // Full per-component cost breakdown — super admin only.
+        <div className="mt-4 p-3 bg-gray-50 rounded-xl grid grid-cols-4 gap-3 text-xs">
+          <div>
+            <span className="text-gray-400">Platform Fee</span>
+            <p className="font-semibold text-gray-900">₹{platformLine.toFixed(2)}/min</p>
+          </div>
+          <div>
+            <span className="text-gray-400">AI (STT+LLM+TTS)</span>
+            <p className="font-semibold text-gray-900">₹{aiBilled.toFixed(2)}/min</p>
+            <p className="text-[10px] text-gray-400">{b.llm?.label}</p>
+          </div>
+          <div>
+            <span className="text-gray-400">Telephony</span>
+            <p className="font-semibold text-gray-900">₹{telBilled.toFixed(2)}/min</p>
+            <p className="text-[10px] text-gray-400">{b.telephony?.label}</p>
+          </div>
+          <div>
+            <span className="text-gray-400 font-semibold">Total</span>
+            <p className="font-bold text-indigo-600">₹{perMin.toFixed(2)}/min</p>
+            <p className="text-[10px] text-gray-400">~₹{Number(monthly).toLocaleString('en-IN')} @ {monthlyMinutes}min/mo</p>
+          </div>
         </div>
-        <div>
-          <span className="text-gray-400">AI (STT+LLM+TTS)</span>
-          <p className="font-semibold text-gray-900">₹{aiBilled.toFixed(2)}/min</p>
-          <p className="text-[10px] text-gray-400">{b.llm?.label}</p>
+      ) : (
+        // Client-friendly view — only the model name + total per-minute price.
+        <div className="mt-4 p-3 bg-gray-50 rounded-xl flex items-center justify-between text-xs">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-indigo-500" />
+            <div>
+              <span className="text-gray-400">Active model</span>
+              <p className="font-semibold text-gray-900">{b.llm?.label || '—'}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-gray-400">All-inclusive rate</span>
+            <p className="font-bold text-indigo-600 text-base">₹{perMin.toFixed(2)}<span className="text-xs text-gray-500 font-normal">/min</span></p>
+            <p className="text-[10px] text-gray-400">~₹{Number(monthly).toLocaleString('en-IN')} at {monthlyMinutes} min/mo</p>
+          </div>
         </div>
-        <div>
-          <span className="text-gray-400">Telephony</span>
-          <p className="font-semibold text-gray-900">₹{telBilled.toFixed(2)}/min</p>
-          <p className="text-[10px] text-gray-400">{b.telephony?.label}</p>
-        </div>
-        <div>
-          <span className="text-gray-400 font-semibold">Total</span>
-          <p className="font-bold text-indigo-600">₹{perMin.toFixed(2)}/min</p>
-          <p className="text-[10px] text-gray-400">~₹{Number(monthly).toLocaleString('en-IN')} @ {monthlyMinutes}min/mo</p>
-        </div>
-      </div>
+      )}
 
       {llmImpact && llmImpact.direction === 'up' && llmImpact.perMin >= 1 && (
         <div className="mt-2 flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">

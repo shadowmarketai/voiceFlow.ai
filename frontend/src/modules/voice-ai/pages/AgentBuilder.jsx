@@ -450,8 +450,27 @@ export default function AgentBuilder() {
             <div className="flex items-center gap-2">
               <input value={agentName} onChange={e => setAgentName(e.target.value)}
                 className="text-lg font-bold text-gray-900 bg-transparent border-none focus:outline-none focus:border-b-2 focus:border-indigo-500 p-0" />
-              <span className="text-xs text-gray-500">IN</span>
-              <span className="text-xs text-gray-500">{agentLang}</span>
+              <select value={agentLang} onChange={e => setAgentLang(e.target.value)}
+                className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-md px-2 py-0.5 focus:outline-none focus:border-indigo-400 cursor-pointer"
+                title="Primary language for this agent">
+                <option value="English">English</option>
+                <option value="Hindi">Hindi</option>
+                <option value="Tamil">Tamil</option>
+                <option value="Telugu">Telugu</option>
+                <option value="Kannada">Kannada</option>
+                <option value="Malayalam">Malayalam</option>
+                <option value="Bengali">Bengali</option>
+                <option value="Gujarati">Gujarati</option>
+                <option value="Marathi">Marathi</option>
+                <option value="Punjabi">Punjabi</option>
+                <option value="Odia">Odia</option>
+                <option value="Assamese">Assamese</option>
+                <option value="Hinglish">Hinglish (Hindi + English)</option>
+                <option value="Tanglish">Tanglish (Tamil + English)</option>
+                <option value="Kanglish">Kanglish (Kannada + English)</option>
+                <option value="Tenglish">Tenglish (Telugu + English)</option>
+                <option value="Multi">Multi-lingual (auto-detect)</option>
+              </select>
               <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${agentStatus === 'active' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : agentStatus === 'draft' ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-gray-100 text-gray-500'}`}>
                 {agentStatus}
               </span>
