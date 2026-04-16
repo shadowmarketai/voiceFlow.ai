@@ -181,8 +181,10 @@ export default function AgentBuilder() {
   const [agentLang, setAgentLang] = useState('English');
   const [agentStatus, setAgentStatus] = useState('draft');
 
-  // Overview — Prompt
+  // Overview — Prompt + first-message handshake
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [firstMessageMode, setFirstMessageMode] = useState('assistant_first');  // assistant_first | wait_for_user | assistant_silent
+  const [firstMessage, setFirstMessage] = useState('Hello, how can I help you today?');
   const [promptVars, setPromptVars] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState('');
 
@@ -223,14 +225,41 @@ export default function AgentBuilder() {
       setAgentLang(agent.language || 'English');
       setAgentStatus(agent.status || 'active');
       if (agent.config) {
-        if (agent.config.prompt) setSystemPrompt(agent.config.prompt);
-        if (agent.config.llmProvider) setLlmProvider(agent.config.llmProvider);
-        if (agent.config.llmModel) setLlmModel(agent.config.llmModel);
-        if (agent.config.temperature != null) setTemperature(agent.config.temperature);
-        if (agent.config.maxTokens != null) setMaxTokens(agent.config.maxTokens);
-        if (agent.config.topP != null) setTopP(agent.config.topP);
-        if (agent.config.voice) setSelectedVoice(agent.config.voice);
-        if (agent.config.accent) setSpeechAccent(agent.config.accent);
+        const c = agent.config;
+        if (c.prompt) setSystemPrompt(c.prompt);
+        if (c.firstMessage) setFirstMessage(c.firstMessage);
+        if (c.firstMessageMode) setFirstMessageMode(c.firstMessageMode);
+        if (c.llmProvider) setLlmProvider(c.llmProvider);
+        if (c.llmModel) setLlmModel(c.llmModel);
+        if (c.temperature != null) setTemperature(c.temperature);
+        if (c.maxTokens != null) setMaxTokens(c.maxTokens);
+        if (c.topP != null) setTopP(c.topP);
+        if (c.voice) setSelectedVoice(c.voice);
+        if (c.voiceSpeed != null) setVoiceSpeed(c.voiceSpeed);
+        if (Array.isArray(c.fallbackVoices)) setFallbackVoices(c.fallbackVoices);
+        if (c.accent) setSpeechAccent(c.accent);
+        // Transcriber
+        if (c.transcribeConfidence != null) setTranscribeConfidence(c.transcribeConfidence);
+        if (c.useNumerals != null) setUseNumerals(c.useNumerals);
+        if (c.transcribeBackgroundDenoise != null) setTranscribeBackgroundDenoise(c.transcribeBackgroundDenoise);
+        // Voicemail / timeouts / keypad
+        if (c.voicemailDetection != null) setVoicemailDetection(c.voicemailDetection);
+        if (c.voicemailMethod) setVoicemailMethod(c.voicemailMethod);
+        if (c.voicemailMessage) setVoicemailMessage(c.voicemailMessage);
+        if (c.maxSilenceSec != null) setMaxSilenceSec(c.maxSilenceSec);
+        if (c.maxCallSec != null) setMaxCallSec(c.maxCallSec);
+        if (c.keypadEnabled != null) setKeypadEnabled(c.keypadEnabled);
+        if (c.keypadDelayMs != null) setKeypadDelayMs(c.keypadDelayMs);
+        // Compliance
+        if (c.hipaaEnabled != null) setHipaaEnabled(c.hipaaEnabled);
+        if (c.zdrEnabled != null) setZdrEnabled(c.zdrEnabled);
+        if (c.recordingConsent != null) setRecordingConsent(c.recordingConsent);
+        if (c.recordingConsentText) setRecordingConsentText(c.recordingConsentText);
+        if (c.audioRecording != null) setAudioRecording(c.audioRecording);
+        if (c.logging != null) setLogging(c.logging);
+        if (c.transcriptEnabled != null) setTranscriptEnabled(c.transcriptEnabled);
+        if (c.audioRecordingFormat) setAudioRecordingFormat(c.audioRecordingFormat);
+        if (c.videoRecording != null) setVideoRecording(c.videoRecording);
       }
     } catch {}
   }, [isEditMode]);
@@ -243,6 +272,32 @@ export default function AgentBuilder() {
   const [speechStartSensitivity, setSpeechStartSensitivity] = useState('high');
   const [speechEndSensitivity, setSpeechEndSensitivity] = useState('high');
   const [noiseSuppression, setNoiseSuppression] = useState(false);
+  // Voice tab additions (Vapi-style)
+  const [voiceSpeed, setVoiceSpeed] = useState(1.0);                       // 0.5x – 2.0x
+  const [fallbackVoices, setFallbackVoices] = useState([]);                // ordered list of voice ids
+  // Transcriber controls
+  const [transcribeConfidence, setTranscribeConfidence] = useState(0.4);  // 0–1
+  const [useNumerals, setUseNumerals] = useState(true);
+  const [transcribeBackgroundDenoise, setTranscribeBackgroundDenoise] = useState(false);
+  // Voicemail detection plan
+  const [voicemailMethod, setVoicemailMethod] = useState('audio');          // audio | tone | hybrid
+  const [voicemailMessage, setVoicemailMessage] = useState('Please leave us your name and number — we\'ll call you back.');
+  // Call timeouts
+  const [maxSilenceSec, setMaxSilenceSec] = useState(30);
+  const [maxCallSec, setMaxCallSec] = useState(900);
+  // Keypad / DTMF
+  const [keypadEnabled, setKeypadEnabled] = useState(false);
+  const [keypadDelayMs, setKeypadDelayMs] = useState(2000);
+  // Compliance + Privacy (Vapi-style)
+  const [hipaaEnabled, setHipaaEnabled] = useState(false);
+  const [zdrEnabled, setZdrEnabled] = useState(false);
+  const [recordingConsent, setRecordingConsent] = useState(false);
+  const [recordingConsentText, setRecordingConsentText] = useState('This call may be recorded for quality and training. Press 1 to consent or stay on the line.');
+  const [audioRecording, setAudioRecording] = useState(true);
+  const [logging, setLogging] = useState(true);
+  const [transcriptEnabled, setTranscriptEnabled] = useState(true);
+  const [audioRecordingFormat, setAudioRecordingFormat] = useState('wav');  // wav | mp3 | opus
+  const [videoRecording, setVideoRecording] = useState(false);
 
   // Behavior
   const [dataFields, setDataFields] = useState([]);
@@ -279,18 +334,44 @@ export default function AgentBuilder() {
         updatedAt: new Date().toISOString(),
         config: {
           prompt: systemPrompt,
+          firstMessage,
+          firstMessageMode,
           llmProvider,
           llmModel,
           temperature,
           maxTokens,
           topP,
           voice: selectedVoice,
+          voiceSpeed,
+          fallbackVoices,
           accent: speechAccent,
           quickPreset,
           responseTiming,
           allowInterruptions,
           maxDuration,
           inactivityTimeout,
+          // Transcriber
+          transcribeConfidence,
+          useNumerals,
+          transcribeBackgroundDenoise,
+          // Voicemail + timeouts + keypad
+          voicemailDetection,
+          voicemailMethod,
+          voicemailMessage,
+          maxSilenceSec,
+          maxCallSec,
+          keypadEnabled,
+          keypadDelayMs,
+          // Compliance
+          hipaaEnabled,
+          zdrEnabled,
+          recordingConsent,
+          recordingConsentText,
+          audioRecording,
+          logging,
+          transcriptEnabled,
+          audioRecordingFormat,
+          videoRecording,
         },
       };
       // Upsert into vf_custom_agents
@@ -326,6 +407,7 @@ export default function AgentBuilder() {
     { id: 'behavior', label: 'Behavior', icon: Target },
     { id: 'tools', label: 'Tools', icon: Wrench },
     { id: 'integrations', label: 'Integrations', icon: Link2 },
+    { id: 'compliance', label: 'Compliance & Privacy', icon: Shield },
   ];
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -389,6 +471,35 @@ export default function AgentBuilder() {
       {/* ═══ OVERVIEW TAB ═══ */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
+          {/* First Message — what the agent says when the call connects */}
+          <Section title="First Message" icon={MessageSquare} badge={firstMessageMode === 'wait_for_user' ? 'Listens first' : 'Speaks first'}>
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Mode</label>
+                <select value={firstMessageMode} onChange={(e) => setFirstMessageMode(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white">
+                  <option value="assistant_first">Assistant speaks first</option>
+                  <option value="wait_for_user">Wait for user to speak</option>
+                  <option value="assistant_silent">Assistant connects silently</option>
+                </select>
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {firstMessageMode === 'assistant_first' && 'Greets the caller as soon as the call connects.'}
+                  {firstMessageMode === 'wait_for_user' && 'Stays quiet until the caller speaks first — useful for inbound IVR-style flows.'}
+                  {firstMessageMode === 'assistant_silent' && 'Connects without any greeting; first turn comes from the LLM after the user speaks.'}
+                </p>
+              </div>
+              {firstMessageMode === 'assistant_first' && (
+                <div>
+                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">First message</label>
+                  <textarea value={firstMessage} onChange={(e) => setFirstMessage(e.target.value)} rows={2}
+                    placeholder="Hello, how can I help you today?"
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none" />
+                  <p className="text-[10px] text-gray-400 mt-1">{firstMessage.length} characters · supports {'{{variable}}'} substitution</p>
+                </div>
+              )}
+            </div>
+          </Section>
+
           {/* Agent Instructions (Prompt) */}
           <Section title="Agent Instructions" icon={MessageSquare}>
             <textarea value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)} rows={12}
@@ -637,6 +748,59 @@ export default function AgentBuilder() {
             </div>
 
             <Toggle label="Noise Suppression — RNNoise" description="ML-based noise reduction" enabled={noiseSuppression} onChange={setNoiseSuppression} />
+          </Section>
+
+          {/* Voice Speed (Vapi-style) */}
+          <Section title="Voice Speed" icon={Volume2} collapsible defaultOpen={false} badge={`${voiceSpeed.toFixed(2)}x`}>
+            <div>
+              <input type="range" min="0.5" max="2" step="0.05" value={voiceSpeed}
+                onChange={(e) => setVoiceSpeed(Number(e.target.value))}
+                className="w-full accent-indigo-600" />
+              <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                <span>Slower (0.5x)</span><span>Normal (1.0x)</span><span>Faster (2.0x)</span>
+              </div>
+            </div>
+          </Section>
+
+          {/* Fallback Voices */}
+          <Section title="Fallback Voices" icon={Volume2} collapsible defaultOpen={false}
+            badge={fallbackVoices.length ? `${fallbackVoices.length} configured` : 'None'}>
+            <p className="text-xs text-gray-500 mb-2">If the primary voice fails, these voices are tried in order.</p>
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+              {VOICES.filter(v => v.id !== selectedVoice).map(v => (
+                <button key={v.id} onClick={() => setFallbackVoices(prev =>
+                  prev.includes(v.id) ? prev.filter(x => x !== v.id) : [...prev, v.id]
+                )}
+                  className={`p-2 rounded-lg border text-center text-xs ${
+                    fallbackVoices.includes(v.id)
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-200 text-gray-600 hover:border-indigo-300'
+                  }`}>
+                  {v.name}{fallbackVoices.includes(v.id) && <span className="text-[9px] block text-indigo-500">#{fallbackVoices.indexOf(v.id) + 1}</span>}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Transcriber controls (Deepgram Nova) */}
+          <Section title="Transcriber" icon={MessageSquare} collapsible defaultOpen={false} badge="Deepgram Nova">
+            <div className="space-y-3">
+              <Toggle label="Background Denoising" description="Filter background noise while the user is talking" enabled={transcribeBackgroundDenoise} onChange={setTranscribeBackgroundDenoise} />
+              <Toggle label="Use Numerals" description="Convert numbers from words to digits in transcription (e.g. 'twenty five' → '25')" enabled={useNumerals} onChange={setUseNumerals} />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-medium text-gray-700">Confidence Threshold</label>
+                  <span className="text-xs font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700">{transcribeConfidence.toFixed(2)}</span>
+                </div>
+                <input type="range" min="0" max="1" step="0.05" value={transcribeConfidence}
+                  onChange={(e) => setTranscribeConfidence(Number(e.target.value))}
+                  className="w-full accent-indigo-600" />
+                <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                  <span>0.0 — keep everything</span><span>1.0 — only certain words</span>
+                </div>
+                <p className="text-[10px] text-gray-400 mt-1">Transcripts with confidence below this threshold are filtered out.</p>
+              </div>
+            </div>
           </Section>
         </div>
       )}
@@ -920,6 +1084,139 @@ export default function AgentBuilder() {
                 )}
               </div>
             ))}
+          </Section>
+        </div>
+      )}
+
+      {/* ═══ COMPLIANCE & PRIVACY TAB ═══ */}
+      {activeTab === 'compliance' && (
+        <div className="space-y-4">
+          {/* Recording controls */}
+          <Section title="Recording" icon={AudioLines}>
+            <Toggle label="Audio Recording" description="Record the audio of every call (stored encrypted at rest)" enabled={audioRecording} onChange={setAudioRecording} />
+            <Toggle label="Video Recording" description="Also record video for browser/web calls (LiveKit)" enabled={videoRecording} onChange={setVideoRecording} />
+            <div>
+              <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Audio Recording Format</label>
+              <select value={audioRecordingFormat} onChange={(e) => setAudioRecordingFormat(e.target.value)}
+                className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white">
+                <option value="wav">WAV (uncompressed, best quality)</option>
+                <option value="mp3">MP3 (smallest file size)</option>
+                <option value="opus">Opus (best compression-to-quality)</option>
+              </select>
+            </div>
+          </Section>
+
+          {/* Logs / transcripts */}
+          <Section title="Logs & Transcripts" icon={FileText}>
+            <Toggle label="Logging" description="Capture per-call diagnostic logs (latency, provider, errors)" enabled={logging} onChange={setLogging} />
+            <Toggle label="Transcript Storage" description="Save the full transcript with each call record" enabled={transcriptEnabled} onChange={setTranscriptEnabled} />
+          </Section>
+
+          {/* Recording consent */}
+          <Section title="Recording Consent" icon={Shield} badge={recordingConsent ? 'Required' : 'Optional'}>
+            <Toggle label="Ask for consent before recording" description="Plays a consent prompt at call start; nothing is stored until consent is captured" enabled={recordingConsent} onChange={setRecordingConsent} />
+            {recordingConsent && (
+              <div>
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Consent message</label>
+                <textarea value={recordingConsentText} onChange={(e) => setRecordingConsentText(e.target.value)} rows={2}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+              </div>
+            )}
+          </Section>
+
+          {/* Voicemail Detection */}
+          <Section title="Voicemail Detection" icon={Phone} collapsible defaultOpen={false}
+            badge={voicemailDetection ? 'Enabled' : 'Off'}>
+            <Toggle label="Detect voicemail" description="If the call hits voicemail, deliver a short message and hang up" enabled={voicemailDetection} onChange={setVoicemailDetection} />
+            {voicemailDetection && (
+              <>
+                <div>
+                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Detection method</label>
+                  <select value={voicemailMethod} onChange={(e) => setVoicemailMethod(e.target.value)}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm bg-white">
+                    <option value="audio">Audio analysis (LLM)</option>
+                    <option value="tone">Tone detection (beep)</option>
+                    <option value="hybrid">Hybrid (audio + tone)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Voicemail message</label>
+                  <textarea value={voicemailMessage} onChange={(e) => setVoicemailMessage(e.target.value)} rows={2}
+                    className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                </div>
+              </>
+            )}
+          </Section>
+
+          {/* Call Timeouts */}
+          <Section title="Call Timeouts" icon={Clock}>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Max silence (sec)</label>
+                <input type="number" min="5" max="300" value={maxSilenceSec}
+                  onChange={(e) => setMaxSilenceSec(Number(e.target.value) || 30)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                <p className="text-[10px] text-gray-400 mt-1">End the call after this many seconds of total silence.</p>
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Max duration (sec)</label>
+                <input type="number" min="60" max="7200" value={maxCallSec}
+                  onChange={(e) => setMaxCallSec(Number(e.target.value) || 900)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                <p className="text-[10px] text-gray-400 mt-1">Hard cap on call length. {Math.floor(maxCallSec / 60)} min.</p>
+              </div>
+            </div>
+          </Section>
+
+          {/* Keypad / DTMF */}
+          <Section title="Keypad Input (DTMF)" icon={Phone} collapsible defaultOpen={false}
+            badge={keypadEnabled ? 'Enabled' : 'Off'}>
+            <Toggle label="Allow keypad digits" description="Caller can press 0-9, *, # — useful for IVR-style menus inside the agent" enabled={keypadEnabled} onChange={setKeypadEnabled} />
+            {keypadEnabled && (
+              <div>
+                <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Process delay (ms)</label>
+                <input type="number" min="500" max="5000" step="100" value={keypadDelayMs}
+                  onChange={(e) => setKeypadDelayMs(Number(e.target.value) || 2000)}
+                  className="mt-1 w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                <p className="text-[10px] text-gray-400 mt-1">Wait this long after the last keypress before processing the input.</p>
+              </div>
+            )}
+          </Section>
+
+          {/* Enterprise compliance add-ons */}
+          <Section title="Enterprise Compliance" icon={ShieldCheck}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    HIPAA Compliance
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">ENTERPRISE</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">BAA + encrypted PHI storage. Required for US healthcare.</p>
+                </div>
+                <button onClick={() => setHipaaEnabled(!hipaaEnabled)} className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors ${hipaaEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${hipaaEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50">
+                <div>
+                  <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                    Zero Data Retention (ZDR)
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">ENTERPRISE</span>
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Audio + transcripts purged immediately after call ends. No analytics, no recordings stored.</p>
+                </div>
+                <button onClick={() => setZdrEnabled(!zdrEnabled)} className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full transition-colors ${zdrEnabled ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+                  <span className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-md transition-transform ${zdrEnabled ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                </button>
+              </div>
+              {(hipaaEnabled || zdrEnabled) && (
+                <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>Enterprise compliance add-ons require a paid contract. Contact sales to enable on production calls.</span>
+                </div>
+              )}
+            </div>
           </Section>
         </div>
       )}
