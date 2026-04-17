@@ -1,0 +1,73 @@
+# ─────────────────────────────────────────────────────────────
+# Add to your docker-compose.yml
+# GPU-safe embedding storage infrastructure
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── MinIO (local dev / self-hosted prod on KVM4)
+  # For production on E2E GPU pods → use Cloudflare R2 or AWS S3
+  minio:
+    image: minio/minio:latest
+    container_name: voiceflow__minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: voiceflow
+      MINIO_ROOT_PASSWORD: voiceflow_secret_change_in_prod
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Console UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - voiceflow_net
+
+  # ── MinIO bucket setup (runs once on first start)
+  minio-setup:
+    image: minio/mc:latest
+    container_name: voiceflow__minio_setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 voiceflow voiceflow_secret_change_in_prod;
+      mc mb --ignore-existing local/voiceflow-embeddings;
+      mc anonymous set none local/voiceflow-embeddings;
+      echo 'Bucket created: voiceflow-embeddings';
+      "
+    networks:
+      - voiceflow_net
+
+volumes:
+  minio_data:
+    driver: local
+
+
+# ─────────────────────────────────────────────────────────────
+# Environment variables
+# Add to docker/assistant-api/.assistant.env
+# ─────────────────────────────────────────────────────────────
+
+# ── Embedding Storage
+EMBEDDING_S3_BUCKET=voiceflow-embeddings
+S3_ENDPOINT=http://minio:9000         # local dev / MinIO
+# S3_ENDPOINT=                        # empty = AWS S3 (production)
+# S3_ENDPOINT=https://xxx.r2.cloudflarestorage.com  # Cloudflare R2
+
+AWS_ACCESS_KEY_ID=voiceflow
+AWS_SECRET_ACCESS_KEY=voiceflow_secret_change_in_prod
+AWS_REGION=ap-south-1
+
+# ── Redis (already in your stack)
+REDIS_URL=redis://redis:6379/2        # db=2 for embeddings
+
+# ── L1 Cache tuning
+L1_MAX_ENTRIES=100
+L1_TTL_SECONDS=3600
+REDIS_TTL_SECONDS=86400

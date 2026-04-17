@@ -246,6 +246,19 @@ def pick_tts_language(
     # Romanized Indic detection — catches "Naan ippo busy" style text
     # that has no Unicode Indic characters at all.
     if text:
+        # Use the advanced 3-signal Tamil detector for Tamil (phonemes +
+        # function words + morphology) — much higher accuracy than simple
+        # token matching for Tanglish detection.
+        try:
+            from voice_engine.tamil_detector import RomanizedTamilDetector
+            _ta_det = RomanizedTamilDetector(channel_hint=hint)
+            _ta_result = _ta_det.detect(text)
+            if _ta_result.is_tamil and _ta_result.confidence >= 0.50:
+                return "ta", "tamil_detector_3signal"
+        except Exception:
+            pass
+
+        # Generic romanized detection for other Indic languages
         roman = detect_romanized_indic(text)
         if roman["language"] in _INDIC_LANG_CODES and roman["markers_hit"] >= _ROMANIZED_MIN_HITS:
             return roman["language"], "romanized_indic"

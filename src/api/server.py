@@ -88,9 +88,20 @@ def create_app() -> FastAPI:
     # ── API info endpoint ────────────────────────────────────
     @application.get("/api/info")
     async def api_info():
+        import subprocess
+        git_sha = os.environ.get("GIT_SHA", "")
+        if not git_sha:
+            try:
+                git_sha = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    stderr=subprocess.DEVNULL, timeout=3,
+                ).decode().strip()
+            except Exception:
+                git_sha = "unknown"
         return {
             "name": settings.APP_NAME,
             "version": settings.APP_VERSION,
+            "git_sha": git_sha,
             "status": "running",
             "platform": "voiceflow-ai-saas",
             "features": [
@@ -107,6 +118,17 @@ def create_app() -> FastAPI:
         }
 
     _include_routers(application)
+
+    @application.get("/api/v1/debug/routes")
+    async def debug_routes():
+        """List all registered routes — helps verify which routers loaded after deploy."""
+        return {
+            "count": len(application.routes),
+            "routes": sorted(set(
+                r.path for r in application.routes if hasattr(r, "path")
+            )),
+        }
+
     _mount_frontend(application)
 
     return application
@@ -193,6 +215,28 @@ def _register_lifecycle(application: FastAPI) -> None:
             start_synth()
         except Exception as exc:
             logger.warning("Synthetic probe not started: %s", exc)
+
+        # GPU-safe embedding store (3-layer: LRU → Redis → S3)
+        # Only activates when torch + aioboto3 are installed (GPU pods).
+        try:
+            from voice_engine.embedding_store import EmbeddingStore, StorageConfig
+            config = StorageConfig(
+                redis_url=os.environ.get("REDIS_URL", "redis://localhost:6379/2"),
+                s3_bucket=os.environ.get("EMBEDDING_S3_BUCKET", "voiceflow-embeddings"),
+                s3_endpoint=os.environ.get("S3_ENDPOINT", ""),
+                aws_access_key=os.environ.get("AWS_ACCESS_KEY_ID", ""),
+                aws_secret_key=os.environ.get("AWS_SECRET_ACCESS_KEY", ""),
+                aws_region=os.environ.get("AWS_REGION", "ap-south-1"),
+            )
+            store = EmbeddingStore(config)
+            import asyncio
+            asyncio.get_event_loop().create_task(store.connect())
+            application.state.embedding_store = store
+            logger.info("GPU-safe EmbeddingStore initialized (L1→L2→L3)")
+        except ImportError:
+            logger.info("EmbeddingStore skipped (torch/aioboto3 not installed — API-only mode)")
+        except Exception as exc:
+            logger.warning("EmbeddingStore init failed: %s", exc)
 
         logger.info("%s ready!", settings.APP_NAME)
 
