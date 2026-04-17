@@ -99,6 +99,7 @@ services:
       - recordings_data:/app/data/recordings
       - voices_data:/app/data/voices
       - logs_data:/app/logs
+      - sqlite_data:/app/sqlite
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,4 +149,5 @@ volumes:
   recordings_data:
   voices_data:
   logs_data:
+  sqlite_data:
   frontend_node_modules:

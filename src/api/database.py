@@ -51,8 +51,13 @@ def _get_database_url() -> str:
     """Get the database URL, defaulting to SQLite for development."""
     if DATABASE_URL:
         return DATABASE_URL
-    db_path = os.path.join(os.path.dirname(__file__), "..", "..", "voiceflow.db")
-    db_path = os.path.abspath(db_path)
+    # Use volume-mounted path in Docker, project root otherwise
+    if os.path.isdir("/app/sqlite"):
+        db_path = "/app/sqlite/voiceflow.db"
+    else:
+        db_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "voiceflow.db")
+        )
     return f"sqlite:///{db_path}"
 
 
@@ -382,8 +387,15 @@ _lock = threading.Lock()
 if not USE_POSTGRES:
     import sqlite3
 
-    _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "voiceflow.db")
-    _DB_PATH = os.path.abspath(_DB_PATH)
+    # Use /app/sqlite/voiceflow.db when running in Docker (volume-mounted),
+    # fall back to project root for local development.
+    _SQLITE_DOCKER_PATH = "/app/sqlite/voiceflow.db"
+    if os.path.isdir("/app/sqlite"):
+        _DB_PATH = _SQLITE_DOCKER_PATH
+    else:
+        _DB_PATH = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "voiceflow.db")
+        )
 
     def get_connection():
         """Get a raw SQLite connection (legacy)."""
@@ -581,9 +593,14 @@ if not USE_POSTGRES:
     """
 
 else:
+    import re as _re
     import psycopg2
     import psycopg2.pool
     import psycopg2.extras
+
+    # psycopg2 only understands "postgresql://" — strip any SQLAlchemy driver
+    # prefix like "+asyncpg" or "+psycopg2" that may come from docker-compose.
+    _PSYCOPG2_URL = _re.sub(r"^postgresql\+\w+://", "postgresql://", DATABASE_URL)
 
     _pool = None
 
@@ -593,7 +610,7 @@ else:
             _pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn=2,
                 maxconn=20,
-                dsn=DATABASE_URL,
+                dsn=_PSYCOPG2_URL,
             )
         return _pool
 

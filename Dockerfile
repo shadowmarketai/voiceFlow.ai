@@ -43,8 +43,8 @@ COPY run.sh .
 # Copy built frontend into static/
 COPY --from=frontend-build /app/frontend/dist ./static/
 
-# Create data directories
-RUN mkdir -p data/recordings data/voices data/voice_samples data/voice_embeddings data/voice_outputs logs
+# Create data directories (sqlite/ is volume-mounted for persistence in Docker)
+RUN mkdir -p data/recordings data/voices data/voice_samples data/voice_embeddings data/voice_outputs logs sqlite
 
 # Environment defaults
 ENV PYTHONUNBUFFERED=1 \

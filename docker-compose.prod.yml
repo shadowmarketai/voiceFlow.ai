@@ -82,6 +82,7 @@ services:
 
     volumes:
       - app_data:/app/data
+      - sqlite_data:/app/sqlite
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,3 +98,4 @@ volumes:
   pg_data:
   redis_data:
   app_data:
+  sqlite_data:
