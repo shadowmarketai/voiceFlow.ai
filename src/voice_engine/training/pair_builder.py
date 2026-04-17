@@ -74,7 +74,6 @@ class TrainingPair:
 def _load_wav_np(wav_bytes: bytes):
     """Load WAV bytes as numpy float32 array at SR=16000. Returns array or None."""
     try:
-        import numpy as np
         import soundfile as sf
         arr, rate = sf.read(io.BytesIO(wav_bytes), dtype="float32", always_2d=False)
         if rate != SR:
@@ -138,7 +137,6 @@ def _wav_duration(wav_bytes: bytes) -> float:
 def _slice_wav_from_np(audio_np, start_s: float, end_s: float) -> bytes | None:
     """Slice a numpy float32 audio array to a WAV bytes segment."""
     try:
-        import numpy as np
         import soundfile as sf
         s_idx = int(start_s * SR)
         e_idx = int(end_s   * SR)
@@ -156,12 +154,12 @@ def _slice_wav_from_np(audio_np, start_s: float, end_s: float) -> bytes | None:
 def _anonymise_audio(wav_bytes: bytes) -> bytes:
     """Pitch-shift ±2 semitones to prevent voice re-identification."""
     try:
+        import random  # noqa: S311
+
         import librosa
-        import numpy as np
         import soundfile as sf
-        import random
         audio_np, rate = librosa.load(io.BytesIO(wav_bytes), sr=SR, mono=True)
-        shift    = random.uniform(-2.0, 2.0)
+        shift    = random.uniform(-2.0, 2.0)  # noqa: S311
         shifted  = librosa.effects.pitch_shift(audio_np, sr=rate, n_steps=shift)
         buf = io.BytesIO()
         sf.write(buf, shifted, rate, format="WAV", subtype="PCM_16")
@@ -176,8 +174,8 @@ def _anonymise_audio(wav_bytes: bytes) -> bytes:
 
 def _pitch_shift_header(wav_bytes: bytes) -> bytes:
     """Lightweight pitch shift: changes sample rate header by ±2 semitones."""
-    import random
-    shift  = random.choice([-2, -1, 1, 2])
+    import random  # noqa: S311 — audio anonymisation, not cryptographic
+    shift  = random.choice([-2, -1, 1, 2])  # noqa: S311
     factor = 2 ** (shift / 12)
     try:
         with wave.open(io.BytesIO(wav_bytes)) as wf:
@@ -214,7 +212,6 @@ def extract_pairs_from_vad(
     Returns list of TrainingPair (max 8 per call, quality-filtered).
     """
     try:
-        import numpy as np
         import soundfile as sf
         user_np, _  = sf.read(io.BytesIO(user_audio_bytes),  dtype="float32", always_2d=False)
         agent_np, _ = sf.read(io.BytesIO(agent_audio_bytes), dtype="float32", always_2d=False)

@@ -37,7 +37,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -156,11 +156,11 @@ class CorpusStats:
                     obj  = await s3.get_object(Bucket=_BUCKET, Key=_MANIFEST_KEY)
                     body = await obj["Body"].read()
                     manifest = json.loads(body)
-                except Exception:
-                    pass
+                except Exception:  # noqa: S110 — manifest may not exist yet on first run
+                    logger.debug("[FineTune] No existing trigger manifest — will create new")
                 manifest[language] = {
                     "last_trigger_ts": time.time(),
-                    "triggered_at": datetime.now(timezone.utc).isoformat(),
+                    "triggered_at": datetime.now(UTC).isoformat(),
                 }
                 await s3.put_object(
                     Bucket=_BUCKET,
@@ -202,7 +202,7 @@ class GpuJobClient:
             )
             return {"status": "skipped", "reason": "no_gpu_api_url"}
 
-        date_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+        date_str = datetime.now(UTC).strftime("%Y%m%d")
         payload  = {
             "model":        "moshi",
             "language":     language,
@@ -210,7 +210,7 @@ class GpuJobClient:
             "base_model":   "kyutai/moshika-pytorch-bf16",
             "output_path":  f"s3://{_BUCKET}/models/moshi-{language}-{date_str}/",
             "corpus_hours": round(corpus_hours, 1),
-            "triggered_at": datetime.now(timezone.utc).isoformat(),
+            "triggered_at": datetime.now(UTC).isoformat(),
         }
         headers = {}
         if _GPU_API_KEY:
