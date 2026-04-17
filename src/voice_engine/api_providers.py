@@ -139,16 +139,37 @@ async def _deepgram_stt(
     `speakers` list with one segment per speaker turn. Useful for
     call-recording analysis + multi-party conferences.
     """
-    params = {"model": "nova-2", "smart_format": "true", "punctuate": "true"}
-    if language:
+    # Nova-2 supported language codes (others get detect_language=true fallback)
+    _NOVA2_SUPPORTED = {
+        "en", "es", "fr", "de", "pt", "it", "nl", "ru", "ja", "ko", "zh",
+        "ar", "hi", "tr", "pl", "uk", "sv", "no", "da", "cs", "fi", "ro",
+        "sk", "bg", "hr", "hu", "el", "sr", "lt", "lv", "et", "sl", "ca",
+        "af", "id", "ms", "vi", "th", "tl",
+    }
+
+    # Detect audio MIME type from magic bytes (avoids 400 on MP3/Opus from Edge TTS)
+    content_type = "audio/wav"
+    if audio_bytes[:3] in (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        content_type = "audio/mpeg"
+    elif audio_bytes[:4] == b"OggS":
+        content_type = "audio/ogg"
+    elif audio_bytes[:4] == b"fLaC":
+        content_type = "audio/flac"
+
+    lang_code = (language or "").lower()[:2]
+    params: dict = {"model": "nova-2", "smart_format": "true", "punctuate": "true"}
+    if language and lang_code in _NOVA2_SUPPORTED:
         params["language"] = language
+    else:
+        # Unsupported language code — let Deepgram auto-detect
+        params["detect_language"] = "true"
     if diarize:
         params["diarize"] = "true"
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.deepgram.com/v1/listen",
-            headers={"Authorization": f"Token {api_key}", "Content-Type": "audio/wav"},
+            headers={"Authorization": f"Token {api_key}", "Content-Type": content_type},
             params=params, content=audio_bytes,
         )
         resp.raise_for_status()
