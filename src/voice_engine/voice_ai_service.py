@@ -509,13 +509,26 @@ class VoiceAIService:
         except Exception:
             processed_bytes = request.audio_bytes
 
-        # STT (serial — can't start LLM until we have user text)
-        analysis = await self.transcribe_and_analyze(
-            processed_bytes, language=request.language
+        # STT + emotion parallel (streaming path)
+        from voice_engine.emotion_engine import analyse_emotion as _stream_ae
+        _stt_task = asyncio.create_task(
+            self.transcribe_and_analyze(processed_bytes, language=request.language)
         )
+        _em_task = asyncio.create_task(_stream_ae(processed_bytes))
+        analysis, emotion_result = await asyncio.gather(_stt_task, _em_task)
+
         user_text = analysis["transcription"]
         t_after_stt = time.time()
+
+        if emotion_result.get("source") == "default" and user_text:
+            emotion_result = await _stream_ae(b"", transcript=user_text)
+
+        analysis["emotion"]            = emotion_result.get("emotion", "neutral")
+        analysis["emotion_confidence"] = emotion_result.get("emotion_confidence", 0.0)
+        analysis["emotion_scores"]     = emotion_result.get("emotion_scores", {})
+
         yield {"type": "stt", "text": user_text, "language": analysis.get("language"),
+               "emotion": analysis["emotion"],
                "elapsed_ms": int((t_after_stt - t_start) * 1000)}
 
         if not user_text.strip():
@@ -534,11 +547,29 @@ class VoiceAIService:
             yield {"type": "language", "from": request.tts_language,
                    "to": chosen_lang, "reason": lang_reason}
 
+        # Smart turn guard (streaming path)
+        from voice_engine.smart_turn import evaluate_turn, TurnSignal as _TS
+        _turn = evaluate_turn(
+            transcript=user_text, language=chosen_lang,
+            emotion_result=emotion_result,
+            transfer_enabled=bool(getattr(request, "transfer_number", None)),
+        )
+        if _turn.signal == _TS.BACKCHANNEL:
+            yield {"type": "done", "total_ms": (time.time() - t_start) * 1000,
+                   "ttfa_ms": 0, "text": "", "reason": "backchannel"}
+            return
+        if _turn.signal == _TS.HANDOFF:
+            yield {"type": "handoff", "reason": _turn.reason,
+                   "total_ms": (time.time() - t_start) * 1000}
+            return
+
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
             language=chosen_lang,
             dialect=getattr(request, "dialect", None),
         )
+        if _turn.emotion_prefix:
+            grounded_prompt = _turn.emotion_prefix + "\n\n" + grounded_prompt
 
         # Stream LLM tokens, emit TTS per sentence boundary.
         # Split on ASCII sentence-enders + Devanagari danda (।) so Indic
@@ -698,18 +729,37 @@ class VoiceAIService:
             logger.warning("Preprocess failed, using raw audio: %s", e)
             processed_bytes = request.audio_bytes
 
-        # --- Step 1: Analyse incoming audio ---
-        analysis = await self.transcribe_and_analyze(
-            processed_bytes, language=request.language
+        # --- Step 1: STT + emotion analysis (parallel) ---
+        # Hume prosody runs concurrently with Sarvam STT so it adds ~0ms to
+        # wall-clock latency. Falls back to text-keyword detection if no key.
+        from voice_engine.emotion_engine import analyse_emotion
+        stt_task      = asyncio.create_task(
+            self.transcribe_and_analyze(processed_bytes, language=request.language)
         )
+        emotion_task  = asyncio.create_task(
+            analyse_emotion(processed_bytes)  # transcript enriched below
+        )
+        analysis, emotion_result = await asyncio.gather(stt_task, emotion_task)
+
         user_text = analysis["transcription"]
-        detected_emotion = analysis.get("emotion", "neutral")
         t_after_stt = time.time()
         logger.info(f"STT done in {(t_after_stt - t_start)*1000:.0f}ms: '{user_text[:60]}'")
 
-        # W2.2 — per-utterance language detection. If the user flipped
-        # languages mid-call (common on multilingual accounts), override
-        # the TTS language so the voice matches what was actually spoken.
+        # Re-run text-fallback if Hume returned default (no API key / timeout)
+        if emotion_result.get("source") == "default" and user_text:
+            from voice_engine.emotion_engine import analyse_emotion as _ae
+            emotion_result = await _ae(b"", transcript=user_text)
+
+        # Merge Hume emotion scores into analysis dict (fills the neutral gap)
+        analysis["emotion"]            = emotion_result.get("emotion", "neutral")
+        analysis["emotion_confidence"] = emotion_result.get("emotion_confidence", 0.0)
+        analysis["emotion_scores"]     = emotion_result.get("emotion_scores", {})
+        detected_emotion               = analysis["emotion"]
+        logger.info("Emotion: %s (%.2f) via %s",
+                    detected_emotion, analysis["emotion_confidence"],
+                    emotion_result.get("source", "?"))
+
+        # W2.2 — per-utterance language detection.
         from voice_engine.lang_detect import pick_tts_language
         chosen_lang, lang_reason = pick_tts_language(
             user_hint=request.tts_language,
@@ -720,14 +770,62 @@ class VoiceAIService:
             logger.info("Language switch: %s -> %s (reason=%s)",
                         request.tts_language, chosen_lang, lang_reason)
 
-        # Phase 1 W2.3: India-grounded system prompt — prepend locale context
-        # so the LLM defaults to INR, DD/MM dates, IST, and Indic-safe tone.
-        # Cuts hallucination/wrong-format answers by ~40% in our benchmark set.
+        # Smart turn evaluation — backchannel guard + human-handoff trigger
+        from voice_engine.smart_turn import evaluate_turn, TurnSignal
+        turn = evaluate_turn(
+            transcript=user_text,
+            language=chosen_lang,
+            emotion_result=emotion_result,
+            transfer_enabled=bool(getattr(request, "transfer_number", None)),
+        )
+        logger.info("TurnSignal: %s (%s)", turn.signal, turn.reason)
+
+        if turn.signal == TurnSignal.BACKCHANNEL:
+            # Caller said "சரி" / "okay" — keep listening, don't fire LLM
+            return VoiceTurnResponse(
+                text="",
+                audio_base64="",
+                audio_format="wav",
+                sample_rate=16000,
+                analysis={**analysis, "turn_signal": "backchannel"},
+                latency_ms=(time.time() - t_start) * 1000,
+                tts_engine="none",
+            )
+
+        if turn.signal == TurnSignal.HANDOFF:
+            # Angry/distressed caller OR explicit "get me a human" — short
+            # circuit the LLM and return a structured handoff event so the
+            # telephony layer can warm-transfer immediately.
+            if chosen_lang == "ta":
+                handoff_text = "ஒரு நிமிடம் இருங்கள், நான் உங்களை ஒரு staff memberகிட்ட connect செய்கிறேன்."
+            elif chosen_lang == "hi":
+                handoff_text = "एक मिनट रुकिए, मैं आपको हमारे staff से connect करता हूँ।"
+            else:
+                handoff_text = "Please hold for a moment. I'm connecting you with one of our team members right away."
+
+            handoff_tts = await self.generate_response_audio(
+                text=handoff_text, language=chosen_lang, voice_id=request.voice_id,
+            )
+            return VoiceTurnResponse(
+                text=handoff_text,
+                audio_base64=handoff_tts.get("audio_base64", ""),
+                audio_format=handoff_tts.get("audio_format", "mp3"),
+                sample_rate=handoff_tts.get("sample_rate", 24000),
+                analysis={**analysis, "turn_signal": "handoff",
+                          "handoff_reason": turn.reason},
+                latency_ms=(time.time() - t_start) * 1000,
+                tts_engine=handoff_tts.get("engine_used", "unknown"),
+            )
+
+        # Phase 1 W2.3: India-grounded system prompt + emotion prefix
         grounded_prompt = _ground_prompt_india(
             request.system_prompt,
             language=chosen_lang,
             dialect=getattr(request, "dialect", None),
         )
+        # Prepend emotion-adaptive instruction (empty string = no change)
+        if turn.emotion_prefix:
+            grounded_prompt = turn.emotion_prefix + "\n\n" + grounded_prompt
 
         # W6.2 — response cache check. Skip entire LLM+TTS when short
         # FAQ-y questions have been answered before.

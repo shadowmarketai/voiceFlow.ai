@@ -83,6 +83,8 @@ services:
       S3_ENDPOINT: http://minio:9000
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-voiceflow}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-voiceflow_minio_secret}
+      # Emotion intelligence (Hume Expression Measurement)
+      HUME_API_KEY: ${HUME_API_KEY:-}
     volumes:
       - recordings_data:/app/data/recordings
       - voices_data:/app/data/voices
