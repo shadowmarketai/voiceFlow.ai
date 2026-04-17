@@ -188,6 +188,18 @@ class VoiceTurnRequest:
         tts_language: str = "en",
         tts_emotion: Optional[str] = None,
         dialect: Optional[str] = None,
+        # Cross-call memory
+        caller_phone: Optional[str] = None,
+        # n8n tool use
+        tools_enabled: bool = False,
+        agent_tools: Optional[list] = None,
+        # Transfer
+        transfer_number: Optional[str] = None,
+        # Domain label for corpus collection
+        domain: str = "general",
+        # Caller identity
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ):
         self.audio_bytes = audio_bytes
         self.language = language
@@ -199,6 +211,13 @@ class VoiceTurnRequest:
         self.tts_language = tts_language
         self.tts_emotion = tts_emotion
         self.dialect = dialect
+        self.caller_phone = caller_phone
+        self.tools_enabled = tools_enabled
+        self.agent_tools = agent_tools
+        self.transfer_number = transfer_number
+        self.domain = domain
+        self.user_id = user_id
+        self.tenant_id = tenant_id
 
 
 class VoiceTurnResponse:
@@ -823,12 +842,25 @@ class VoiceAIService:
             language=chosen_lang,
             dialect=getattr(request, "dialect", None),
         )
-        # Prepend emotion-adaptive instruction (empty string = no change)
         if turn.emotion_prefix:
             grounded_prompt = turn.emotion_prefix + "\n\n" + grounded_prompt
 
-        # W6.2 — response cache check. Skip entire LLM+TTS when short
-        # FAQ-y questions have been answered before.
+        # ── Cross-call memory: load returning caller context ────────────────
+        caller_profile: dict = {}
+        if request.caller_phone:
+            try:
+                from voice_engine.caller_memory import on_call_start
+                caller_profile, mem_block = await on_call_start(
+                    request.caller_phone, language=chosen_lang
+                )
+                if mem_block:
+                    grounded_prompt = mem_block + "\n\n" + grounded_prompt
+                    logger.info("caller_memory: injected profile for %s",
+                                request.caller_phone[-4:])
+            except Exception:
+                pass
+
+        # W6.2 — response cache check
         from voice_engine import response_cache
         cached = response_cache.lookup(
             agent_id=getattr(request, "assistant_id", None),
@@ -848,8 +880,7 @@ class VoiceAIService:
                 tts_engine=cached.get("engine_used", "cache"),
             )
 
-        # W6.1 — smart model routing. Short turns use Groq 8B; long or
-        # policy-loaded ones escalate to 70B / Claude Haiku.
+        # W6.1 — smart model routing
         from voice_engine.smart_llm import pick_model
         chosen_provider, chosen_model, route_reason = pick_model(
             user_message=user_text,
@@ -858,34 +889,88 @@ class VoiceAIService:
         )
         logger.info("LLM routing: %s/%s (%s)", chosen_provider, chosen_model, route_reason)
 
-        # --- Step 2: Generate LLM response (tries all providers) ---
-        try:
-            from voice_engine.api_providers import call_llm_api
-            llm_result = await call_llm_api(
-                system_prompt=grounded_prompt,
-                user_message=user_text,
-                provider=chosen_provider,
-                model=chosen_model or None,
-            )
-            ai_text = llm_result["text"]
-        except Exception:
-            ai_text = await _call_llm(
-                system_prompt=grounded_prompt,
-                user_message=user_text,
-                provider=chosen_provider,
-                model=chosen_model or None,
-            )
+        # --- Step 2: LLM — with optional n8n tool use ─────────────────────
+        tool_calls_fired: list = []
+        if request.tools_enabled:
+            try:
+                from voice_engine.tool_executor import execute_llm_turn_with_tools
+                tool_result = await execute_llm_turn_with_tools(
+                    system_prompt=grounded_prompt,
+                    user_message=user_text,
+                    tools=request.agent_tools,
+                    provider=chosen_provider,
+                    model=chosen_model or "llama-3.3-70b-versatile",
+                    language=chosen_lang,
+                )
+                ai_text         = tool_result["text"]
+                tool_calls_fired = tool_result.get("tool_calls", [])
+                logger.info("Tool use: %s tools fired",
+                            len(tool_calls_fired) or "no")
+            except Exception as e:
+                logger.warning("tool_executor failed (%s), falling back to plain LLM", e)
+                request.tools_enabled = False
+
+        if not request.tools_enabled:
+            try:
+                from voice_engine.api_providers import call_llm_api
+                llm_result = await call_llm_api(
+                    system_prompt=grounded_prompt,
+                    user_message=user_text,
+                    provider=chosen_provider,
+                    model=chosen_model or None,
+                )
+                ai_text = llm_result["text"]
+            except Exception:
+                ai_text = await _call_llm(
+                    system_prompt=grounded_prompt,
+                    user_message=user_text,
+                    provider=chosen_provider,
+                    model=chosen_model or None,
+                )
         t_after_llm = time.time()
         logger.info(f"LLM done in {(t_after_llm - t_after_stt)*1000:.0f}ms: '{ai_text[:60]}'")
 
-        # --- Step 3: TTS ---
-        tts_result = await self.generate_response_audio(
-            text=ai_text,
-            language=chosen_lang,
-            detected_customer_emotion=detected_emotion,
-            voice_id=request.voice_id,
-            use_case="sales_bot",
-        )
+        # ── Update cross-call memory (fire-and-forget) ───────────────────────
+        if request.caller_phone:
+            try:
+                from voice_engine.caller_memory import on_turn_end
+                asyncio.create_task(on_turn_end(
+                    phone=request.caller_phone,
+                    profile=caller_profile,
+                    transcript=user_text,
+                    agent_text=ai_text,
+                    intent=analysis.get("intent", ""),
+                    language=chosen_lang,
+                    emotion=detected_emotion,
+                ))
+            except Exception:
+                pass
+
+        # --- Step 3: TTS — TADA first, then Sarvam fallback ─────────────────
+        tts_result = None
+        try:
+            from tts.tada_engine import synthesize as tada_synthesize, is_available as tada_ready
+            if tada_ready():
+                tts_result = await tada_synthesize(
+                    text=ai_text,
+                    language=chosen_lang,
+                    emotion=detected_emotion,
+                    emotion_scores=analysis.get("emotion_scores", {}),
+                    speed=1.0,
+                )
+                if tts_result:
+                    tts_result["engine_used"] = "tada"
+        except Exception:
+            pass
+
+        if not tts_result:
+            tts_result = await self.generate_response_audio(
+                text=ai_text,
+                language=chosen_lang,
+                detected_customer_emotion=detected_emotion,
+                voice_id=request.voice_id,
+                use_case="sales_bot",
+            )
 
         # W6.2 — store in cache for next time.
         response_cache.store(

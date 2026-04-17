@@ -85,6 +85,16 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-voiceflow_minio_secret}
       # Emotion intelligence (Hume Expression Measurement)
       HUME_API_KEY: ${HUME_API_KEY:-}
+      # Cross-call memory
+      CALLER_MEMORY_TTL_DAYS: ${CALLER_MEMORY_TTL_DAYS:-90}
+      # n8n tool use
+      N8N_BASE_URL: ${N8N_BASE_URL:-}
+      N8N_WEBHOOK_KEY: ${N8N_WEBHOOK_KEY:-}
+      TOOL_TIMEOUT_S: ${TOOL_TIMEOUT_S:-8}
+      # TADA emotion TTS (requires E2E L4 GPU)
+      TADA_ENABLED: ${TADA_ENABLED:-false}
+      TADA_MODEL_PATH: ${TADA_MODEL_PATH:-/app/models/tada}
+      TADA_DEVICE: ${TADA_DEVICE:-cuda}
     volumes:
       - recordings_data:/app/data/recordings
       - voices_data:/app/data/voices
