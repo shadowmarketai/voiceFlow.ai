@@ -14,7 +14,7 @@ import io
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -282,6 +282,57 @@ async def delete_knowledge_endpoint(
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted", "doc_id": doc_id}
+
+
+@router.post("/knowledge/upload", status_code=201)
+async def upload_knowledge_file(
+    file: UploadFile = File(...),
+    agent_id: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    doc_type: str = Form("document"),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Upload a PDF, DOCX, or TXT file and add extracted text to the knowledge base."""
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext not in ("pdf", "docx", "txt"):
+        raise HTTPException(status_code=400, detail="Only PDF, DOCX, and TXT files are supported")
+
+    raw = await file.read()
+    text = ""
+
+    if ext == "txt":
+        text = raw.decode("utf-8", errors="replace")
+    elif ext == "pdf":
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(raw))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except ImportError:
+            raise HTTPException(status_code=500, detail="pypdf not installed — add pypdf>=3.0.0 to requirements")
+    elif ext == "docx":
+        try:
+            import docx as _docx
+            doc = _docx.Document(io.BytesIO(raw))
+            text = "\n".join(para.text for para in doc.paragraphs)
+        except ImportError:
+            raise HTTPException(status_code=500, detail="python-docx not installed — add python-docx>=1.0.0 to requirements")
+
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Could not extract any text from the uploaded file")
+
+    doc_title = title or filename
+    chunks = await voice_agent_knowledge.add_document(
+        db,
+        title=doc_title,
+        content=text,
+        doc_type=doc_type,
+        agent_id=agent_id,
+    )
+    return {"status": "ok", "chunks": len(chunks), "title": doc_title, "agent_id": agent_id}
 
 
 # ===========================

@@ -623,6 +623,11 @@ export const voiceAgentAPI = {
     api.get('/api/v1/agent/knowledge', { params: { tenant_id: tenantId, doc_type: docType, agent_id: agentId } }),
   updateKnowledge: (docId, updates) => api.put(`/api/v1/agent/knowledge/${docId}`, updates),
   deleteKnowledge: (docId) => api.delete(`/api/v1/agent/knowledge/${docId}`),
+  uploadKnowledge: (formData, onUploadProgress) =>
+    api.post('/api/v1/agent/knowledge/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+    }),
 
   // Recordings
   listRecordings: (tenantId, limit = 50) =>
