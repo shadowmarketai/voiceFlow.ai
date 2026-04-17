@@ -1,0 +1,142 @@
+{
+  "name": "VoiceFlow — Book Appointment",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "book-appointment",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "book-appointment"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\n\n// Validate required fields\nconst required = ['caller_name', 'phone', 'date', 'time'];\nconst missing = required.filter(f => !body[f]);\nif (missing.length > 0) {\n  throw new Error(`Missing fields: ${missing.join(', ')}`);\n}\n\n// Normalise date — try to parse natural language dates\nconst rawDate = body.date || '';\nconst rawTime = body.time || '';\n\n// Build a clean summary for the calendar event title\nconst purpose = body.purpose || 'Property Visit';\nconst location = body.location || '';\n\nreturn [{\n  json: {\n    caller_name: body.caller_name,\n    phone: body.phone,\n    date: rawDate,\n    time: rawTime,\n    purpose: purpose,\n    location: location,\n    event_title: `${purpose} — ${body.caller_name}`,\n    event_description: `Caller: ${body.caller_name}\\nPhone: ${body.phone}\\nLocation: ${location}\\nBooked via VoiceFlow AI`,\n    confirmation_msg_ta: `${body.caller_name} அவர்களே, ${rawDate} ${rawTime} க்கு உங்கள் appointment confirm ஆகியது. நன்றி!`,\n    confirmation_msg_en: `Hello ${body.caller_name}, your appointment on ${rawDate} at ${rawTime} has been confirmed. Thank you!`\n  }\n}];"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "event",
+        "operation": "create",
+        "calendarId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_CALENDAR_ID || 'primary' }}",
+          "mode": "id"
+        },
+        "start": "={{ $json.date }} {{ $json.time }}",
+        "end": "={{ $json.date }} {{ $json.time }}",
+        "additionalFields": {
+          "summary": "={{ $json.event_title }}",
+          "description": "={{ $json.event_description }}",
+          "location": "={{ $json.location }}"
+        }
+      },
+      "id": "google-calendar",
+      "name": "Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [680, 200],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar-creds",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $json.phone.startsWith('+') ? $json.phone : '+91' + $json.phone }}",
+        "message": "={{ $json.confirmation_msg_ta }}"
+      },
+      "id": "twilio-sms",
+      "name": "Twilio SMS Confirmation",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [680, 380],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-creds",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    status: 'confirmed',\n    appointment_id: `APT-${Date.now()}`,\n    caller_name: $input.first().json.caller_name || '',\n    date: $input.first().json.date || '',\n    time: $input.first().json.time || '',\n    message_ta: $input.first().json.confirmation_msg_ta || '',\n    message_en: $input.first().json.confirmation_msg_en || ''\n  }\n}];"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Prepare Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          { "node": "Google Calendar", "type": "main", "index": 0 },
+          { "node": "Twilio SMS Confirmation", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Google Calendar": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 0 }]]
+    },
+    "Twilio SMS Confirmation": {
+      "main": [[{ "node": "Merge", "type": "main", "index": 1 }]]
+    },
+    "Merge": {
+      "main": [[{ "node": "Build Response", "type": "main", "index": 0 }]]
+    },
+    "Build Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": ["voiceflow", "appointment", "tamil"]
+}

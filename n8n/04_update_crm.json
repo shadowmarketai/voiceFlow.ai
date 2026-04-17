@@ -1,0 +1,91 @@
+{
+  "name": "VoiceFlow — Update CRM Lead",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "update-crm",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "update-crm"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json;\nconst phone = (b.phone || '').replace(/[^0-9+]/g, '');\nconst normalised = phone.startsWith('+') ? phone : '+91' + phone.replace(/^0/, '');\n\nreturn [{\n  json: {\n    phone: normalised,\n    name: b.name || '',\n    email: b.email || '',\n    intent: b.intent || 'general_inquiry',\n    budget: b.budget || '',\n    notes: b.notes || '',\n    stage: b.stage || 'new',\n    source: 'voiceflow_ai',\n    call_time: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "normalise",
+      "name": "Normalise Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.zohoapis.in/crm/v2/Leads",
+        "authentication": "oAuth2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"data\": [{\n    \"Last_Name\": \"{{ $json.name || 'Unknown' }}\",\n    \"Mobile\": \"{{ $json.phone }}\",\n    \"Email\": \"{{ $json.email }}\",\n    \"Lead_Source\": \"VoiceFlow AI\",\n    \"Lead_Status\": \"{{ $json.stage }}\",\n    \"Description\": \"Intent: {{ $json.intent }}\\nBudget: {{ $json.budget }}\\nNotes: {{ $json.notes }}\\nCall time: {{ $json.call_time }}\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "zoho-crm",
+      "name": "Zoho CRM Upsert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CUSTOM_CRM_WEBHOOK || 'https://httpbin.org/post' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "custom-crm",
+      "name": "Custom CRM Webhook (fallback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 400],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"updated\", \"lead_phone\": \"{{ $('Normalise Lead').first().json.phone }}\", \"stage\": \"{{ $('Normalise Lead').first().json.stage }}\", \"intent\": \"{{ $('Normalise Lead').first().json.intent }}\" }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":       { "main": [[{ "node": "Normalise Lead", "type": "main", "index": 0 }]] },
+    "Normalise Lead":{ "main": [
+      [{ "node": "Zoho CRM Upsert",            "type": "main", "index": 0 }],
+      [{ "node": "Custom CRM Webhook (fallback)", "type": "main", "index": 0 }]
+    ]},
+    "Zoho CRM Upsert":              { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] },
+    "Custom CRM Webhook (fallback)":{ "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "crm", "lead"]
+}

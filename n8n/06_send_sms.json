@@ -1,0 +1,65 @@
+{
+  "name": "VoiceFlow — Send SMS",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-sms",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "send-sms"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json;\nconst phone = (b.phone || '').replace(/[^0-9+]/g, '');\nconst normalised = phone.startsWith('+') ? phone : '+91' + phone.replace(/^0/, '');\nreturn [{ json: { phone: normalised, message: b.message || '' } }];"
+      },
+      "id": "normalise",
+      "name": "Normalise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_FROM_NUMBER }}",
+        "to": "={{ $json.phone }}",
+        "message": "={{ $json.message }}"
+      },
+      "id": "twilio-sms",
+      "name": "Twilio SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [680, 300],
+      "credentials": {
+        "twilioApi": { "id": "twilio-creds", "name": "Twilio" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"sent\", \"phone\": \"{{ $('Normalise').first().json.phone }}\" }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":    { "main": [[{ "node": "Normalise",          "type": "main", "index": 0 }]] },
+    "Normalise":  { "main": [[{ "node": "Twilio SMS",         "type": "main", "index": 0 }]] },
+    "Twilio SMS": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "sms", "twilio"]
+}

@@ -1,0 +1,79 @@
+{
+  "name": "VoiceFlow — Check Availability",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "check-availability",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "check-availability"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "event",
+        "operation": "getAll",
+        "calendarId": {
+          "__rl": true,
+          "value": "={{ $env.GOOGLE_CALENDAR_ID || 'primary' }}",
+          "mode": "id"
+        },
+        "returnAll": false,
+        "limit": 20,
+        "options": {
+          "timeMin": "={{ $json.body.date }}T00:00:00+05:30",
+          "timeMax": "={{ $json.body.date }}T23:59:59+05:30",
+          "singleEvents": true,
+          "orderBy": "startTime"
+        }
+      },
+      "id": "fetch-calendar",
+      "name": "Fetch Calendar Events",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [460, 300],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "google-calendar-creds",
+          "name": "Google Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.all();\nconst requestDate = $('Webhook').first().json.body?.date || '';\nconst resource = $('Webhook').first().json.body?.resource || 'slot';\n\n// Build busy slots from existing events\nconst busySlots = events\n  .filter(e => e.json.start)\n  .map(e => ({\n    start: e.json.start?.dateTime || e.json.start?.date,\n    end: e.json.end?.dateTime || e.json.end?.date,\n    title: e.json.summary || 'Busy'\n  }));\n\n// Generate all 30-min slots from 9am to 6pm\nconst allSlots = [];\nfor (let h = 9; h < 18; h++) {\n  for (let m = 0; m < 60; m += 30) {\n    const timeStr = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;\n    const isBusy = busySlots.some(bs => {\n      const bsTime = (bs.start || '').split('T')[1]?.slice(0,5);\n      return bsTime === timeStr;\n    });\n    if (!isBusy) allSlots.push(timeStr);\n  }\n}\n\nconst freeCount = allSlots.length;\nconst tamilMsg = freeCount > 0\n  ? `${requestDate} அன்று ${freeCount} slots கிடைக்கின்றன. முதல் கிடைக்கும் நேரம்: ${allSlots[0]}. ${allSlots.slice(0,3).join(', ')} ஆகிய நேரங்களில் appointment வரலாம்.`\n  : `மன்னிக்கவும், ${requestDate} அன்று அனைத்து slots நிறைந்துவிட்டன.`;\n\nconst engMsg = freeCount > 0\n  ? `${freeCount} slots available on ${requestDate}. Earliest: ${allSlots[0]}. Options: ${allSlots.slice(0,3).join(', ')}.`\n  : `Sorry, all slots on ${requestDate} are full.`;\n\nreturn [{\n  json: {\n    date: requestDate,\n    available: freeCount > 0,\n    free_slots: allSlots.slice(0, 6),\n    busy_count: busySlots.length,\n    free_count: freeCount,\n    message_ta: tamilMsg,\n    message_en: engMsg\n  }\n}];"
+      },
+      "id": "compute-slots",
+      "name": "Compute Free Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":              { "main": [[{ "node": "Fetch Calendar Events", "type": "main", "index": 0 }]] },
+    "Fetch Calendar Events":{ "main": [[{ "node": "Compute Free Slots",    "type": "main", "index": 0 }]] },
+    "Compute Free Slots":   { "main": [[{ "node": "Respond to Webhook",    "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "availability", "calendar"]
+}

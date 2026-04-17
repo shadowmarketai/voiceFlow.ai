@@ -1,0 +1,135 @@
+{
+  "name": "VoiceFlow — Send WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "send-whatsapp"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst phone = body.phone || '';\nconst normalised = phone.startsWith('+') ? phone : '+91' + phone.replace(/^0/, '');\nconst hasDoc = !!(body.document_url);\n\nreturn [{\n  json: {\n    phone: normalised,\n    message: body.message || '',\n    document_url: body.document_url || '',\n    template: body.template || '',\n    has_document: hasDoc,\n    whatsapp_phone: normalised.replace('+', '')\n  }\n}];"
+      },
+      "id": "prepare",
+      "name": "Prepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.has_document }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-document",
+      "name": "Has Document?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.whatsapp_phone }}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"link\": \"{{ $json.document_url }}\",\n    \"caption\": \"{{ $json.message }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send-document",
+      "name": "Send Document",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $env.WHATSAPP_PHONE_ID }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.WHATSAPP_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.whatsapp_phone }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.message }}\"\n  }\n}",
+        "options": {}
+      },
+      "id": "send-text",
+      "name": "Send Text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "merge",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"sent\", \"phone\": \"{{ $('Prepare').first().json.phone }}\", \"type\": \"{{ $('Prepare').first().json.has_document ? 'document' : 'text' }}\" }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [[{ "node": "Prepare", "type": "main", "index": 0 }]] },
+    "Prepare": { "main": [[{ "node": "Has Document?", "type": "main", "index": 0 }]] },
+    "Has Document?": {
+      "main": [
+        [{ "node": "Send Document", "type": "main", "index": 0 }],
+        [{ "node": "Send Text", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Document": { "main": [[{ "node": "Merge", "type": "main", "index": 0 }]] },
+    "Send Text":     { "main": [[{ "node": "Merge", "type": "main", "index": 1 }]] },
+    "Merge":         { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "whatsapp", "tamil"]
+}

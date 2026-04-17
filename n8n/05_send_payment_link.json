@@ -1,0 +1,82 @@
+{
+  "name": "VoiceFlow — Send Razorpay Payment Link",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-payment-link",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "send-payment-link"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = $input.first().json;\nconst phone = (b.phone || '').replace(/[^0-9+]/g, '');\nconst normalised = phone.startsWith('+') ? phone : '+91' + phone.replace(/^0/, '');\nconst amountPaise = Math.round((b.amount_inr || 0) * 100);\nconst expiryMins = b.expiry_mins || 60;\nconst expireBy = Math.floor(Date.now() / 1000) + (expiryMins * 60);\n\nreturn [{\n  json: {\n    phone: normalised,\n    amount_paise: amountPaise,\n    amount_inr: b.amount_inr,\n    description: b.description || 'Booking advance',\n    expire_by: expireBy,\n    expiry_mins: expiryMins,\n    razorpay_key: process.env.RAZORPAY_KEY_ID || ''\n  }\n}];"
+      },
+      "id": "prepare",
+      "name": "Prepare Payment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.razorpay.com/v1/payment_links",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"amount\": {{ $json.amount_paise }},\n  \"currency\": \"INR\",\n  \"accept_partial\": false,\n  \"description\": \"{{ $json.description }}\",\n  \"expire_by\": {{ $json.expire_by }},\n  \"notify\": {\n    \"sms\": true,\n    \"email\": false\n  },\n  \"reminder_enable\": false,\n  \"customer\": {\n    \"contact\": \"{{ $json.phone }}\"\n  },\n  \"options\": {\n    \"checkout\": {\n      \"name\": \"VoiceFlow Booking\"\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "create-razorpay-link",
+      "name": "Create Razorpay Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "razorpay-creds",
+          "name": "Razorpay Basic Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const link = $input.first().json;\nconst prep = $('Prepare Payment').first().json;\n\nconst payUrl = link.short_url || link.payment_link_url || '';\nconst msg_ta = `${prep.description} க்கு ₹${prep.amount_inr} payment link: ${payUrl} — இந்த link ${prep.expiry_mins} நிமிடங்களுக்கு மட்டும் valid.`;\nconst msg_en = `Payment link for ${prep.description}: ₹${prep.amount_inr} — ${payUrl} (valid ${prep.expiry_mins} mins)`;\n\nreturn [{\n  json: {\n    status: 'sent',\n    payment_link: payUrl,\n    payment_link_id: link.id || '',\n    amount_inr: prep.amount_inr,\n    phone: prep.phone,\n    message_ta: msg_ta,\n    message_en: msg_en\n  }\n}];"
+      },
+      "id": "build-response",
+      "name": "Build Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Webhook":             { "main": [[{ "node": "Prepare Payment",       "type": "main", "index": 0 }]] },
+    "Prepare Payment":     { "main": [[{ "node": "Create Razorpay Link",  "type": "main", "index": 0 }]] },
+    "Create Razorpay Link":{ "main": [[{ "node": "Build Response",        "type": "main", "index": 0 }]] },
+    "Build Response":      { "main": [[{ "node": "Respond to Webhook",    "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "payment", "razorpay"]
+}
