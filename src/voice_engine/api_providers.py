@@ -3,13 +3,14 @@ API-based Voice Providers — Full Production Pipeline
 =====================================================
 All cloud-based — no local ML models, no GPU needed.
 
-STT chain: Deepgram → Sarvam AI → Groq Whisper → OpenAI Whisper
+STT chain: Deepgram → Sarvam AI → Bhashini (AI4Bharat) → Groq Whisper → OpenAI Whisper
 LLM chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub
 TTS chain: ElevenLabs → Sarvam AI → OpenAI TTS → Deepgram Aura → Google Cloud → Edge TTS (free)
 
 Env vars needed:
   DEEPGRAM_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY,
   ANTHROPIC_API_KEY, GOOGLE_API_KEY, SARVAM_API_KEY, DEEPSEEK_API_KEY
+  BHASHINI_USER_ID, BHASHINI_API_KEY (FREE — register at bhashini.gov.in)
 """
 
 import base64
@@ -118,7 +119,18 @@ async def transcribe_ensemble(
     except Exception as exc:
         logger.warning("Sarvam STT failed for lang=%s: %s — falling back to Groq Whisper", language, exc)
 
-    # Sarvam failed or returned empty → Groq Whisper (native script output)
+    # Sarvam failed → try Bhashini (AI4Bharat, FREE, better Tamil dialect accuracy)
+    try:
+        from voice_engine.providers.bhashini_stt import bhashini_stt, is_configured as bhashini_ok
+        if bhashini_ok():
+            result = await bhashini_stt(audio_bytes, language or "ta")
+            if result.get("text"):
+                logger.info("[Ensemble] Bhashini fallback succeeded for lang=%s", language)
+                return result
+    except Exception as exc:
+        logger.debug("[Ensemble] Bhashini fallback failed: %s", exc)
+
+    # Sarvam + Bhashini both failed → Groq Whisper (native script output)
     if groq_key:
         return await _groq_stt(audio_bytes, groq_key, language)
     # Last resort: Deepgram (WER will be inflated but better than nothing)

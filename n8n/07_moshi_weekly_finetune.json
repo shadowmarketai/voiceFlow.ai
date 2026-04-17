@@ -1,0 +1,159 @@
+{
+  "name": "VoiceFlow — Moshi Weekly Fine-tune Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Sunday 2am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.VOICEFLOW_API_URL || 'https://voice.shadowmarket.ai' }}/api/v1/voice/corpus/stats?language=ta",
+        "options": {}
+      },
+      "id": "check-tamil-corpus",
+      "name": "Check Tamil Corpus",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.VOICEFLOW_API_URL || 'https://voice.shadowmarket.ai' }}/api/v1/voice/corpus/stats?language=hi",
+        "options": {}
+      },
+      "id": "check-hindi-corpus",
+      "name": "Check Hindi Corpus",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 460]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "conditions": [
+            {
+              "id": "ta-ready",
+              "leftValue": "={{ $('Check Tamil Corpus').first().json.ready_to_finetune }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "if-ready",
+      "name": "IF Corpus Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 380]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ta = $('Check Tamil Corpus').first().json;\nconst hi = $('Check Hindi Corpus').first().json;\n\nconst langs = [];\nif (ta.ready_to_finetune) langs.push({ language: 'ta', new_hours: ta.new_hours_since_last_finetune });\nif (hi && hi.ready_to_finetune) langs.push({ language: 'hi', new_hours: hi.new_hours_since_last_finetune });\n\nreturn langs.map(l => ({ json: l }));"
+      },
+      "id": "build-jobs",
+      "name": "Build Job List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.VOICEFLOW_API_URL || 'https://voice.shadowmarket.ai' }}/api/v1/voice/corpus/trigger-finetune",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"language\": \"{{ $json.language }}\",\n  \"new_hours\": {{ $json.new_hours }},\n  \"type\": \"incremental\"\n}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "trigger-finetune",
+      "name": "Trigger Fine-tune Job",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ta = $('Check Tamil Corpus').first().json;\nconst hi = $('Check Hindi Corpus').first().json;\n\nconst taLine = `Tamil: ${ta.new_hours_since_last_finetune?.toFixed(1) || 0}h new / ${ta.total_hours?.toFixed(1) || 0}h total — ${ta.ready_to_finetune ? '✅ Fine-tune triggered' : `⏳ Need ${ta.min_hours_to_trigger}h (${(ta.min_hours_to_trigger - (ta.new_hours_since_last_finetune||0)).toFixed(1)}h more)`}`;\nconst hiLine = hi ? `Hindi: ${hi.new_hours_since_last_finetune?.toFixed(1) || 0}h new / ${hi.total_hours?.toFixed(1) || 0}h total` : '';\n\nconst msg = `VoiceFlow AI - Weekly Corpus Report (${new Date().toLocaleDateString('en-IN')})\\n\\n${taLine}\\n${hiLine}\\n\\nCorpus growing automatically on every call.`;\n\nreturn [{ json: { message: msg } }];"
+      },
+      "id": "build-report",
+      "name": "Build Weekly Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 500]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_BASE_URL || 'https://n8n.shadowmarket.ai' }}/webhook/send-whatsapp",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $env.ADMIN_PHONE || 'admin' }}\",\n  \"message\": \"{{ $json.message }}\"\n}",
+        "options": {
+          "continueOnFail": true
+        }
+      },
+      "id": "notify-whatsapp",
+      "name": "WhatsApp Weekly Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 500]
+    }
+  ],
+  "connections": {
+    "Every Sunday 2am": {
+      "main": [
+        [
+          { "node": "Check Tamil Corpus", "type": "main", "index": 0 },
+          { "node": "Check Hindi Corpus", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Check Tamil Corpus": {
+      "main": [[{ "node": "IF Corpus Ready", "type": "main", "index": 0 }]]
+    },
+    "Check Hindi Corpus": {
+      "main": [[{ "node": "IF Corpus Ready", "type": "main", "index": 0 }]]
+    },
+    "IF Corpus Ready": {
+      "main": [
+        [{ "node": "Build Job List",     "type": "main", "index": 0 }],
+        [{ "node": "Build Weekly Report", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Job List":      { "main": [[{ "node": "Trigger Fine-tune Job", "type": "main", "index": 0 }]] },
+    "Trigger Fine-tune Job":{ "main": [[{ "node": "Build Weekly Report",  "type": "main", "index": 0 }]] },
+    "Build Weekly Report": { "main": [[{ "node": "WhatsApp Weekly Report","type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": ["voiceflow", "training", "moshi", "finetune"]
+}
