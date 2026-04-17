@@ -37,23 +37,23 @@ logger = logging.getLogger(__name__)
 
 _TEST_CORPUS: dict[str, list[str]] = {
     "en": [
-        "Hello, I would like to book an appointment for tomorrow at three PM.",
+        "Hello, I would like to book an appointment for tomorrow.",
         "Can you tell me the price of your premium plan?",
-        "My order number is five seven three two, and I need a refund.",
+        "I need a refund for my recent purchase.",
         "Thank you for calling, have a great day.",
         "I need to speak with a manager about my complaint.",
     ],
     "hi": [
-        "नमस्ते, मुझे कल तीन बजे का अपॉइंटमेंट चाहिए।",
-        "आपके प्रीमियम प्लान की कीमत क्या है?",
-        "मेरा ऑर्डर नंबर पांच सात तीन दो है, मुझे रिफंड चाहिए।",
+        "नमस्ते, मुझे कल अपॉइंटमेंट चाहिए।",
+        "आपकी सेवा की कीमत क्या है?",
+        "मुझे अपना पैसा वापस चाहिए।",
         "कॉल करने के लिए धन्यवाद, आपका दिन शुभ हो।",
-        "मुझे अपनी शिकायत के बारे में मैनेजर से बात करनी है।",
+        "मुझे अपनी शिकायत के बारे में बात करनी है।",
     ],
     "ta": [
-        "வணக்கம், நாளை மூன்று மணிக்கு அப்பாயின்ட்மென்ட் வேண்டும்.",
-        "உங்கள் பிரீமியம் திட்டத்தின் விலை என்ன?",
-        "என் ஆர்டர் எண் ஐந்து ஏழு மூன்று இரண்டு, எனக்கு ரீஃபண்ட் வேண்டும்.",
+        "வணக்கம், நாளை அப்பாயின்ட்மென்ட் வேண்டும்.",
+        "உங்கள் சேவையின் விலை என்ன?",
+        "எனக்கு பணம் திரும்ப வேண்டும்.",
         "அழைத்ததற்கு நன்றி, நல்ல நாளாக இருக்கட்டும்.",
         "என் புகாரைப் பற்றி மேலாளரிடம் பேச வேண்டும்.",
     ],

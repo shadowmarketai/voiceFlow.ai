@@ -106,48 +106,25 @@ async def transcribe_ensemble(
         # Last resort: Deepgram (WER will be higher but better than nothing)
         return await _deepgram_stt(audio_bytes, dg_key, language)
 
-    if sv_key and not dg_key:
-        return await _sarvam_stt(audio_bytes, sv_key, language)
+    # Indic with Sarvam available: use Sarvam ONLY (do NOT race with Deepgram).
+    # Reason: Deepgram returns high confidence scores even when it transliterates
+    # Hindi/Tamil words into English ("premium plan" instead of "प्रीमियम प्लान").
+    # Racing causes Deepgram to win the confidence comparison despite wrong script.
+    try:
+        result = await _sarvam_stt(audio_bytes, sv_key, language)
+        if result.get("text"):
+            return result
+        logger.warning("Sarvam STT returned empty text for lang=%s, falling back", language)
+    except Exception as exc:
+        logger.warning("Sarvam STT failed for lang=%s: %s — falling back to Groq Whisper", language, exc)
 
-    # Both Sarvam and Deepgram available — race them (Sarvam preferred for Indic)
-
-    async def _safe(name, coro):
-        try:
-            r = await coro
-            r["_provider_name"] = name
-            return r
-        except Exception as exc:
-            logger.warning("%s STT failed in ensemble: %s", name, exc)
-            return None
-
-    results = await asyncio.gather(
-        _safe("deepgram", _deepgram_stt(audio_bytes, dg_key, language)),
-        _safe("sarvam", _sarvam_stt(audio_bytes, sv_key, language)),
-        return_exceptions=False,
-    )
-    good = [r for r in results if r and r.get("text")]
-    if not good:
-        # Both empty — fall back to the cascade
-        return await transcribe_audio_api(audio_bytes, language=language)
-
-    # Pick highest confidence. If confidence not exposed, prefer Sarvam for
-    # Indic (it's purpose-built) and Deepgram otherwise.
-    def _score(r):
-        c = r.get("confidence")
-        if c is None or c == 0:
-            # Heuristic when confidence isn't returned
-            if lang in _INDIC_LANG_CODES and r.get("_provider_name") == "sarvam":
-                return 0.85
-            return 0.7
-        return float(c)
-
-    best = max(good, key=_score)
-    best["ensemble"] = True
-    best["ensemble_candidates"] = [
-        {"provider": r["_provider_name"], "text_len": len(r.get("text") or ""), "confidence": r.get("confidence")}
-        for r in good
-    ]
-    return best
+    # Sarvam failed or returned empty → Groq Whisper (native script output)
+    if groq_key:
+        return await _groq_stt(audio_bytes, groq_key, language)
+    # Last resort: Deepgram (WER will be inflated but better than nothing)
+    if dg_key:
+        return await _deepgram_stt(audio_bytes, dg_key, language)
+    return await transcribe_audio_api(audio_bytes, language=language)
 
 
 async def _deepgram_stt(
