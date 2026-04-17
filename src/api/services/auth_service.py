@@ -76,10 +76,13 @@ class AuthService:
             expires_delta
             or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
+        # W8.1 — every token gets a unique JTI so it can be individually
+        # blacklisted on logout/refresh without invalidating all sessions.
         to_encode.update({
             "exp": expire,
             "iat": datetime.now(timezone.utc),
             "type": "access",
+            "jti": uuid.uuid4().hex,
         })
         encoded = jwt.encode(
             to_encode,
@@ -108,6 +111,7 @@ class AuthService:
             "exp": expire,
             "iat": datetime.now(timezone.utc),
             "type": "refresh",
+            "jti": uuid.uuid4().hex,
         })
         encoded = jwt.encode(
             to_encode,
@@ -120,8 +124,11 @@ class AuthService:
     def decode_token(token: str) -> dict:
         """Decode and validate a JWT token.
 
+        W8.1 — also checks the JTI against the blacklist so logged-out
+        or rotated tokens can't be replayed.
+
         Raises:
-            UnauthorizedError: If token is invalid or expired.
+            UnauthorizedError: If token is invalid, expired, or blacklisted.
         """
         try:
             payload = jwt.decode(
@@ -129,12 +136,17 @@ class AuthService:
                 settings.SECRET_KEY,
                 algorithms=[settings.ALGORITHM],
             )
-            return payload
         except jwt.ExpiredSignatureError:
             raise UnauthorizedError(detail="Token has expired")
         except jwt.PyJWTError as exc:
             logger.warning("JWT decode error: %s", exc)
             raise UnauthorizedError(detail="Invalid or malformed token")
+
+        from api.services.token_blacklist import is_blacklisted
+        if is_blacklisted(payload.get("jti")):
+            raise UnauthorizedError(detail="Token has been revoked")
+
+        return payload
 
     # ── Registration ─────────────────────────────────────────────
 
@@ -330,6 +342,13 @@ class AuthService:
             "role": user_dict.get("role", "user"),
             "user_id": user_dict["id"],
         }
+        # W8.1 — blacklist the old refresh token so it can't be replayed.
+        from api.services.token_blacklist import blacklist_token
+        old_jti = payload.get("jti")
+        old_exp = payload.get("exp")
+        if old_jti and old_exp:
+            blacklist_token(jti=old_jti, expires_at=old_exp)
+
         new_access = cls.create_access_token(token_data)
         new_refresh = cls.create_refresh_token(token_data)
 
@@ -346,19 +365,30 @@ class AuthService:
     # ── Logout ───────────────────────────────────────────────────
 
     @staticmethod
-    def logout(user_id: str) -> dict:
+    def logout(user_id: str, token: str | None = None) -> dict:
         """Logout a user (KB-007).
 
-        In a stateless JWT setup, logout is primarily client-side.
-        Server-side we log the event. In production, you would add the
-        token to a blacklist in Redis.
+        W8.1 — blacklist the access token's JTI so it can't be replayed
+        for the remainder of its validity window.
 
         Args:
             user_id: The ID of the user logging out.
-
-        Returns:
-            dict with logout confirmation message.
+            token: The raw JWT being invalidated (optional but recommended).
         """
+        if token:
+            try:
+                payload = jwt.decode(
+                    token, settings.SECRET_KEY,
+                    algorithms=[settings.ALGORITHM],
+                    options={"verify_exp": False},
+                )
+                jti = payload.get("jti")
+                exp = payload.get("exp")
+                if jti and exp:
+                    from api.services.token_blacklist import blacklist_token
+                    blacklist_token(jti=jti, expires_at=exp)
+            except Exception:
+                pass
         logger.info("User logged out: %s", user_id)
         return {"message": "Logged out successfully"}
 

@@ -29,26 +29,27 @@ PLAN_LIMITS = {
 DEFAULT_PLAN = "starter"
 
 
-def _extract_plan_from_token(request: Request) -> str:
-    """Try to extract user plan from JWT token (best-effort)."""
+def _extract_token_data(request: Request) -> dict:
+    """Try to extract plan + tenant_id from JWT token (best-effort, no signature verification)."""
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
-        return DEFAULT_PLAN
+        return {"plan": DEFAULT_PLAN, "tenant_id": None}
     token = auth[7:]
-    # Demo token
     if token == "demo-token-123":
-        return "pro"
-    # Decode JWT payload without verification (just for plan lookup)
+        return {"plan": "pro", "tenant_id": None}
     try:
         import base64
         parts = token.split(".")
         if len(parts) >= 2:
             payload = parts[1] + "=" * (4 - len(parts[1]) % 4)
             data = json.loads(base64.urlsafe_b64decode(payload))
-            return data.get("plan", DEFAULT_PLAN)
+            return {
+                "plan": data.get("plan", DEFAULT_PLAN),
+                "tenant_id": data.get("tenant_id"),
+            }
     except Exception:
         pass
-    return DEFAULT_PLAN
+    return {"plan": DEFAULT_PLAN, "tenant_id": None}
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -83,7 +84,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         client_ip = request.client.host if request.client else "unknown"
         path = request.url.path
-        plan = _extract_plan_from_token(request)
+        token_data = _extract_token_data(request)
+        plan = token_data["plan"]
+        tenant_id = token_data["tenant_id"]
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS[DEFAULT_PLAN])
 
         # Auth endpoints get stricter limits
@@ -95,12 +98,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     headers={"Retry-After": "60"},
                 )
 
-        # General rate limit
-        if not self._check_limit(f"general:{client_ip}", limits["general"]):
+        # W8.2 — per-tenant rate limit (stacks with per-IP).
+        # A single tenant can't saturate the platform even if they
+        # spread requests across multiple client IPs.
+        limit_key = f"tenant:{tenant_id}" if tenant_id else f"general:{client_ip}"
+        rpm = limits["general"]
+        if not self._check_limit(limit_key, rpm):
             return JSONResponse(
                 status_code=429,
-                content={"detail": f"Rate limit exceeded. Max {limits['general']} requests/minute for {plan} plan."},
-                headers={"Retry-After": "60"},
+                content={"detail": f"Rate limit exceeded. Max {rpm} requests/minute for {plan} plan."},
+                headers={"Retry-After": "60", "X-RateLimit-Limit": str(rpm)},
             )
 
         try:
@@ -109,8 +116,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             import logging
             logging.getLogger(__name__).exception("Middleware caught exception on %s %s", request.method, request.url.path)
             return JSONResponse(status_code=500, content={"error": True, "detail": str(exc)[:200], "status_code": 500})
-        # Add rate limit headers
-        response.headers["X-RateLimit-Limit"] = str(limits["general"])
+
+        # W8.2 — expose standard rate-limit headers.
+        count, _ = self._buckets.get(limit_key, (0, 0.0))
+        remaining = max(0, rpm - count)
+        response.headers["X-RateLimit-Limit"] = str(rpm)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
         response.headers["X-RateLimit-Plan"] = plan
         return response
 
@@ -128,7 +139,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(), payment=(self)"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(), payment=(self), fullscreen=(self)"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-site"
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         if APP_ENV == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

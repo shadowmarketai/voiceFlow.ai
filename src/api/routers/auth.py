@@ -119,14 +119,16 @@ async def refresh_token(body: RefreshTokenRequest) -> TokenResponse:
     summary="Logout current user",
 )
 async def logout(
+    request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> MessageResponse:
     """Logout the current user (KB-007).
 
-    Client should discard tokens. In production, the token would be
-    added to a Redis blacklist.
+    W8.1 — blacklists the access token's JTI so it can't be replayed.
+    Client should also discard tokens on its side.
     """
-    result = AuthService.logout(user_id=current_user.get("id", ""))
+    raw_token = (request.headers.get("authorization") or "")[7:]  # strip "Bearer "
+    result = AuthService.logout(user_id=current_user.get("id", ""), token=raw_token)
     return MessageResponse(**result)
 
 
