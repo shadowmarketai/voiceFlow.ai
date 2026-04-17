@@ -22,6 +22,28 @@ logger = logging.getLogger(__name__)
 # R=read, C=create, U=update, D=delete
 
 PERMISSION_MATRIX: dict[str, dict[str, set[str]]] = {
+    # W7.2 — platform-level super admin. Has everything the admin has
+    # plus audit, compliance (DPDP), and tenant management.
+    "super_admin": {
+        "crm": {"create", "read", "update", "delete"},
+        "voiceAI": {"create", "read", "update", "delete"},
+        "campaigns": {"create", "read", "update", "delete"},
+        "analytics": {"create", "read", "update", "delete"},
+        "helpdesk": {"create", "read", "update", "delete"},
+        "surveys": {"create", "read", "update", "delete"},
+        "billing": {"create", "read", "update", "delete"},
+        "tenants": {"create", "read", "update", "delete"},
+        "userManagement": {"create", "read", "update", "delete"},
+        "settings": {"create", "read", "update", "delete"},
+        "appointments": {"create", "read", "update", "delete"},
+        "automation": {"create", "read", "update", "delete"},
+        "inbox": {"create", "read", "update", "delete"},
+        "webhooks": {"create", "read", "update", "delete"},
+        "integrations": {"create", "read", "update", "delete"},
+        "quotation": {"create", "read", "update", "delete"},
+        "audit": {"read"},
+        "compliance": {"create", "read", "update", "delete"},
+    },
     "admin": {
         "crm": {"create", "read", "update", "delete"},
         "voiceAI": {"create", "read", "update", "delete"},

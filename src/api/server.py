@@ -341,6 +341,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Metrics page router not available: %s", exc)
 
+    # ── Enterprise (audit log + RBAC + DPDP) ────────────────
+    try:
+        from api.routers.enterprise import router as enterprise_router
+        application.include_router(enterprise_router)
+        logger.info("Enterprise router loaded (audit, RBAC, DPDP)")
+    except Exception as exc:
+        logger.warning("Enterprise router not available: %s", exc)
+
     # ── Webhooks & API Keys ──────────────────────────────────
     try:
         from api.routers.webhooks import router as webhooks_router
