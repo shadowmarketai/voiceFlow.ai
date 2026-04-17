@@ -341,6 +341,22 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Metrics page router not available: %s", exc)
 
+    # ── Marketplace (W11 — agent templates) ───────────────────
+    try:
+        from api.routers.marketplace import router as marketplace_router
+        application.include_router(marketplace_router)
+        logger.info("Marketplace router loaded")
+    except Exception as exc:
+        logger.warning("Marketplace router not available: %s", exc)
+
+    # ── AI Analytics (W12 — sentiment, funnel, coaching) ────
+    try:
+        from api.routers.analytics_ai import router as analytics_ai_router
+        application.include_router(analytics_ai_router)
+        logger.info("AI Analytics router loaded")
+    except Exception as exc:
+        logger.warning("AI Analytics router not available: %s", exc)
+
     # ── Enterprise (audit log + RBAC + DPDP) ────────────────
     try:
         from api.routers.enterprise import router as enterprise_router
