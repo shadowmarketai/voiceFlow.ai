@@ -154,45 +154,52 @@ async def uptime_status():
 
 @router.get("/accuracy")
 async def accuracy_benchmarks():
-    """Full accuracy snapshot: STT WER/DER + TTS MOS/UTMOS + LLM scores.
+    """STT WER + LLM latency — real measured numbers when a benchmark has
+    been run, otherwise returns a 'never_run' flag so the UI can prompt.
 
-    - DER (Diarization Error Rate): per ISO voice-agent standards,
-      % of frames assigned to the wrong speaker.
-    - UTMOS: automated MOS predictor (Naturalness model) — proxy for
-      human MOS when raters aren't available.
+    Run a benchmark via POST /api/v1/quality/run-benchmark.
     """
+    from api.services.benchmark_runner import get_latest
+    latest = get_latest()
+
+    if latest:
+        wer = latest.get("wer_by_language", {})
+        llm = latest.get("llm", {})
+        lat = latest.get("roundtrip_latency", {})
+        return {
+            "source": "live_benchmark",
+            "run_at": latest.get("run_at"),
+            "stt": {
+                f"{lang}_wer": val for lang, val in wer.items()
+            },
+            "llm": {
+                "first_token_latency_ms": llm.get("first_token_ms"),
+                "tokens_per_sec": llm.get("tokens_per_sec"),
+            },
+            "roundtrip_latency": lat,
+        }
+
     return {
-        "stt": {
-            "english_wer": 4.2,        # % — lower is better
-            "hindi_wer": 7.8,
-            "tamil_wer": 9.1,
-            "telugu_wer": 10.3,
-            "noisy_env_wer": 12.4,
-            "code_switch_wer": 11.2,
-            # Diarization Error Rate — only meaningful when diarize=true
-            "english_der": 6.5,
-            "hindi_der": 9.2,
-            "tamil_der": 10.1,
-        },
-        "tts": {
-            "english_mos": 4.6,        # 1-5 scale — higher is better
-            "hindi_mos": 4.4,
-            "tamil_mos": 4.2,
-            "naturalness": 4.5,
-            "pronunciation": 4.3,
-            # Automated MOS predictor (UTMOS-style)
-            "english_utmos": 4.42,
-            "hindi_utmos": 4.18,
-            "tamil_utmos": 4.05,
-        },
-        "llm": {
-            "intent_accuracy": 96.2,
-            "emotion_detection": 88.5,
-            "hallucination_rate": 2.1,
-            "first_token_latency_ms": 380,
-            "tokens_per_sec": 480,         # Groq baseline
-        },
+        "source": "never_run",
+        "message": "No benchmark has been run yet. POST /api/v1/quality/run-benchmark to measure real numbers.",
+        "stt": {},
+        "llm": {},
+        "roundtrip_latency": {},
     }
+
+
+@router.post("/run-benchmark")
+async def trigger_benchmark(language: str = ""):
+    """Run the real STT+TTS roundtrip benchmark. Takes 30-60 seconds.
+
+    Sends test utterances through TTS → STT and measures actual WER.
+    Also measures LLM streaming first-token latency and tokens/sec.
+    Results are persisted and returned by GET /accuracy.
+    """
+    from api.services.benchmark_runner import run_benchmark
+    lang = language.strip() or None
+    results = await run_benchmark(lang)
+    return results
 
 
 @router.get("/csat")

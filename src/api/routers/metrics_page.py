@@ -25,13 +25,19 @@ router = APIRouter(tags=["metrics"])
 
 # Accuracy numbers are the current benchmark snapshot (W1 baseline).
 # Label as "benchmark" not "live" — these aren't continuously measured yet.
-_BENCHMARK_ACCURACY = {
-    "english_wer": 4.2,
-    "hindi_wer": 7.8,
-    "tamil_wer": 9.1,
-    "hindi_mos": 4.4,
-    "tamil_mos": 4.2,
-}
+def _get_benchmark_accuracy() -> dict:
+    """Return live benchmark numbers if available, else 'not measured yet'."""
+    try:
+        from api.services.benchmark_runner import get_latest
+        latest = get_latest()
+        if latest and latest.get("wer_by_language"):
+            wer = latest["wer_by_language"]
+            return {
+                f"{lang}_wer": val for lang, val in wer.items()
+            } | {"source": "live", "run_at": latest.get("run_at")}
+    except Exception:
+        pass
+    return {"source": "not_measured", "note": "Run POST /api/v1/quality/run-benchmark to get real numbers"}
 
 _TARGETS = {
     "p95_ms": 900,
@@ -100,7 +106,7 @@ def _collect_public_metrics() -> dict[str, Any]:
             "fcr_rate": ops.get("fcr_rate"),
             "avg_handle_time_sec": ops.get("avg_handle_time_sec"),
         },
-        "accuracy_benchmark": _BENCHMARK_ACCURACY,
+        "accuracy_benchmark": _get_benchmark_accuracy(),
         "targets": _TARGETS,
         "pipeline": {
             "streaming_enabled": True,
@@ -228,16 +234,18 @@ async def metrics_html() -> HTMLResponse:
     </div>
 
     <div class="card">
-      <h2>Accuracy benchmark</h2>
+      <h2>Accuracy (live benchmark)</h2>
       <table>
-        <tr><td>English WER</td><td>{acc['english_wer']}%</td></tr>
-        <tr><td>Hindi WER</td><td>{acc['hindi_wer']}% (target {_TARGETS['hindi_wer']}%)</td></tr>
-        <tr><td>Tamil WER</td><td>{acc['tamil_wer']}%</td></tr>
-        <tr><td>Hindi TTS MOS</td><td>{acc['hindi_mos']}/5</td></tr>
-        <tr><td>Tamil TTS MOS</td><td>{acc['tamil_mos']}/5</td></tr>
+        {"".join(
+            f'<tr><td>{k.replace("_", " ").title()}</td><td>{v}{"%" if "wer" in k else ""}</td></tr>'
+            for k, v in acc.items()
+            if k not in ("source", "run_at", "note") and v is not None
+        ) or '<tr><td colspan="2" style="color:#94a3b8;font-style:italic">Not measured yet — POST /api/v1/quality/run-benchmark to get real numbers</td></tr>'}
       </table>
       <p style="font-size:11px;color:#94a3b8;margin:10px 0 0 0">
-        Benchmark dataset · re-measured at each release · live WER landing in W5.
+        Source: {acc.get('source', 'unknown')}
+        {(' · last run ' + acc['run_at'][:16]) if acc.get('run_at') else ''}
+        · measures real TTS→STT round-trip WER, not static claims.
       </p>
     </div>
 
