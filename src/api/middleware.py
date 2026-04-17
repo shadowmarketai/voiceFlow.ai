@@ -145,11 +145,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
         if APP_ENV == "production":
             response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            # CSP: allow external resources needed by the frontend
+            # CSP: allow external resources needed by the frontend + Swagger UI CDN
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com; "
-                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+                "https://checkout.razorpay.com https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' "
+                "https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "font-src 'self' https://fonts.gstatic.com; "
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self' https: wss:; "

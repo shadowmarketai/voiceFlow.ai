@@ -158,16 +158,30 @@ def _mount_frontend(application: FastAPI) -> None:
 
     index_html = static_dir / "index.html"
 
+    # Paths that must NOT be caught by the SPA — let FastAPI handle them.
+    _BACKEND_PREFIXES = (
+        "api/", "docs", "redoc", "openapi.json",
+        "status", "metrics", "health",
+    )
+
     @application.get("/{full_path:path}")
     async def serve_spa(full_path: str):
+        from fastapi.responses import JSONResponse
+
+        # Pass backend routes through — don't serve SPA for these
+        if any(
+            full_path == p or full_path.startswith(p + "/")
+            for p in _BACKEND_PREFIXES
+        ):
+            return JSONResponse(status_code=404, content={"detail": "Not found"})
+
         if ".." in full_path:
             return FileResponse(str(index_html))
         file_path = static_dir / full_path
         if file_path.is_file():
             return FileResponse(str(file_path))
-        # Don't serve index.html for non-HTML file requests (prevents SW/manifest issues)
+        # Don't serve index.html for asset requests (prevents SW/manifest issues)
         if "." in full_path.split("/")[-1]:
-            from fastapi.responses import JSONResponse
             return JSONResponse(status_code=404, content={"detail": "Not found"})
         return FileResponse(str(index_html))
 
