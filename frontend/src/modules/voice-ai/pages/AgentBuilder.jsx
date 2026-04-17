@@ -9,6 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CostCalculator from '../components/CostCalculator';
 import AgentVoicePicker from '../components/AgentVoicePicker';
+import PipelineSelector, { PRESET_PIPELINE_MAP } from '../components/PipelineSelector';
 import { useAuth } from '../../../contexts/AuthContext';
 import { agentsAPI } from '../../../services/api';
 import {
@@ -117,13 +118,6 @@ function getModelOptions(providerId) {
   return MODEL_OPTIONS[providerId] || [{ id: 'default', label: 'Default' }];
 }
 
-const QUICK_PRESETS = [
-  { id: 'low_latency', icon: Zap, label: 'Low Latency', desc: 'Fastest response, Groq + Deepgram' },
-  { id: 'high_quality', icon: Sparkles, label: 'High Quality', desc: 'Best accuracy, Claude + ElevenLabs' },
-  { id: 'budget', icon: CreditCard, label: 'Budget', desc: 'Cost-effective, Edge TTS + Whisper' },
-  { id: 'native_audio', icon: AudioLines, label: 'Native Audio', desc: 'Gemini Live end-to-end' },
-];
-
 /* Map AgentBuilder-internal provider ids → pricing catalog keys */
 const LLM_TO_CATALOG = {
   groq: 'groq_llama3_8b',
@@ -132,11 +126,12 @@ const LLM_TO_CATALOG = {
   gemini: 'gemini_25_hd',
   deepseek: 'deepseek',
 };
+
+// Use the canonical preset map from PipelineSelector
 const PRESET_TO_PIPELINE = {
-  low_latency:  { stt: 'deepgram_nova2', tts: 'cartesia',           telephony: 'exotel' },
-  high_quality: { stt: 'deepgram_nova2', tts: 'elevenlabs_flash',   telephony: 'twilio' },
-  budget:       { stt: 'groq_whisper',   tts: 'edge_tts',           telephony: 'airtel' },
-  native_audio: { stt: 'deepgram_nova2', tts: 'google_tts',         telephony: 'telecmi' },
+  ...PRESET_PIPELINE_MAP,
+  // legacy aliases
+  native_audio: PRESET_PIPELINE_MAP.premium,
 };
 
 const VOICES = [
@@ -658,19 +653,14 @@ export default function AgentBuilder() {
             />
           </div>
 
-          {/* Quick Setup */}
-          <Section title="Quick Setup" icon={Zap}>
-            <p className="text-xs text-gray-500 mb-2">Select a preset or customize below</p>
-            <div className="grid grid-cols-4 gap-3">
-              {QUICK_PRESETS.map(p => (
-                <button key={p.id} onClick={() => setQuickPreset(p.id)}
-                  className={`p-3 rounded-xl border-2 text-left transition-all ${quickPreset === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
-                  <p.icon className={`w-5 h-5 mb-1 ${quickPreset === p.id ? 'text-indigo-600' : 'text-gray-400'}`} />
-                  <p className="text-xs font-semibold text-gray-900">{p.label}</p>
-                  <p className="text-[9px] text-gray-400 mt-0.5">{p.desc}</p>
-                </button>
-              ))}
-            </div>
+          {/* Quick Setup — 5-preset pipeline picker with pricing */}
+          <Section title="Voice Pipeline Preset" icon={Zap}>
+            <p className="text-xs text-gray-500 mb-3">Choose a preset — pricing updates live below</p>
+            <PipelineSelector
+              selected={quickPreset}
+              onChange={setQuickPreset}
+              isSuperAdmin={isSuperAdmin}
+            />
           </Section>
 
           {/* LLM Configuration — super-admin only
