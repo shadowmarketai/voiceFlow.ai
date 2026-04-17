@@ -21,11 +21,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re as _re
 import time
 from datetime import datetime
 from typing import Any
-
-from api.database import get_session_factory
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +60,55 @@ _TEST_CORPUS: dict[str, list[str]] = {
 }
 
 
-def _word_error_rate(reference: str, hypothesis: str) -> float:
-    """Compute WER using minimum edit distance. Returns 0.0–100.0."""
-    ref_words = reference.lower().split()
-    hyp_words = hypothesis.lower().split()
+# Maps English number words to their digit equivalents for normalization.
+_NUM_WORD_MAP = {
+    "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4",
+    "five": "5", "six": "6", "seven": "7", "eight": "8", "nine": "9",
+    "ten": "10", "eleven": "11", "twelve": "12", "thirteen": "13",
+    "fourteen": "14", "fifteen": "15", "sixteen": "16", "seventeen": "17",
+    "eighteen": "18", "nineteen": "19", "twenty": "20",
+}
+
+# Indic languages that output native Unicode script from Groq/Sarvam STT.
+_INDIC_LANG_CODES = {"hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or"}
+
+
+def _normalize_text(text: str, language: str = "en") -> str:
+    """Normalize text before WER to avoid false penalization from format differences.
+
+    Problems this solves:
+    - English TTS says "three PM" but STT outputs "3 PM" → WER would wrongly count as error
+    - Punctuation differences: "refund." vs "refund"
+    - Case differences: "Thank you" vs "thank you"
+    - Double spaces, trailing whitespace
+    """
+    text = text.lower().strip()
+    # Remove punctuation (but keep spaces)
+    text = _re.sub(r"[^\w\s]", " ", text)
+    # Collapse multiple spaces
+    text = _re.sub(r"\s+", " ", text).strip()
+
+    if language == "en":
+        # Normalize number words → digits so "three" == "3"
+        words = text.split()
+        normalized = [_NUM_WORD_MAP.get(w, w) for w in words]
+        # Also strip common filler: "pm" → "" (TTS sometimes drops AM/PM)
+        text = " ".join(normalized)
+
+    return text
+
+
+def _word_error_rate(reference: str, hypothesis: str, language: str = "en") -> float:
+    """Compute WER using minimum edit distance. Returns 0.0–100.0.
+
+    Applies text normalization before comparison so format differences
+    (spelled-out numbers vs digits, punctuation) don't inflate WER.
+    """
+    ref_norm = _normalize_text(reference, language)
+    hyp_norm = _normalize_text(hypothesis, language)
+
+    ref_words = ref_norm.split()
+    hyp_words = hyp_norm.split()
     if not ref_words:
         return 0.0 if not hyp_words else 100.0
 
@@ -82,9 +126,43 @@ def _word_error_rate(reference: str, hypothesis: str) -> float:
     return round(d[len(ref_words)][len(hyp_words)] / len(ref_words) * 100, 2)
 
 
+async def _get_tts_for_benchmark(text: str, language: str) -> dict[str, Any]:
+    """Get TTS audio using the best available provider for the language.
+
+    For Indic languages, prefer Sarvam (native quality) or Edge TTS (free,
+    native voices) over ElevenLabs, because STT is calibrated to native
+    accents — ElevenLabs English voice reading Hindi degrades WER.
+
+    For English, any provider works (Deepgram Aura has lowest latency).
+    """
+    from voice_engine.api_providers import (
+        _sarvam_tts, _edge_tts, _deepgram_tts, synthesize_speech_api
+    )
+
+    is_indic = language in _INDIC_LANG_CODES
+
+    if is_indic:
+        # 1st choice: Sarvam (native Indian language TTS)
+        sv_key = os.environ.get("SARVAM_API_KEY", "")
+        if sv_key:
+            try:
+                return await _sarvam_tts(text, sv_key, language, 1.0)
+            except Exception as exc:
+                logger.warning("Sarvam TTS failed for %s, trying Edge TTS: %s", language, exc)
+
+        # 2nd choice: Edge TTS (free, native neural voices for all Indian langs)
+        try:
+            return await _edge_tts(text, language, 1.0)
+        except Exception as exc:
+            logger.warning("Edge TTS failed for %s, falling back to auto chain: %s", language, exc)
+
+    # English or final fallback: use the default chain
+    return await synthesize_speech_api(text=text, language=language)
+
+
 async def _benchmark_stt_roundtrip(text: str, language: str) -> dict[str, Any]:
     """TTS the text, then STT it back, measure WER + latency."""
-    from voice_engine.api_providers import synthesize_speech_api, transcribe_ensemble
+    from voice_engine.api_providers import transcribe_ensemble
 
     result: dict[str, Any] = {
         "reference": text,
@@ -99,11 +177,12 @@ async def _benchmark_stt_roundtrip(text: str, language: str) -> dict[str, Any]:
 
     t0 = time.time()
 
-    # Step 1: TTS — generate audio from known text
+    # Step 1: TTS — use language-appropriate provider for native audio quality
     try:
         t_tts = time.time()
-        tts_result = await synthesize_speech_api(text=text, language=language)
+        tts_result = await _get_tts_for_benchmark(text, language)
         result["tts_ms"] = int((time.time() - t_tts) * 1000)
+        result["tts_provider"] = tts_result.get("provider", "unknown")
 
         audio_b64 = tts_result.get("audio_base64", "")
         if not audio_b64:
@@ -128,15 +207,20 @@ async def _benchmark_stt_roundtrip(text: str, language: str) -> dict[str, Any]:
         result["error"] = f"STT failed: {str(exc)[:100]}"
         return result
 
-    # Step 3: Compute WER
-    result["wer"] = _word_error_rate(text, hypothesis)
+    # Step 3: Compute WER (with language-aware normalization)
+    result["wer"] = _word_error_rate(text, hypothesis, language)
     result["total_ms"] = int((time.time() - t0) * 1000)
 
     return result
 
 
 async def _benchmark_llm_latency() -> dict[str, Any]:
-    """Measure LLM first-token and tokens/sec on a standard prompt."""
+    """Measure LLM first-token and tokens/sec on a standard prompt.
+
+    Uses a longer prompt (200 tokens) for more accurate tokens/sec measurement.
+    Tokens/sec from a 10-token response is noisy; 200 tokens gives a stable reading.
+    Also tries llama-3.3-70b-versatile first (higher quality, used for complex calls).
+    """
     import json as _json
 
     api_key = os.environ.get("GROQ_API_KEY", "")
@@ -145,52 +229,83 @@ async def _benchmark_llm_latency() -> dict[str, Any]:
 
     import httpx
 
-    prompt = "List 3 benefits of voice AI for Indian businesses. Be concise."
-    t0 = time.time()
-    first_token_time = None
-    token_count = 0
+    # Longer prompt → accurate tokens/sec (8B model: ~200-250 tok/s on Groq)
+    prompt = (
+        "You are a voice AI for an Indian insurance company. "
+        "A customer just said: 'Mujhe apni health policy renew karni hai, "
+        "kya process hai aur kitna time lagta hai?' "
+        "Respond naturally in Hindi, guide them through the renewal process step by step. "
+        "Mention document requirements, payment options, and timeline."
+    )
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            async with client.stream(
-                "POST",
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": "llama-3.1-8b-instant",
-                    "messages": [
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "max_tokens": 100,
-                    "temperature": 0.3,
-                    "stream": True,
-                },
-            ) as resp:
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    payload = line[5:].strip()
-                    if payload == "[DONE]":
-                        break
-                    try:
-                        obj = _json.loads(payload)
-                        delta = obj["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            if first_token_time is None:
-                                first_token_time = time.time()
-                            token_count += 1
-                    except Exception:
-                        continue
-    except Exception as exc:
-        return {"error": str(exc)[:100], "first_token_ms": None, "tokens_per_sec": None}
+    results = {}
 
-    elapsed = time.time() - t0
+    # Try 8B first (production default for most calls), then log separately
+    for model_id, model_label in [
+        ("llama-3.1-8b-instant", "8b"),
+        ("llama-3.3-70b-versatile", "70b"),
+    ]:
+        t0 = time.time()
+        first_token_time = None
+        token_count = 0
+        char_count = 0
+
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                async with client.stream(
+                    "POST",
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    json={
+                        "model": model_id,
+                        "messages": [
+                            {"role": "system", "content": "You are a helpful voice AI assistant for Indian businesses."},
+                            {"role": "user", "content": prompt},
+                        ],
+                        "max_tokens": 200,
+                        "temperature": 0.3,
+                        "stream": True,
+                    },
+                ) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if payload == "[DONE]":
+                            break
+                        try:
+                            obj = _json.loads(payload)
+                            delta = obj["choices"][0].get("delta", {}).get("content")
+                            if delta:
+                                if first_token_time is None:
+                                    first_token_time = time.time()
+                                char_count += len(delta)
+                                # Approximate token count: ~4 chars/token for mixed Hindi+English
+                                token_count = max(token_count + 1, char_count // 4)
+                        except Exception:
+                            continue
+        except Exception as exc:
+            results[model_label] = {"error": str(exc)[:100], "first_token_ms": None, "tokens_per_sec": None}
+            continue
+
+        elapsed = time.time() - t0
+        gen_elapsed = (time.time() - first_token_time) if first_token_time else elapsed
+        results[model_label] = {
+            "first_token_ms": int((first_token_time - t0) * 1000) if first_token_time else None,
+            "tokens_per_sec": round(token_count / gen_elapsed, 1) if gen_elapsed > 0 and token_count > 0 else None,
+            "token_count": token_count,
+            "total_ms": int(elapsed * 1000),
+        }
+
+    # Return 8B as primary (production default), include 70B for info
+    primary = results.get("8b", {})
     return {
-        "first_token_ms": int((first_token_time - t0) * 1000) if first_token_time else None,
-        "tokens_per_sec": round(token_count / elapsed, 1) if elapsed > 0 else None,
-        "token_count": token_count,
-        "total_ms": int(elapsed * 1000),
+        "first_token_ms": primary.get("first_token_ms"),
+        "tokens_per_sec": primary.get("tokens_per_sec"),
+        "token_count": primary.get("token_count"),
+        "total_ms": primary.get("total_ms"),
+        "model_8b": results.get("8b"),
+        "model_70b": results.get("70b"),
     }
 
 

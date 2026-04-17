@@ -74,24 +74,42 @@ async def transcribe_ensemble(
     in parallel + picking by confidence gives us industry-lowest WER without
     paying latency cost (slower of the two wins, which is basically the same
     as calling one).
+
+    CRITICAL: Deepgram Nova-2 transcribes Indic audio as English transliterations
+    ("premium plan" instead of "प्रीमियम प्लान") which causes 40%+ WER. When
+    Sarvam is unavailable, route Indic to Groq Whisper (handles native script).
     """
     import asyncio
 
     dg_key = os.environ.get("DEEPGRAM_API_KEY", "")
     sv_key = os.environ.get("SARVAM_API_KEY", "")
+    groq_key = os.environ.get("GROQ_API_KEY", "")
 
-    # If only one provider is configured, short-circuit
-    if dg_key and not sv_key:
-        return await _deepgram_stt(audio_bytes, dg_key, language)
-    if sv_key and not dg_key:
-        return await _sarvam_stt(audio_bytes, sv_key, language)
-    if not dg_key and not sv_key:
+    lang = (language or "").lower()[:2]
+    is_indic = lang in _INDIC_LANG_CODES
+
+    # For non-Indic languages: Deepgram is best (low WER, fast)
+    if lang and not is_indic:
+        if dg_key:
+            return await _deepgram_stt(audio_bytes, dg_key, language)
         return await transcribe_audio_api(audio_bytes, language=language)
 
-    # For non-Indic languages, skip Sarvam (Deepgram is faster + as accurate)
-    lang = (language or "").lower()[:2]
-    if lang and lang not in _INDIC_LANG_CODES:
+    # Indic path: Sarvam > Groq Whisper > Deepgram (in that preference order)
+    # Deepgram is last resort for Indic — it outputs transliterated English
+    if not sv_key and not groq_key and not dg_key:
+        return await transcribe_audio_api(audio_bytes, language=language)
+
+    if not sv_key:
+        # No Sarvam — use Groq Whisper (writes native Devanagari/Tamil script)
+        if groq_key:
+            return await _groq_stt(audio_bytes, groq_key, language)
+        # Last resort: Deepgram (WER will be higher but better than nothing)
         return await _deepgram_stt(audio_bytes, dg_key, language)
+
+    if sv_key and not dg_key:
+        return await _sarvam_stt(audio_bytes, sv_key, language)
+
+    # Both Sarvam and Deepgram available — race them (Sarvam preferred for Indic)
 
     async def _safe(name, coro):
         try:
