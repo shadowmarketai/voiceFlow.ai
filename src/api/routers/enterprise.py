@@ -242,3 +242,75 @@ async def data_residency(user: dict = Depends(get_current_active_user)):
         "encryption_at_rest": True,
         "encryption_in_transit": True,
     }
+
+
+@router.get("/infra-status")
+async def infra_status(user: dict = Depends(get_current_active_user)):
+    """Honest infrastructure status — what's configured, what's missing.
+
+    Enterprise buyers and auditors need to know the real state, not
+    an optimistic projection. Missing items are flagged with 'action_needed'.
+    """
+    _require_owner_or_super(user)
+    import os
+
+    def _check(label, env_var, fallback_note):
+        val = os.environ.get(env_var, "")
+        return {
+            "label": label,
+            "configured": bool(val),
+            "value": val[:40] + "..." if len(val) > 40 else (val or None),
+            "action_needed": fallback_note if not val else None,
+        }
+
+    return {
+        "call_recordings": _check(
+            "Call recording storage",
+            "CALL_RECORDINGS_PATH",
+            "Not configured. Set CALL_RECORDINGS_PATH to a persistent volume or S3 bucket.",
+        ),
+        "turn_server": _check(
+            "WebRTC TURN server",
+            "LIVEKIT_URL",
+            "No TURN/STUN. LiveKit Cloud includes this; self-hosted needs coturn.",
+        ),
+        "sip_provider": _check(
+            "SIP inbound routing (Twilio/Exotel)",
+            "TWILIO_ACCOUNT_SID",
+            "No SIP provider. Add TWILIO_ACCOUNT_SID or EXOTEL_SID for phone numbers.",
+        ),
+        "data_isolation": {
+            "label": "Multi-tenant data isolation",
+            "configured": True,
+            "method": "app_level",
+            "note": "Tenant isolation via tenant_id column + app-level WHERE clauses. "
+                    "Row-level security (Postgres RLS) planned for Phase 3+.",
+            "action_needed": None,
+        },
+        "disaster_recovery": {
+            "label": "Disaster recovery",
+            "configured": bool(os.environ.get("DATABASE_URL")),
+            "method": "coolify_auto_backup" if os.environ.get("DATABASE_URL") else "none",
+            "note": "Coolify provides automated backups. For enterprise: add cross-region "
+                    "replication + point-in-time recovery.",
+            "action_needed": "Configure daily DB backup + cross-region replica for DR." if not os.environ.get("BACKUP_ENABLED") else None,
+        },
+        "gpu_failover": {
+            "label": "GPU → API failover",
+            "configured": True,
+            "method": "automatic",
+            "note": "All ML operations (STT/LLM/TTS) use API providers by default. "
+                    "Local GPU models (XTTS, Whisper) are optional acceleration. "
+                    "If GPU pod restarts, API providers take over transparently.",
+            "action_needed": None,
+        },
+        "embedding_storage": {
+            "label": "Voice embedding persistence",
+            "configured": True,
+            "method": "docker_volume",
+            "path": os.environ.get("VOICE_EMBEDDINGS_DIR", "data/voice_embeddings"),
+            "note": "Stored on Docker volume (-v voiceflow_data:/app/data). "
+                    "For GPU pods: mount the same volume or add S3 sync.",
+            "action_needed": "Add S3 sync for GPU pod scenarios." if not os.environ.get("S3_EMBEDDINGS_BUCKET") else None,
+        },
+    }

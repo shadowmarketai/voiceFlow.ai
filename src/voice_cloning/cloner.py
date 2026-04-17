@@ -39,6 +39,22 @@ class VoiceCloner:
         self._voice_registry: Dict[str, Dict] = {}
         os.makedirs(SAMPLES_DIR, exist_ok=True)
         os.makedirs(OUTPUTS_DIR, exist_ok=True)
+        self._reload_from_db()
+
+    def _reload_from_db(self):
+        """Restore voice registry from DB on startup so pod restarts
+        don't lose the in-memory lookup table."""
+        try:
+            from api.services.voice_library import list_voices
+            for tenant_voices in [list_voices("")]:
+                for v in tenant_voices:
+                    vid = v.get("voice_id", "")
+                    if vid:
+                        self._voice_registry[vid] = v
+            if self._voice_registry:
+                logger.info("Reloaded %d voices from voice_library DB", len(self._voice_registry))
+        except Exception as exc:
+            logger.info("voice_library DB not available yet (will work after init_db): %s", exc)
 
     def register_voice(
         self,

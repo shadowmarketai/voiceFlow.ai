@@ -37,8 +37,26 @@ _TARGETS = {
     "p95_ms": 900,
     "uptime": 99.95,
     "hindi_wer": 5.0,
-    "cost_per_min_inr": 0.80,
     "csat": 4.3,
+}
+
+# Per-workload pricing tiers — honest about what ₹0.80 actually means.
+_PRICING_TIERS = {
+    "faq_cached": {
+        "label": "FAQ / Cached",
+        "inr_per_min": 0.80,
+        "note": "Short, repetitive queries with response cache enabled. Best case.",
+    },
+    "dynamic_support": {
+        "label": "Dynamic Support / Sales",
+        "inr_per_min": 2.50,
+        "note": "Variable-length conversations with smart LLM routing (8B/70B mix).",
+    },
+    "complex_qualification": {
+        "label": "Complex / Real Estate / Multi-turn",
+        "inr_per_min": 3.00,
+        "note": "Long calls with policy questions, escalations, or 70B/Claude routing.",
+    },
 }
 
 
@@ -90,6 +108,7 @@ def _collect_public_metrics() -> dict[str, Any]:
             "india_grounded_llm": True,
             "language_auto_switch": True,
         },
+        "pricing_tiers": _PRICING_TIERS,
     }
 
 
@@ -219,6 +238,19 @@ async def metrics_html() -> HTMLResponse:
       </table>
       <p style="font-size:11px;color:#94a3b8;margin:10px 0 0 0">
         Benchmark dataset · re-measured at each release · live WER landing in W5.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>Pricing per minute (by workload type)</h2>
+      <table>
+        <tr><td>FAQ / Cached (response cache ON)</td><td style="font-weight:700;color:#10b981">₹0.80</td></tr>
+        <tr><td>Dynamic Support / Sales</td><td style="font-weight:700">₹2.50</td></tr>
+        <tr><td>Complex / Real Estate / Multi-turn</td><td style="font-weight:700">₹3.00</td></tr>
+      </table>
+      <p style="font-size:11px;color:#94a3b8;margin:10px 0 0 0">
+        ₹0.80 is achievable on FAQ-heavy agents with response caching. Dynamic conversations
+        with variable-length replies average ₹2.00–3.00. All tiers include STT + LLM + TTS.
       </p>
     </div>
 

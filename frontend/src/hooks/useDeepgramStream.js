@@ -19,6 +19,23 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001'
 const WS_BASE = API_BASE.replace(/^http/, 'ws')
 
+function _setupScriptProcessor(audioCtx, src, ws) {
+  const bufSize = 4096
+  const processor = audioCtx.createScriptProcessor(bufSize, 1, 1)
+  processor.onaudioprocess = (e) => {
+    if (ws.readyState !== WebSocket.OPEN) return
+    const ch = e.inputBuffer.getChannelData(0)
+    const pcm = new Int16Array(ch.length)
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i]))
+      pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+    }
+    try { ws.send(pcm.buffer) } catch {}
+  }
+  src.connect(processor)
+  processor.connect(audioCtx.destination)
+}
+
 export default function useDeepgramStream({ language = '', diarize = true } = {}) {
   const [recording, setRecording] = useState(false)
   const [partial, setPartial] = useState('')
@@ -88,42 +105,55 @@ export default function useDeepgramStream({ language = '', diarize = true } = {}
         setTimeout(() => reject(new Error('WS open timeout')), 5000)
       })
 
-      // 3. Audio graph: source → worklet → (no output, side-effect WS send)
+      // 3. Audio graph: source → PCM16 conversion → WS send.
+      // AudioWorklet is preferred (low-latency, off-main-thread).
+      // ScriptProcessorNode is the fallback for iOS Safari <16.4 and
+      // older mid-range Android browsers (₹8-12k phones).
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 })
       audioCtxRef.current = audioCtx
-
-      const processorUrl = URL.createObjectURL(new Blob([`
-        class PCM16Processor extends AudioWorkletProcessor {
-          process(inputs) {
-            const input = inputs[0];
-            if (!input || !input[0]) return true;
-            const ch = input[0];                          // Float32Array [-1, 1]
-            const pcm = new Int16Array(ch.length);
-            for (let i = 0; i < ch.length; i++) {
-              const s = Math.max(-1, Math.min(1, ch[i]));
-              pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            this.port.postMessage(pcm.buffer, [pcm.buffer]);
-            return true;
-          }
-        }
-        registerProcessor('pcm16', PCM16Processor);
-      `], { type: 'application/javascript' }))
-
-      await audioCtx.audioWorklet.addModule(processorUrl)
-      URL.revokeObjectURL(processorUrl)
-
       const src = audioCtx.createMediaStreamSource(stream)
-      const node = new AudioWorkletNode(audioCtx, 'pcm16')
-      workletNodeRef.current = node
 
-      node.port.onmessage = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          try { ws.send(e.data) } catch {}
+      const hasWorklet = typeof audioCtx.audioWorklet?.addModule === 'function'
+
+      if (hasWorklet) {
+        try {
+          const processorUrl = URL.createObjectURL(new Blob([`
+            class PCM16Processor extends AudioWorkletProcessor {
+              process(inputs) {
+                const input = inputs[0];
+                if (!input || !input[0]) return true;
+                const ch = input[0];
+                const pcm = new Int16Array(ch.length);
+                for (let i = 0; i < ch.length; i++) {
+                  const s = Math.max(-1, Math.min(1, ch[i]));
+                  pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                this.port.postMessage(pcm.buffer, [pcm.buffer]);
+                return true;
+              }
+            }
+            registerProcessor('pcm16', PCM16Processor);
+          `], { type: 'application/javascript' }))
+
+          await audioCtx.audioWorklet.addModule(processorUrl)
+          URL.revokeObjectURL(processorUrl)
+
+          const node = new AudioWorkletNode(audioCtx, 'pcm16')
+          workletNodeRef.current = node
+          node.port.onmessage = (e) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try { ws.send(e.data) } catch {}
+            }
+          }
+          src.connect(node)
+        } catch (workletErr) {
+          console.warn('AudioWorklet failed, falling back to ScriptProcessor:', workletErr)
+          _setupScriptProcessor(audioCtx, src, ws)
         }
+      } else {
+        _setupScriptProcessor(audioCtx, src, ws)
       }
-      src.connect(node)
-      // Don't connect node to destination — we don't want to hear ourselves.
+      // Don't connect to destination — we don't want to hear ourselves.
 
       setRecording(true)
     } catch (e) {

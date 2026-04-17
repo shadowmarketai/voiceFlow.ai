@@ -21,6 +21,7 @@ that is the single biggest CSAT lever for multilingual India buyers.
 
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 # Unicode script ranges → ISO language codes (primary-use mapping).
@@ -99,6 +100,109 @@ def detect_language_text(text: str) -> dict:
             "script_counts": counts}
 
 
+# ── Romanized Indic detection (Fix 1 from review) ───────────────────
+# When users type Tamil/Hindi/Telugu in English letters ("Naan ippo busy"),
+# Unicode script detection returns "en". This catches those cases via
+# high-frequency romanized tokens + distinctive suffixes per language.
+
+_ROMANIZED_MARKERS: dict[str, tuple[set[str], list[str]]] = {
+    "ta": (
+        # Tamil high-frequency words (romanized)
+        {"naan", "nee", "enna", "eppo", "ippo", "inga", "anga", "illa",
+         "irukku", "irukken", "irukka", "pannunga", "sollunga", "vaanga",
+         "ponga", "thaan", "panna", "solla", "eppadi", "konjam", "romba",
+         "paaru", "vanakkam", "nandri", "theriyum", "theriyathu", "venum",
+         "vendaam", "pogalaam", "varalaam", "seri", "aama", "puriyuthu",
+         "puriyala", "pannuven", "solren", "paarunga", "ketka", "kekka",
+         "kudukka", "edukka", "podra", "podravaa", "podu", "panra"},
+        # Tamil-distinctive suffixes
+        [r"\w+nga\b", r"\w+ngo\b", r"\w+kku\b", r"\w+kkum\b", r"\w+la\b",
+         r"\w+le\b", r"\w+nu\b", r"\w+dhu\b", r"\w+thu\b", r"\w+ven\b",
+         r"\w+ren\b", r"\w+lam\b"],
+    ),
+    "hi": (
+        # Hindi high-frequency words (romanized)
+        {"mujhe", "kya", "kaise", "kahan", "kyun", "accha", "theek",
+         "bahut", "abhi", "chaliye", "bolo", "batao", "karo", "haan",
+         "nahi", "nahin", "aur", "lekin", "toh", "bhai", "yaar",
+         "dekho", "suno", "chalo", "mera", "tera", "humara", "tumhara",
+         "samajh", "samjho", "paise", "kitna", "kaun", "kiska",
+         "matlab", "zaroor", "achha", "arey", "hoga", "hogi", "rehta",
+         "rehti", "jaao", "aao", "bataiye", "dekhiye", "suniye",
+         "chahiye", "milega", "milegi", "karenge", "jayenge"},
+        # Hindi-distinctive suffixes
+        [r"\w+iye\b", r"\w+ega\b", r"\w+egi\b", r"\w+enge\b",
+         r"\w+ogi\b", r"\w+oge\b", r"\w+enge\b"],
+    ),
+    "te": (
+        # Telugu
+        {"nenu", "emi", "ela", "ikkada", "akkada", "cheppandi",
+         "cheyyandi", "unnaru", "unnav", "ledu", "undi", "vundi",
+         "randi", "vellu", "vastanu", "cheptanu", "emiti", "entha",
+         "bagundi", "manchidi", "parledu", "avunu", "kaadu", "kavali",
+         "raandi", "chudu", "chudandi", "namaskaram"},
+        [r"\w+andi\b", r"\w+aru\b", r"\w+undi\b", r"\w+anu\b",
+         r"\w+edi\b", r"\w+adu\b"],
+    ),
+    "kn": (
+        # Kannada
+        {"naanu", "enu", "hege", "illi", "alli", "helu", "maadu",
+         "banni", "hogge", "illa", "ide", "idhey", "barri", "nodi",
+         "kelsa", "madri", "namaskara", "hegidira", "chennagiide",
+         "gotthu", "gotthilla", "beku", "beda", "hogi", "baa"},
+        [r"\w+alli\b", r"\w+inda\b", r"\w+ige\b", r"\w+anu\b"],
+    ),
+    "ml": (
+        # Malayalam
+        {"njan", "entha", "enthanu", "ivide", "avide", "parayoo",
+         "cheyyoo", "alle", "ille", "undu", "illa", "mathi",
+         "sheriyaanu", "namaskkaram", "nanni", "ariyaam",
+         "ariyilla", "venam", "venda", "varunnu", "pokunnu",
+         "parayaam", "cheyyaam", "ninakku", "enikku", "avanu"},
+        [r"\w+oo\b", r"\w+aanu\b", r"\w+ille\b", r"\w+aam\b",
+         r"\w+unnu\b"],
+    ),
+}
+
+_ROMANIZED_MIN_HITS = 2
+_ROMANIZED_WORD_RE = re.compile(r"[a-zA-Z]+")
+
+
+def detect_romanized_indic(text: str) -> dict:
+    """Detect romanized Indic languages from Latin-script text.
+
+    Returns {'language': code, 'confidence': float, 'markers_hit': int}
+    or {'language': 'en', ...} if no pattern matches.
+    """
+    if not text:
+        return {"language": "en", "confidence": 0.0, "markers_hit": 0}
+
+    words = [w.lower() for w in _ROMANIZED_WORD_RE.findall(text)]
+    if len(words) < 2:
+        return {"language": "en", "confidence": 0.0, "markers_hit": 0}
+
+    word_set = set(words)
+    best_lang = "en"
+    best_hits = 0
+    best_conf = 0.0
+    text_lower = text.lower()
+
+    for lang, (marker_words, suffix_patterns) in _ROMANIZED_MARKERS.items():
+        hits = len(word_set & marker_words)
+        for pat in suffix_patterns:
+            hits += len(re.findall(pat, text_lower))
+        if hits > best_hits:
+            best_hits = hits
+            best_lang = lang
+            best_conf = min(1.0, hits / max(1, len(words) * 0.3))
+
+    if best_hits >= _ROMANIZED_MIN_HITS:
+        return {"language": best_lang, "confidence": round(best_conf, 3),
+                "markers_hit": best_hits}
+
+    return {"language": "en", "confidence": 0.0, "markers_hit": 0}
+
+
 def pick_tts_language(
     user_hint: str | None,
     stt_detected: str | None,
@@ -133,12 +237,18 @@ def pick_tts_language(
 
     if text_detect and text_detect["language"] in _INDIC_LANG_CODES:
         detected = text_detect["language"]
-        # Disambiguate script-family collisions via the channel hint.
         if detected == "hi" and hint in _DEVANAGARI_FAMILY:
             return hint, "script_family_hint"
         if detected == "bn" and hint in _BENGALI_SCRIPT_FAMILY:
             return hint, "script_family_hint"
         return detected, "text_script_majority"
+
+    # Romanized Indic detection — catches "Naan ippo busy" style text
+    # that has no Unicode Indic characters at all.
+    if text:
+        roman = detect_romanized_indic(text)
+        if roman["language"] in _INDIC_LANG_CODES and roman["markers_hit"] >= _ROMANIZED_MIN_HITS:
+            return roman["language"], "romanized_indic"
 
     if hint:
         return hint, "user_hint"

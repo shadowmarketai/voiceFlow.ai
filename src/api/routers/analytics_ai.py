@@ -151,15 +151,16 @@ async def conversion_funnel(
         return {"days": days, "funnel": []}
 
 
-@router.get("/coaching-tips")
-async def coaching_tips(
+@router.get("/performance-insights")
+async def performance_insights(
     days: int = 7,
     user: dict = Depends(get_current_active_user),
 ):
-    """AI coaching tips based on recent call metrics.
+    """Performance insights based on recent call metrics.
 
-    Rules-based for now — each tip fires when a metric crosses a
-    threshold. A future version will use LLM-generated advice.
+    Rules-based threshold checks — NOT LLM-generated. Each insight
+    fires when a metric crosses a known threshold. Honest labelling:
+    this is deterministic logic, not AI inference.
     """
     since = datetime.utcnow() - timedelta(days=days)
     tips: list[dict[str, Any]] = []
@@ -235,4 +236,4 @@ async def coaching_tips(
             "tip": "All metrics look healthy! Keep monitoring the Quality Dashboard for trends.",
         })
 
-    return {"days": days, "tips": tips}
+    return {"days": days, "method": "rules_based", "tips": tips}
