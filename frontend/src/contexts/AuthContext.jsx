@@ -63,6 +63,9 @@ export function AuthProvider({ children }) {
     }
 
     localStorage.setItem('swetha_token', token)
+    if (data.refresh_token) {
+      localStorage.setItem('swetha_refresh_token', data.refresh_token)
+    }
 
     try {
       const profile = await authAPI.getProfile()
@@ -96,6 +99,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('swetha_token')
+    localStorage.removeItem('swetha_refresh_token')
     localStorage.removeItem('swetha_user')
     setUser(null)
   }

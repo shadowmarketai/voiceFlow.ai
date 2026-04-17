@@ -19,19 +19,61 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle response errors
+// Handle response errors — try token refresh on 401 before logging out
+let _isRefreshing = false;
+let _refreshQueue = [];
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    // Don't redirect on 401 during login/register calls
+  async (error) => {
     const url = error.config?.url || '';
-    const isAuthCall = url.includes('/auth/login') || url.includes('/auth/register');
+    const isAuthCall = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh');
 
-    if (error.response?.status === 401 && !isAuthCall) {
-      localStorage.removeItem('swetha_token');
-      localStorage.removeItem('swetha_user');
-      window.location.href = '/login';
+    if (error.response?.status === 401 && !isAuthCall && !error.config._retried) {
+      const refreshToken = localStorage.getItem('swetha_refresh_token');
+
+      if (!refreshToken) {
+        localStorage.removeItem('swetha_token');
+        localStorage.removeItem('swetha_user');
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+
+      // Queue concurrent requests while refresh is in-flight
+      if (_isRefreshing) {
+        return new Promise((resolve, reject) => {
+          _refreshQueue.push({ resolve, reject });
+        }).then(token => {
+          error.config.headers.Authorization = `Bearer ${token}`;
+          return api(error.config);
+        });
+      }
+
+      _isRefreshing = true;
+      error.config._retried = true;
+
+      try {
+        const res = await api.post('/api/v1/auth/refresh', { refresh_token: refreshToken });
+        const { access_token, refresh_token: newRefresh } = res.data;
+        localStorage.setItem('swetha_token', access_token);
+        if (newRefresh) localStorage.setItem('swetha_refresh_token', newRefresh);
+        _refreshQueue.forEach(p => p.resolve(access_token));
+        _refreshQueue = [];
+        error.config.headers.Authorization = `Bearer ${access_token}`;
+        return api(error.config);
+      } catch {
+        localStorage.removeItem('swetha_token');
+        localStorage.removeItem('swetha_refresh_token');
+        localStorage.removeItem('swetha_user');
+        _refreshQueue.forEach(p => p.reject(error));
+        _refreshQueue = [];
+        window.location.href = '/login';
+        return Promise.reject(error);
+      } finally {
+        _isRefreshing = false;
+      }
     }
+
     return Promise.reject(error);
   }
 );
@@ -820,6 +862,7 @@ export const qualityAPI = {
   submitCsat: (data) => api.post('/api/v1/quality/csat', data),
   operational: () => api.get('/api/v1/quality/operational'),
   latency: (hours = 168) => api.get('/api/v1/quality/latency', { params: { hours } }),
+  runBenchmark: (language = '') => api.post('/api/v1/quality/run-benchmark', null, { params: language ? { language } : {}, timeout: 120000 }),
 };
 
 export default api;

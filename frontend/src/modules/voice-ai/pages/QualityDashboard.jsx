@@ -11,7 +11,7 @@ import { motion } from 'framer-motion'
 import {
   Activity, Gauge, CheckCircle2, AlertTriangle, XCircle, TrendingUp,
   Zap, Mic2, Brain, Volume2, RefreshCw, Loader2, Clock, Trophy,
-  Smile, Star, Users, PhoneCall, Timer,
+  Smile, Star, Users, PhoneCall, Timer, Play,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -90,6 +90,24 @@ export default function QualityDashboard() {
   const [ops, setOps] = useState(null)
   const [latency, setLatency] = useState(null)
   const [err, setErr] = useState(null)
+  const [benchmarkRunning, setBenchmarkRunning] = useState(false)
+  const [benchmarkMsg, setBenchmarkMsg] = useState(null)
+
+  const runBenchmark = async () => {
+    setBenchmarkRunning(true)
+    setBenchmarkMsg(null)
+    try {
+      const res = await qualityAPI.runBenchmark()
+      const wer = res.data?.wer_by_language || {}
+      const parts = Object.entries(wer).map(([l, v]) => `${l.toUpperCase()} ${v}%`).join(' · ')
+      setBenchmarkMsg({ type: 'ok', text: `Done — WER: ${parts || '—'}` })
+      await load()
+    } catch (e) {
+      setBenchmarkMsg({ type: 'err', text: e.response?.data?.detail || 'Benchmark failed' })
+    } finally {
+      setBenchmarkRunning(false)
+    }
+  }
 
   // Drill-down filters (aggregate view when 'all')
   const [sttFilter, setSttFilter] = useState('all')
@@ -169,18 +187,35 @@ export default function QualityDashboard() {
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Quality & Testing Dashboard</h1>
           <p className="text-gray-500 mt-1">Live latency, uptime, accuracy, and competitor benchmarks</p>
         </div>
-        <button
-          onClick={load}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-sm font-medium text-gray-700 disabled:opacity-50"
-        >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={runBenchmark}
+            disabled={benchmarkRunning}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 transition-all text-sm font-medium text-white disabled:opacity-50"
+          >
+            {benchmarkRunning
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Play className="w-4 h-4" />}
+            {benchmarkRunning ? 'Running…' : 'Run Live Benchmark'}
+          </button>
+          <button
+            onClick={load}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50 transition-all text-sm font-medium text-gray-700 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {err && (
         <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">{err}</div>
+      )}
+      {benchmarkMsg && (
+        <div className={`p-3 rounded-xl border text-sm font-medium ${benchmarkMsg.type === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+          {benchmarkMsg.type === 'ok' ? '✓ Benchmark complete — ' : '✗ '}{benchmarkMsg.text}
+        </div>
       )}
 
       {/* Drill-down filters — narrows the dashboard to a specific provider */}
