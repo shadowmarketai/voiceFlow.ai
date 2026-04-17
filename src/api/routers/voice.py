@@ -915,3 +915,79 @@ async def stt_diarize(
         return await _deepgram_stt(audio, api_key, language, diarize=True)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Diarization failed: {exc}")
+
+
+# ── Corpus & Training Stats ───────────────────────────────────────────────────
+
+@router.get("/corpus/stats")
+async def get_corpus_stats(
+    language: str = Query(default="ta", description="Language code (ta, hi, en, …)"),
+    _: bool = Depends(require_permission("voice:read")),
+):
+    """
+    Return corpus collection stats for the self-training flywheel.
+
+    Shows total training pairs, estimated hours, and fine-tune readiness
+    per language. Used by the Quality Dashboard and the MoshiFineTuneScheduler.
+    """
+    import os
+    bucket   = os.getenv("TRAINING_S3_BUCKET", "voiceflow-training")
+    endpoint = os.getenv("CORPUS_MINIO_ENDPOINT", "")
+    if not endpoint:
+        return {
+            "language": language,
+            "total_pairs": 0,
+            "total_hours": 0.0,
+            "new_pairs_since_last_finetune": 0,
+            "new_hours_since_last_finetune": 0.0,
+            "min_hours_to_trigger": float(os.getenv("FINETUNE_MIN_NEW_HOURS", "10")),
+            "ready_to_finetune": False,
+            "note": "MinIO not configured (CORPUS_MINIO_ENDPOINT not set)",
+        }
+
+    try:
+        import aioboto3
+        from voice_engine.fine_tune_scheduler import CorpusStats
+        session = aioboto3.Session()
+        stats   = CorpusStats(session)
+        m       = await stats.measure(language)
+        min_h   = float(os.getenv("FINETUNE_MIN_NEW_HOURS", "10"))
+        return {
+            "language":                    m.language,
+            "total_pairs":                 m.total_pairs,
+            "total_hours":                 round(m.total_hours, 2),
+            "new_pairs_since_last_finetune": m.new_pairs_since_last,
+            "new_hours_since_last_finetune": round(m.new_hours_since_last, 2),
+            "min_hours_to_trigger":        min_h,
+            "ready_to_finetune":           m.new_hours_since_last >= min_h,
+            "bucket":                      bucket,
+        }
+    except ImportError:
+        return {"error": "aioboto3 not installed", "language": language}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Corpus stats error: {exc}")
+
+
+@router.get("/pipeline/status")
+async def get_pipeline_status(
+    _: bool = Depends(require_permission("voice:read")),
+):
+    """
+    Return current S2S pipeline track availability.
+
+    Used by the Quality Dashboard to show which tracks are live.
+    """
+    try:
+        from voice_engine.pipeline_router import get_router
+        router_instance = get_router()
+        return {
+            "tracks": router_instance.availability_snapshot(),
+            "description": {
+                "parallel":   "Track A — always on (Deepgram/Sarvam → Groq → Sarvam/ElevenLabs)",
+                "gemini_s2s": "Track B — Gemini Live S2S (English enterprise, ~250ms)",
+                "moshi":      "Track C — Moshi self-hosted S2S (Tamil premium, ~200ms)",
+                "sarvam_s2s": "Track D — Sarvam S2S stub (flip flag when API launches)",
+            },
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

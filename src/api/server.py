@@ -252,11 +252,53 @@ def _register_lifecycle(application: FastAPI) -> None:
         except Exception as exc:
             logger.warning("EmbeddingStore init failed: %s", exc)
 
+        # S2S pipeline health check worker (pings Gemini/Moshi/Sarvam every 30s)
+        try:
+            from voice_engine.pipeline_router import HealthCheckWorker
+            health_worker = HealthCheckWorker(interval_s=30)
+            asyncio.get_event_loop().create_task(health_worker.run())
+            application.state.s2s_health_worker = health_worker
+            logger.info("S2S HealthCheckWorker started (30s interval)")
+        except Exception as exc:
+            logger.warning("S2S health worker not started: %s", exc)
+
+        # Moshi fine-tune scheduler (weekly corpus check → E2E GPU job trigger)
+        # Only activates when aioboto3 is installed and MinIO is configured.
+        try:
+            if os.environ.get("CORPUS_MINIO_ENDPOINT"):
+                import aioboto3
+                from voice_engine.fine_tune_scheduler import MoshiFineTuneScheduler
+                s3_session = aioboto3.Session()
+                ft_scheduler = MoshiFineTuneScheduler(
+                    s3_client=s3_session,
+                    languages=["ta", "hi"],
+                )
+                asyncio.get_event_loop().create_task(ft_scheduler.run())
+                application.state.finetune_scheduler = ft_scheduler
+                logger.info("MoshiFineTuneScheduler started (weekly corpus check)")
+            else:
+                logger.info("Fine-tune scheduler skipped (CORPUS_MINIO_ENDPOINT not set)")
+        except ImportError:
+            logger.info("Fine-tune scheduler skipped (aioboto3 not installed)")
+        except Exception as exc:
+            logger.warning("Fine-tune scheduler not started: %s", exc)
+
         logger.info("%s ready!", settings.APP_NAME)
 
     @application.on_event("shutdown")
     async def shutdown_event():
         logger.info("Shutting down %s...", settings.APP_NAME)
+        # Stop background workers gracefully
+        if hasattr(application.state, "s2s_health_worker"):
+            try:
+                application.state.s2s_health_worker.stop()
+            except Exception:
+                pass
+        if hasattr(application.state, "finetune_scheduler"):
+            try:
+                application.state.finetune_scheduler.stop()
+            except Exception:
+                pass
 
 
 def _include_routers(application: FastAPI) -> None:
