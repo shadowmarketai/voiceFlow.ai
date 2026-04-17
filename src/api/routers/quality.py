@@ -268,16 +268,34 @@ async def operational_metrics():
 
 @router.get("/competitors")
 async def competitor_benchmark():
-    """Compare voiceFlow.ai vs top competitors."""
+    """Compare voiceFlow.ai vs top competitors.
+
+    VoiceFlow AI scores are pulled from the latest benchmark run so the
+    dashboard always reflects real measured numbers, not hardcoded claims.
+    Competitor numbers are manually researched baselines.
+    """
+    from api.services.benchmark_runner import get_latest
+
+    latest = get_latest()
+    wer = latest.get("wer_by_language", {}) if latest else {}
+    lat = latest.get("roundtrip_latency", {}) if latest else {}
+    updated_at = latest.get("run_at", "2026-04-14")[:10] if latest else "2026-04-14"
+
+    # Live numbers when available, else last known baseline
+    vf_hindi_wer  = wer.get("hi", 7.8)
+    vf_tamil_wer  = wer.get("ta", 9.1)
+    vf_e2e_p95    = lat.get("p95_ms", 1387)
+
     return {
-        "updated_at": "2026-04-14",
+        "updated_at": updated_at,
+        "source": "live_benchmark" if latest else "baseline",
         "metrics": [
             {
                 "metric": "E2E Latency (p95)",
                 "unit": "ms",
                 "lower_is_better": True,
                 "scores": {
-                    "VoiceFlow AI": 1387,
+                    "VoiceFlow AI": vf_e2e_p95,
                     "Vapi": 1450,
                     "Retell": 1520,
                     "Bland AI": 1680,
@@ -289,7 +307,7 @@ async def competitor_benchmark():
                 "unit": "%",
                 "lower_is_better": True,
                 "scores": {
-                    "VoiceFlow AI": 7.8,
+                    "VoiceFlow AI": vf_hindi_wer,
                     "Vapi": 11.2,
                     "Retell": 12.5,
                     "Bland AI": 14.0,
@@ -301,7 +319,7 @@ async def competitor_benchmark():
                 "unit": "%",
                 "lower_is_better": True,
                 "scores": {
-                    "VoiceFlow AI": 9.1,
+                    "VoiceFlow AI": vf_tamil_wer,
                     "Vapi": 18.5,
                     "Retell": 20.1,
                     "Bland AI": 22.3,
