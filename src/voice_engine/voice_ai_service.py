@@ -824,6 +824,24 @@ class VoiceAIService:
         except Exception:
             pass
 
+        # Corpus collection — fire-and-forget, never blocks the response.
+        # Only runs if user has granted DPDP corpus_collection consent.
+        try:
+            from voice_engine.corpus_collector import collect as _corpus_collect
+            asyncio.create_task(
+                _corpus_collect(
+                    user_audio_bytes=getattr(request, "audio_bytes", b"") or b"",
+                    agent_text=ai_text,
+                    language=chosen_lang or "en",
+                    stt_result=analysis or {},
+                    user_id=getattr(request, "user_id", None),
+                    tenant_id=getattr(request, "tenant_id", None),
+                    domain=getattr(request, "domain", "general") or "general",
+                )
+            )
+        except Exception:
+            pass
+
         return VoiceTurnResponse(
             text=ai_text,
             audio_base64=tts_result["audio_base64"],

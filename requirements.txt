@@ -92,6 +92,9 @@ apscheduler>=3.10
 # Async File Handling
 aiofiles>=23.2.0
 
+# Object storage (corpus collection + voice-clone L3)
+aioboto3>=12.3.0
+
 # Testing
 pytest>=7.4.0
 pytest-asyncio>=0.23.0

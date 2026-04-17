@@ -71,6 +71,9 @@ apscheduler>=3.10
 # Async File Handling
 aiofiles>=23.2.0
 
+# Object storage (corpus collection + voice-clone L3)
+aioboto3>=12.3.0
+
 # Audio Processing (lightweight)
 librosa==0.10.1
 soundfile==0.12.1
