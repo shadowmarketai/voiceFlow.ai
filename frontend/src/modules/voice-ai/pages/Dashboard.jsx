@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
 import {
   MessageSquare, Bot, Clock, Smile, TrendingUp, TrendingDown,
@@ -297,19 +297,24 @@ const STATUS_CFG = {
   failed: { bg: '#ef444418', color: P.error, label: 'Failed' },
 };
 
-function LiveRow({ call, index }) {
+function LiveRow({ call, index, onRowClick }) {
   const [elapsed, setElapsed] = useState(call.duration);
   const s = STATUS_CFG[call.status] || STATUS_CFG.completed;
   useEffect(() => { if (call.status !== 'active') return; const i = setInterval(() => setElapsed(e => e + 1), 1000); return () => clearInterval(i); }, [call.status]);
   const fmt = (sec) => `${Math.floor(sec/60)}:${String(sec%60).padStart(2,'0')}`;
   return (
-    <motion.div initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.06, duration: 0.35 }} className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/80 transition-colors">
+    <motion.div
+      initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.06, duration: 0.35 }}
+      onClick={onRowClick}
+      className="flex items-center gap-4 px-5 py-3.5 hover:bg-indigo-50/50 cursor-pointer transition-colors group"
+    >
       <div className="relative flex-shrink-0">
         <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>{call.caller.slice(-4,-2)}</div>
         {call.status === 'active' && <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-white animate-pulse" />}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold truncate" style={{ color: P.text }}>{call.caller}</p>
+        <p className="text-sm font-semibold truncate group-hover:text-indigo-600 transition-colors" style={{ color: P.text }}>{call.caller}</p>
         <p className="text-xs" style={{ color: P.textMut }}>{call.agent}</p>
       </div>
       <span className="text-sm font-mono w-14 text-right" style={{ color: P.textSec }}>{fmt(elapsed)}</span>
@@ -335,6 +340,7 @@ function Stars({ rating }) {
 /* ─── Main Dashboard ─────────────────────────────────────────── */
 
 export default function VoiceAIDashboard() {
+  const navigate = useNavigate();
   const [liveCalls, setLiveCalls] = useState(LIVE_CALLS);
 
   useEffect(() => {
@@ -399,7 +405,7 @@ export default function VoiceAIDashboard() {
               </span>
             </div>
             <div className="max-h-[380px] overflow-y-auto divide-y" style={{ borderColor: P.border }}>
-              {liveCalls.map((call, i) => <LiveRow key={call.id} call={call} index={i} />)}
+              {liveCalls.map((call, i) => <LiveRow key={call.id} call={call} index={i} onRowClick={() => navigate('/voice/live-calls')} />)}
             </div>
           </motion.div>
 
@@ -576,29 +582,6 @@ export default function VoiceAIDashboard() {
           </Card>
         </motion.div>
 
-        {/* 6. Quick Actions */}
-        <motion.div variants={stagger} initial="hidden" animate="show">
-          <motion.h3 variants={fadeUp} className="text-sm font-bold mb-4" style={{ color: P.text }}>Quick Actions</motion.h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {QUICK_ACTIONS.map(action => {
-              const Icon = action.icon;
-              return (
-                <motion.div key={action.label} variants={fadeUp}>
-                  <Link to={action.path} className="group flex items-start gap-4 p-5 rounded-2xl bg-white transition-all duration-300 hover:shadow-[0_16px_40px_-8px_rgba(99,102,241,0.15)]" style={{ border: `1px solid ${P.border}` }}>
-                    <div className="p-3 rounded-xl flex-shrink-0 group-hover:scale-110 transition-transform duration-300" style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
-                      <Icon className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold group-hover:text-indigo-600 transition-colors" style={{ color: P.text }}>{action.label}</p>
-                      <p className="text-xs mt-0.5" style={{ color: P.textMut }}>{action.desc}</p>
-                    </div>
-                    <ArrowRight className="w-4 h-4 mt-1 flex-shrink-0 group-hover:translate-x-1 transition-transform duration-300" style={{ color: P.textMut }} />
-                  </Link>
-                </motion.div>
-              );
-            })}
-          </div>
-        </motion.div>
 
       </div>
     </div>

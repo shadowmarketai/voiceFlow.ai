@@ -482,8 +482,6 @@ export default function AgentBuilder() {
     { id: 'voice', label: 'Voice & AI', icon: AudioLines },
     { id: 'behavior', label: 'Behavior', icon: Target },
     { id: 'tools', label: 'Tools', icon: Wrench },
-    { id: 'integrations', label: 'Integrations', icon: Link2 },
-    { id: 'compliance', label: 'Compliance & Privacy', icon: Shield },
   ];
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -1061,8 +1059,8 @@ export default function AgentBuilder() {
         </div>
       )}
 
-      {/* ═══ INTEGRATIONS TAB ═══ */}
-      {activeTab === 'integrations' && (
+      {/* ═══ INTEGRATIONS TAB ═══ (removed) */}
+      {activeTab === 'integrations_disabled' && (
         <div className="space-y-4">
           {/* Scope note */}
           <div className="flex items-center gap-2 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
@@ -1168,8 +1166,8 @@ export default function AgentBuilder() {
         </div>
       )}
 
-      {/* ═══ COMPLIANCE & PRIVACY TAB ═══ */}
-      {activeTab === 'compliance' && (
+      {/* ═══ COMPLIANCE & PRIVACY TAB ═══ (removed) */}
+      {activeTab === 'compliance_disabled' && (
         <div className="space-y-4">
           {/* Recording controls */}
           <Section title="Recording" icon={AudioLines}>
