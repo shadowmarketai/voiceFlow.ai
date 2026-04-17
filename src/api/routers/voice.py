@@ -968,6 +968,71 @@ async def get_corpus_stats(
         raise HTTPException(status_code=500, detail=f"Corpus stats error: {exc}")
 
 
+@router.post("/corpus/trigger-finetune")
+async def trigger_finetune(
+    request: Request,
+    _: bool = Depends(require_permission("voice:admin")),
+):
+    """
+    Manually trigger a Moshi fine-tune job for a language.
+
+    Called by n8n/07_moshi_weekly_finetune.json when corpus has enough new data.
+    Also callable from the admin dashboard for on-demand fine-tuning.
+
+    Body: {"language": "ta", "new_hours": 12.5, "type": "incremental"}
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    language   = body.get("language", "ta")
+    new_hours  = float(body.get("new_hours", 0))
+    job_type   = body.get("type", "incremental")
+
+    gpu_url = os.getenv("E2E_GPU_API_URL", "")
+    if not gpu_url:
+        return {
+            "status":   "skipped",
+            "language": language,
+            "reason":   "E2E_GPU_API_URL not configured — set it to enable GPU fine-tuning",
+        }
+
+    try:
+        from voice_engine.fine_tune_scheduler import GpuJobClient, CorpusStats
+        import aioboto3
+
+        # Record trigger timestamp in MinIO
+        session = aioboto3.Session()
+        stats   = CorpusStats(session)
+        await stats.record_trigger(language)
+
+        # Submit job to E2E GPU cluster
+        client = GpuJobClient()
+        job_id = await client.submit(language=language, corpus_hours=new_hours)
+
+        logger.info(
+            "[trigger-finetune] lang=%s hours=%.1f type=%s job_id=%s",
+            language, new_hours, job_type, job_id,
+        )
+        return {
+            "status":   "submitted",
+            "language": language,
+            "new_hours": new_hours,
+            "type":     job_type,
+            "job_id":   job_id,
+        }
+    except ImportError as exc:
+        return {
+            "status":   "error",
+            "language": language,
+            "reason":   f"Missing dependency: {exc}",
+        }
+    except Exception as exc:
+        logger.exception("[trigger-finetune] failed for lang=%s: %s", language, exc)
+        raise HTTPException(status_code=500, detail=f"Fine-tune trigger failed: {exc}")
+
+
 @router.get("/pipeline/status")
 async def get_pipeline_status(
     _: bool = Depends(require_permission("voice:read")),
