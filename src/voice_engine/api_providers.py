@@ -229,11 +229,18 @@ async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str])
         tmp_path = f.name
 
     try:
+        # Sarvam new keys (sk_...) use Authorization: Bearer.
+        # Legacy keys use API-Subscription-Key. Support both.
+        auth_headers = (
+            {"Authorization": f"Bearer {api_key}"}
+            if api_key.startswith("sk_")
+            else {"API-Subscription-Key": api_key}
+        )
         async with httpx.AsyncClient(timeout=30) as client:
             with open(tmp_path, "rb") as audio_file:
                 resp = await client.post(
                     "https://api.sarvam.ai/speech-to-text",
-                    headers={"API-Subscription-Key": api_key},
+                    headers=auth_headers,
                     files={"file": ("audio.wav", audio_file, "audio/wav")},
                     data={"language_code": sarvam_lang, "model": "saarika:v2"},
                 )
@@ -557,10 +564,17 @@ async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> D
                  "mr-IN": "kavya", "gu-IN": "ritu", "en-IN": "vidya"}
     speaker = voice_map.get(sarvam_lang, "anushka")
 
+    # Sarvam new keys (sk_...) use Authorization: Bearer.
+    # Legacy keys use API-Subscription-Key. Support both.
+    tts_auth = (
+        {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        if api_key.startswith("sk_")
+        else {"API-Subscription-Key": api_key, "Content-Type": "application/json"}
+    )
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             "https://api.sarvam.ai/text-to-speech",
-            headers={"API-Subscription-Key": api_key, "Content-Type": "application/json"},
+            headers=tts_auth,
             json={"inputs": [text], "target_language_code": sarvam_lang,
                   "speaker": speaker, "model": "bulbul:v2",
                   "pace": speed, "loudness": 1.0, "enable_preprocessing": True},

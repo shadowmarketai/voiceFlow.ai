@@ -31,7 +31,7 @@ PROBES = {
     "stt": [
         ("Deepgram", "https://api.deepgram.com/v1/projects", "DEEPGRAM_API_KEY", "Token"),
         ("Groq Whisper", "https://api.groq.com/openai/v1/models", "GROQ_API_KEY", "Bearer"),
-        ("Sarvam", "https://api.sarvam.ai/", "SARVAM_API_KEY", None),
+        ("Sarvam", "https://api.sarvam.ai/speech-to-text", "SARVAM_API_KEY", "Bearer"),
         ("OpenAI Whisper", "https://api.openai.com/v1/models", "OPENAI_API_KEY", "Bearer"),
     ],
     "llm": [
@@ -43,7 +43,7 @@ PROBES = {
     ],
     "tts": [
         ("ElevenLabs", "https://api.elevenlabs.io/v1/voices", "ELEVENLABS_API_KEY", "xi-api-key"),
-        ("Sarvam", "https://api.sarvam.ai/", "SARVAM_API_KEY", None),
+        ("Sarvam", "https://api.sarvam.ai/speech-to-text", "SARVAM_API_KEY", "Bearer"),
         ("OpenAI TTS", "https://api.openai.com/v1/models", "OPENAI_API_KEY", "Bearer"),
         ("Deepgram Aura", "https://api.deepgram.com/v1/projects", "DEEPGRAM_API_KEY", "Token"),
     ],
