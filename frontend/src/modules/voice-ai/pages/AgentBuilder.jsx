@@ -187,6 +187,40 @@ const TEMPLATES = [
   { id: 'payment', name: 'Payment Reminder', icon: '💳', prompt: 'Inform about pending payments, offer payment links, note responses. Professional, never threatening.' },
   { id: 'realestate', name: 'Real Estate', icon: '🏠', prompt: 'You are a real estate lead qualifier. Ask about property preferences, budget, timeline. Offer site visits.' },
   { id: 'onboarding', name: 'Onboarding Guide', icon: '🚀', prompt: 'Walk new customers through setup steps, answer questions, ensure comfort with the product.' },
+  // ── Tamil templates — Sarvam STT + Groq LLM + Sarvam TTS (stable stack) ──
+  {
+    id: 'realestate_ta', name: 'ரியல் எஸ்டேட் (Tamil)', icon: '🏠', language: 'Tamil', voice: 'priya',
+    firstMessage: 'வணக்கம்! நான் உங்கள் ரியல் எஸ்டேட் உதவியாளர். சொத்து வாங்க, விற்க அல்லது வாடகைக்கு எடுக்க நான் உதவுவேன். எப்படி உதவலாம்?',
+    prompt: `நீங்கள் ஒரு தொழில்முறை ரியல் எஸ்டேட் உதவியாளர். எப்போதும் தமிழிலேயே பேசுங்கள்.
+
+உங்கள் பணிகள்:
+- வாடிக்கையாளரின் சொத்து தேவைகளை புரிந்துகொள்ளுங்கள்
+- சொத்து பார்வை appointment போடுங்கள்
+- Lead தகவல்களை சேகரியுங்கள்: பெயர், தொலைபேசி, சொத்து வகை, பட்ஜெட்
+
+பதில்கள் 50 வார்த்தைகளுக்குள் இருக்கட்டும். Human agent வேண்டும் என்றால் உடனே transfer செய்யுங்கள்.`,
+  },
+  {
+    id: 'support_ta', name: 'வாடிக்கையாளர் சேவை (Tamil)', icon: '🎧', language: 'Tamil', voice: 'priya',
+    firstMessage: 'வணக்கம்! நான் உங்கள் வாடிக்கையாளர் சேவை பிரதிநிதி. இன்று உங்களுக்கு எப்படி உதவலாம்?',
+    prompt: `நீங்கள் ஒரு நட்பான வாடிக்கையாளர் சேவை பிரதிநிதி. எப்போதும் தமிழிலேயே பேசுங்கள்.
+வாடிக்கையாளர் கேள்விகளுக்கு தீர்வு கொடுங்கள். புகார்களை பதிவு செய்யுங்கள்.
+பதில்கள் 40 வார்த்தைகளுக்குள் இருக்கட்டும்.`,
+  },
+  {
+    id: 'appointment_ta', name: 'அப்பாயின்மென்ட் (Tamil)', icon: '📅', language: 'Tamil', voice: 'priya',
+    firstMessage: 'வணக்கம்! Appointment பதிவு செய்ய நான் உதவுகிறேன். புதிய பதிவா, இருக்கும் appointment மாற்றமா?',
+    prompt: `நீங்கள் ஒரு appointment பதிவு உதவியாளர். எப்போதும் தமிழிலேயே பேசுங்கள்.
+புதிய appointment: பெயர், தொலைபேசி, தேதி, நேரம் கேளுங்கள்.
+மாற்றம்/ரத்து: பதிவு எண் கேளுங்கள்.`,
+  },
+  {
+    id: 'lead_qual_ta', name: 'லீட் தகுதி (Tamil)', icon: '🎯', language: 'Tamil', voice: 'priya',
+    firstMessage: 'வணக்கம்! நான் உங்களுக்கு சரியான தீர்வு கண்டுபிடிக்க சில கேள்விகள் கேட்கிறேன். பட்ஜெட், தேவை, காலக்கெடு பற்றி சொல்லுங்கள்.',
+    prompt: `நீங்கள் ஒரு lead qualification உதவியாளர். எப்போதும் தமிழிலேயே பேசுங்கள்.
+பட்ஜெட், தேவை, காலக்கெடு, முடிவெடுக்கும் நபர் பற்றி கேளுங்கள்.
+தகுதியான lead ஆனால் sales team க்கு transfer செய்யுங்கள்.`,
+  },
 ];
 
 /* ─── Main Component ──────────────────────────────────────────── */
@@ -429,7 +463,14 @@ export default function AgentBuilder() {
     }
   };
 
-  const applyTemplate = (t) => { setSelectedTemplate(t.id); setSystemPrompt(t.prompt); toast.success(`"${t.name}" template applied`); };
+  const applyTemplate = (t) => {
+    setSelectedTemplate(t.id);
+    setSystemPrompt(t.prompt);
+    if (t.language) setAgentLang(t.language);
+    if (t.firstMessage) setFirstMessage(t.firstMessage);
+    if (t.voice) setSelectedVoice(t.voice);
+    toast.success(`"${t.name}" template applied`);
+  };
 
   const toggleCoreTool = (id) => setCoreTools(prev => prev.map(t => t.id === id ? { ...t, on: !t.on } : t));
   const toggleFeatureTool = (id) => setFeatureTools(prev => prev.map(t => t.id === id ? { ...t, on: !t.on } : t));
