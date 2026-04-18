@@ -8,8 +8,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import {
   BookOpen, Plus, Search, FileText, HelpCircle, ShoppingBag, ScrollText,
-  Trash2, Upload, Loader2, X, Bot, CloudUpload, CheckCircle2, AlertCircle,
-  ChevronDown, Filter,
+  Trash2, Upload, Loader2, X, Bot, UploadCloud, CheckCircle2, AlertCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
 import { voiceAgentAPI, agentsAPI } from '../../services/api';
@@ -112,7 +112,7 @@ function DropZone({ onFiles, disabled }) {
       `}
     >
       <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center">
-        <CloudUpload className="w-6 h-6 text-indigo-500" />
+        <UploadCloud className="w-6 h-6 text-indigo-500" />
       </div>
       <div className="text-center">
         <p className="text-sm font-medium text-slate-700">
