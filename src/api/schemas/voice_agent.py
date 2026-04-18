@@ -45,7 +45,9 @@ class KnowledgeAddRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=500)
     content: str = Field(..., min_length=1)
     doc_type: str = Field("document", description="document, faq, product_catalog, script")
+    scope: str = Field("agent", description="global | campaign | agent")
     agent_id: Optional[str] = None
+    campaign_id: Optional[str] = None
     tenant_id: str = Field("default")
     question: Optional[str] = None
     answer: Optional[str] = None
@@ -53,7 +55,9 @@ class KnowledgeAddRequest(BaseModel):
 
 class KnowledgeBulkRequest(BaseModel):
     tenant_id: str = Field("default")
+    scope: str = Field("agent")
     agent_id: Optional[str] = None
+    campaign_id: Optional[str] = None
     items: list[dict] = Field(..., min_length=1)
 
 
@@ -71,6 +75,9 @@ class KnowledgeResponse(BaseModel):
     id: int
     title: str
     doc_type: str
+    scope: str = "agent"
+    agent_id: Optional[str] = None
+    campaign_id: Optional[str] = None
     content: str
     question: Optional[str] = None
     answer: Optional[str] = None

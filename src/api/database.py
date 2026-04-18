@@ -266,6 +266,29 @@ def init_models():
     except Exception as e:
         logger.warning(f"Quality metrics schema migration skipped: {e}")
 
+    try:
+        _migrate_knowledge_schema(engine)
+    except Exception as e:
+        logger.warning(f"Knowledge schema migration skipped: {e}")
+
+
+def _migrate_knowledge_schema(engine):
+    """Add campaign_id + scope columns to knowledge_documents if missing."""
+    from sqlalchemy import inspect as sa_inspect, text
+
+    inspector = sa_inspect(engine)
+    if "knowledge_documents" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("knowledge_documents")}
+    with engine.begin() as conn:
+        if "campaign_id" not in existing:
+            conn.execute(text("ALTER TABLE knowledge_documents ADD COLUMN campaign_id VARCHAR(255)"))
+            logger.info("knowledge_documents: added campaign_id column")
+        if "scope" not in existing:
+            conn.execute(text("ALTER TABLE knowledge_documents ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'agent'"))
+            logger.info("knowledge_documents: added scope column")
+
 
 def _migrate_quality_schema(engine):
     """Add W1.4 TTFA + pipeline_mode columns to quality_call_metrics if missing."""

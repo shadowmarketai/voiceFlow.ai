@@ -114,12 +114,19 @@ class KnowledgeDocument(TimestampMixin, Base):
     """
     RAG training data: FAQs, product catalogs, call scripts, documents.
     Embeddings stored via pgvector for semantic search.
+
+    scope values:
+      "global"   — shared across all agents and campaigns for this tenant
+      "campaign" — shared by all agents within a specific campaign
+      "agent"    — private to a single agent
     """
     __tablename__ = "knowledge_documents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     agent_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    campaign_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    scope: Mapped[str] = mapped_column(String(20), default="agent", nullable=False)
 
     # Content
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -143,4 +150,6 @@ class KnowledgeDocument(TimestampMixin, Base):
 
     __table_args__ = (
         Index("ix_knowledge_tenant_agent", "tenant_id", "agent_id"),
+        Index("ix_knowledge_tenant_campaign", "tenant_id", "campaign_id"),
+        Index("ix_knowledge_tenant_scope", "tenant_id", "scope"),
     )

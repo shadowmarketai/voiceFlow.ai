@@ -79,6 +79,9 @@ def _knowledge_to_response(d) -> KnowledgeResponse:
         id=d.id,
         title=d.title,
         doc_type=d.doc_type,
+        scope=getattr(d, "scope", "agent"),
+        agent_id=d.agent_id,
+        campaign_id=getattr(d, "campaign_id", None),
         content=d.content,
         question=d.question,
         answer=d.answer,
@@ -212,7 +215,9 @@ async def add_knowledge_endpoint(
         title=body.title,
         content=body.content,
         doc_type=body.doc_type,
+        scope=body.scope,
         agent_id=body.agent_id,
+        campaign_id=body.campaign_id,
         question=body.question,
         answer=body.answer,
     )
@@ -231,24 +236,32 @@ async def bulk_add_knowledge_endpoint(
         db,
         tenant_id=tenant_id,
         items=body.items,
+        scope=body.scope,
         agent_id=body.agent_id,
+        campaign_id=body.campaign_id,
     )
     return {"created": count}
 
 
 @router.get("/knowledge", response_model=list[KnowledgeResponse])
 async def list_knowledge_endpoint(
+    scope: Optional[str] = Query(None, description="global | campaign | agent"),
     agent_id: Optional[str] = Query(None),
+    campaign_id: Optional[str] = Query(None),
     doc_type: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(require_permission("voiceAI", "read")),
 ):
-    """List knowledge documents for the calling tenant."""
+    """List knowledge documents for the calling tenant (filterable by scope/agent/campaign)."""
     tenant_id = _tenant_id_for(user)
     docs = await voice_agent_knowledge.list_documents(
-        db, tenant_id, agent_id=agent_id, doc_type=doc_type,
+        db, tenant_id,
+        scope=scope,
+        agent_id=agent_id,
+        campaign_id=campaign_id,
+        doc_type=doc_type,
         limit=limit, offset=offset,
     )
     return [_knowledge_to_response(d) for d in docs]
@@ -287,38 +300,65 @@ async def delete_knowledge_endpoint(
 @router.post("/knowledge/upload", status_code=201)
 async def upload_knowledge_file(
     file: UploadFile = File(...),
+    scope: str = Form("agent"),
     agent_id: Optional[str] = Form(None),
+    campaign_id: Optional[str] = Form(None),
     title: Optional[str] = Form(None),
     doc_type: str = Form("document"),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
-    """Upload a PDF, DOCX, or TXT file and add extracted text to the knowledge base."""
+    """Upload PDF, DOCX, TXT, CSV, or Excel and add extracted text to the knowledge base."""
+    tenant_id = _tenant_id_for(user)
     filename = file.filename or ""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-    if ext not in ("pdf", "docx", "txt"):
-        raise HTTPException(status_code=400, detail="Only PDF, DOCX, and TXT files are supported")
+    if ext not in ("pdf", "docx", "txt", "csv", "xlsx", "xls"):
+        raise HTTPException(status_code=400, detail="Supported formats: PDF, DOCX, TXT, CSV, XLSX, XLS")
 
     raw = await file.read()
     text = ""
 
     if ext == "txt":
         text = raw.decode("utf-8", errors="replace")
+
     elif ext == "pdf":
         try:
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(raw))
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except ImportError:
-            raise HTTPException(status_code=500, detail="pypdf not installed — add pypdf>=3.0.0 to requirements")
+            raise HTTPException(status_code=500, detail="pypdf not installed")
+
     elif ext == "docx":
         try:
             import docx as _docx
             doc = _docx.Document(io.BytesIO(raw))
-            text = "\n".join(para.text for para in doc.paragraphs)
+            text = "\n".join(para.text for para in doc.paragraphs if para.text.strip())
         except ImportError:
-            raise HTTPException(status_code=500, detail="python-docx not installed — add python-docx>=1.0.0 to requirements")
+            raise HTTPException(status_code=500, detail="python-docx not installed")
+
+    elif ext == "csv":
+        import csv
+        decoded = raw.decode("utf-8", errors="replace")
+        reader = csv.reader(decoded.splitlines())
+        rows = [", ".join(r) for r in reader if any(c.strip() for c in r)]
+        text = "\n".join(rows)
+
+    elif ext in ("xlsx", "xls"):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
+            parts = []
+            for sheet in wb.worksheets:
+                parts.append(f"[Sheet: {sheet.title}]")
+                for row in sheet.iter_rows(values_only=True):
+                    cells = [str(c) for c in row if c is not None]
+                    if cells:
+                        parts.append(", ".join(cells))
+            text = "\n".join(parts)
+        except ImportError:
+            raise HTTPException(status_code=500, detail="openpyxl not installed")
 
     text = text.strip()
     if not text:
@@ -327,12 +367,66 @@ async def upload_knowledge_file(
     doc_title = title or filename
     chunks = await voice_agent_knowledge.add_document(
         db,
+        tenant_id=tenant_id,
         title=doc_title,
         content=text,
         doc_type=doc_type,
+        scope=scope,
         agent_id=agent_id,
+        campaign_id=campaign_id,
     )
-    return {"status": "ok", "chunks": len(chunks), "title": doc_title, "agent_id": agent_id}
+    return {"status": "ok", "chunks": len(chunks), "title": doc_title, "scope": scope, "agent_id": agent_id, "campaign_id": campaign_id}
+
+
+@router.post("/knowledge/scrape", status_code=201)
+async def scrape_url_knowledge(
+    url: str = Form(...),
+    scope: str = Form("agent"),
+    agent_id: Optional[str] = Form(None),
+    campaign_id: Optional[str] = Form(None),
+    title: Optional[str] = Form(None),
+    doc_type: str = Form("document"),
+    db: AsyncSession = Depends(get_async_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Scrape a public URL and add the extracted text to the knowledge base."""
+    import aiohttp as _aiohttp
+    tenant_id = _tenant_id_for(user)
+
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        raise HTTPException(status_code=500, detail="beautifulsoup4 not installed")
+
+    try:
+        async with _aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=_aiohttp.ClientTimeout(total=15), headers={"User-Agent": "Mozilla/5.0"}) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail=f"URL returned HTTP {resp.status}")
+                html = await resp.text()
+    except _aiohttp.ClientError as exc:
+        raise HTTPException(status_code=400, detail=f"Could not fetch URL: {exc}")
+
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+    text = " ".join(soup.get_text(separator=" ", strip=True).split())
+
+    if not text:
+        raise HTTPException(status_code=422, detail="Could not extract text from the URL")
+
+    doc_title = title or soup.title.string.strip() if soup.title else url
+    chunks = await voice_agent_knowledge.add_document(
+        db,
+        tenant_id=tenant_id,
+        title=doc_title,
+        content=text,
+        doc_type=doc_type,
+        scope=scope,
+        agent_id=agent_id,
+        campaign_id=campaign_id,
+    )
+    return {"status": "ok", "chunks": len(chunks), "title": doc_title, "scope": scope, "url": url}
 
 
 # ===========================

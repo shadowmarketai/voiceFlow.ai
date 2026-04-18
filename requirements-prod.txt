@@ -74,6 +74,8 @@ aiofiles>=23.2.0
 # Document Parsing (Knowledge Base file uploads)
 pypdf>=3.0.0
 python-docx>=1.0.0
+openpyxl>=3.1.0
+beautifulsoup4>=4.12.0
 
 # Object storage (corpus collection + voice-clone L3)
 aioboto3>=12.3.0

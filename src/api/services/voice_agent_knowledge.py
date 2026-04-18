@@ -117,11 +117,19 @@ async def add_document(
     title: str,
     content: str,
     doc_type: str = "document",
+    scope: str = "agent",
     agent_id: str | None = None,
+    campaign_id: str | None = None,
     question: str | None = None,
     answer: str | None = None,
 ) -> list[KnowledgeDocument]:
-    """Add a document to the knowledge base with auto-chunking and embedding."""
+    """Add a document to the knowledge base with auto-chunking and embedding.
+
+    scope:
+      "global"   — visible to all agents/campaigns for this tenant
+      "campaign" — shared by all agents in campaign_id
+      "agent"    — private to agent_id
+    """
     if doc_type == "faq" and question and answer:
         embed_text = f"Question: {question}\nAnswer: {answer}"
         chunks = [embed_text]
@@ -135,6 +143,8 @@ async def add_document(
         doc = KnowledgeDocument(
             tenant_id=tenant_id,
             agent_id=agent_id,
+            campaign_id=campaign_id,
+            scope=scope,
             title=title,
             doc_type=doc_type,
             content=chunk,
@@ -158,7 +168,9 @@ async def bulk_add_documents(
     *,
     tenant_id: str,
     items: list[dict],
+    scope: str = "agent",
     agent_id: str | None = None,
+    campaign_id: str | None = None,
 ) -> int:
     """Bulk upload documents/FAQs. Returns count of created rows."""
     count = 0
@@ -169,7 +181,9 @@ async def bulk_add_documents(
             title=item.get("title", "Untitled"),
             content=item.get("content", item.get("answer", "")),
             doc_type=item.get("doc_type", "document"),
+            scope=scope,
             agent_id=agent_id,
+            campaign_id=campaign_id,
             question=item.get("question"),
             answer=item.get("answer"),
         )
@@ -180,12 +194,14 @@ async def bulk_add_documents(
 async def list_documents(
     db: AsyncSession,
     tenant_id: str,
+    scope: str | None = None,
     agent_id: str | None = None,
+    campaign_id: str | None = None,
     doc_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[KnowledgeDocument]:
-    """List knowledge documents for a tenant."""
+    """List knowledge documents for a tenant, with optional scope/agent/campaign filters."""
     stmt = (
         select(KnowledgeDocument)
         .where(
@@ -193,8 +209,12 @@ async def list_documents(
             KnowledgeDocument.is_active == True,  # noqa: E712
         )
     )
+    if scope:
+        stmt = stmt.where(KnowledgeDocument.scope == scope)
     if agent_id:
         stmt = stmt.where(KnowledgeDocument.agent_id == agent_id)
+    if campaign_id:
+        stmt = stmt.where(KnowledgeDocument.campaign_id == campaign_id)
     if doc_type:
         stmt = stmt.where(KnowledgeDocument.doc_type == doc_type)
     stmt = stmt.order_by(KnowledgeDocument.created_at.desc()).offset(offset).limit(limit)
@@ -290,27 +310,52 @@ async def get_rag_context(
     tenant_id: str,
     user_text: str,
     agent_id: str | None = None,
-    top_k: int = 3,
+    campaign_id: str | None = None,
+    top_k: int = 5,
 ) -> str:
-    """Retrieve relevant knowledge via pgvector cosine similarity search."""
+    """Retrieve relevant knowledge via pgvector cosine similarity search.
+
+    Merges 3 knowledge scopes in priority order:
+      1. global   — tenant-wide shared knowledge (always included)
+      2. campaign — shared by all agents in the campaign (if campaign_id provided)
+      3. agent    — private to this specific agent (if agent_id provided)
+
+    All matching docs are ranked together by cosine distance; top_k returned.
+    """
     search_text = await translate_to_english(user_text)
     embedding = await generate_embedding(search_text)
     if embedding is None:
         return ""
 
+    from sqlalchemy import or_
+
     try:
+        # Build a combined filter that covers all 3 scopes
+        scope_filters = [
+            KnowledgeDocument.scope == "global",
+        ]
+        if campaign_id:
+            scope_filters.append(
+                (KnowledgeDocument.scope == "campaign") &
+                (KnowledgeDocument.campaign_id == campaign_id)
+            )
+        if agent_id:
+            scope_filters.append(
+                (KnowledgeDocument.scope == "agent") &
+                (KnowledgeDocument.agent_id == agent_id)
+            )
+
         stmt = (
             select(KnowledgeDocument)
             .where(
                 KnowledgeDocument.tenant_id == tenant_id,
                 KnowledgeDocument.is_active == True,  # noqa: E712
                 KnowledgeDocument.embedding_vector.isnot(None),
+                or_(*scope_filters),
             )
             .order_by(KnowledgeDocument.embedding_vector.cosine_distance(embedding))
             .limit(top_k)
         )
-        if agent_id:
-            stmt = stmt.where(KnowledgeDocument.agent_id == agent_id)
 
         result = await db.execute(stmt)
         docs = result.scalars().all()

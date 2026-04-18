@@ -619,14 +619,18 @@ export const voiceAgentAPI = {
   // Knowledge
   addKnowledge: (payload) => api.post('/api/v1/agent/knowledge', payload),
   bulkAddKnowledge: (payload) => api.post('/api/v1/agent/knowledge/bulk', payload),
-  listKnowledge: (tenantId = 'default', docType, agentId) =>
-    api.get('/api/v1/agent/knowledge', { params: { tenant_id: tenantId, doc_type: docType, agent_id: agentId } }),
+  listKnowledge: (params = {}) =>
+    api.get('/api/v1/agent/knowledge', { params }),
   updateKnowledge: (docId, updates) => api.put(`/api/v1/agent/knowledge/${docId}`, updates),
   deleteKnowledge: (docId) => api.delete(`/api/v1/agent/knowledge/${docId}`),
   uploadKnowledge: (formData, onUploadProgress) =>
     api.post('/api/v1/agent/knowledge/upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
+    }),
+  scrapeUrl: (formData) =>
+    api.post('/api/v1/agent/knowledge/scrape', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     }),
 
   // Recordings
