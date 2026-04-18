@@ -41,7 +41,7 @@ const NAV_GROUPS = [
  {
  label: 'Manage',
  items: [
- { path: '/admin/tenants', label: 'Tenants', icon: Building2 },
+ { path: '/admin/tenants', label: 'Agencies', icon: Building2 },
  { path: '/admin/users', label: 'Users', icon: Users },
  { path: '/admin/tickets', label: 'Support Tickets', icon: Ticket },
  ],

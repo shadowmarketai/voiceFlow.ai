@@ -12,10 +12,9 @@ import api, { superAdminAPI } from '../../services/api'
 const COMPANY_TYPES = ['Pvt Ltd', 'LLP', 'OPC', 'Partnership', 'Proprietorship', 'Public Ltd', 'NGO', 'Other']
 const INDUSTRIES = ['Real Estate', 'Healthcare', 'Education', 'Finance / BFSI', 'Retail / E-Commerce', 'Logistics', 'Hospitality', 'IT / SaaS', 'Manufacturing', 'Legal', 'Government', 'Other']
 const FALLBACK_PLANS = [
-  { id: 'starter',    name: 'Starter',    plan_type: 'direct' },
-  { id: 'growth',     name: 'Growth',     plan_type: 'direct' },
-  { id: 'business',   name: 'Business',   plan_type: 'direct' },
-  { id: 'enterprise', name: 'Enterprise', plan_type: 'direct' },
+  { id: 'agency_starter', name: 'Agency Starter', plan_type: 'agency' },
+  { id: 'agency_growth',  name: 'Agency Growth',  plan_type: 'agency' },
+  { id: 'agency_pro',     name: 'Agency Pro',     plan_type: 'agency' },
 ]
 const PAYMENT_TERMS = ['prepaid', 'NET15', 'NET30', 'NET60']
 const ONBOARDING_STATUSES = ['not_started', 'in_progress', 'completed', 'churned']
@@ -134,34 +133,34 @@ export default function TenantsListPage() {
         {/* Page header */}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Tenants</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Agencies</h1>
             <p className="text-sm text-slate-500 mt-1">
-              {loading ? 'Loading tenants…' : `${tenants.length} organization${tenants.length !== 1 ? 's' : ''} on the platform`}
+              {loading ? 'Loading agencies…' : `${tenants.length} agenc${tenants.length !== 1 ? 'ies' : 'y'} on the platform`}
             </p>
           </div>
           <button
             onClick={() => setShowCreate(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl text-sm font-semibold shadow-sm transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 whitespace-nowrap"
-            aria-label="Create new tenant"
+            aria-label="Create new agency"
           >
             <Plus className="w-4 h-4" aria-hidden="true" />
-            New Tenant
+            New Agency
           </button>
         </div>
 
         {/* Search bar */}
         <div className="relative max-w-sm">
-          <label htmlFor="tenant-search" className="sr-only">Search tenants</label>
+          <label htmlFor="tenant-search" className="sr-only">Search agencies</label>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" aria-hidden="true" />
           <input
             id="tenant-search"
             ref={searchRef}
             type="search"
-            placeholder="Search by name, slug, or plan…"
+            placeholder="Search by name, slug, or ID…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full pl-9 pr-4 py-2.5 bg-white ring-1 ring-slate-200/70 hover:ring-slate-300 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 transition-shadow duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-0"
-            aria-label="Search tenants by name, slug, or plan"
+            aria-label="Search agencies by name, slug, or ID"
           />
           {query && (
             <button
@@ -175,7 +174,7 @@ export default function TenantsListPage() {
         </div>
 
         {/* Mobile card list */}
-        <div className="md:hidden space-y-2" role="list" aria-label="Tenants list">
+        <div className="md:hidden space-y-2" role="list" aria-label="Agencies list">
           {loading && (
             Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="bg-white ring-1 ring-slate-200/70 rounded-xl p-4 space-y-3 animate-pulse" aria-hidden="true">
@@ -217,10 +216,10 @@ export default function TenantsListPage() {
 
           {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full text-sm" aria-label="Tenants table" aria-busy={loading}>
+            <table className="w-full text-sm" aria-label="Agencies table" aria-busy={loading}>
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-left">
-                  <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Tenant</th>
+                  <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Agency</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Users</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
@@ -338,12 +337,12 @@ function EmptyState({ hasQuery }) {
         }
       </div>
       <p className="font-semibold text-slate-700 tracking-tight">
-        {hasQuery ? 'No tenants match your search' : 'No tenants yet'}
+        {hasQuery ? 'No agencies match your search' : 'No agencies yet'}
       </p>
       <p className="text-sm text-slate-500 mt-1.5 max-w-xs">
         {hasQuery
           ? 'Try a different name, slug, or plan keyword.'
-          : 'Create your first tenant organization to get started.'}
+          : 'Create your first agency to get started.'}
       </p>
     </div>
   )
@@ -363,7 +362,7 @@ function CreateTenantModal({ onClose, onCreated }) {
   const [planOptions, setPlanOptions] = useState([])
   const [form, setForm] = useState({
     // Basic
-    name: '', slug: '', plan: 'starter', industry: '', max_users: 0,
+    name: '', slug: '', plan: 'agency_starter', industry: '', max_users: 0,
     max_voice_minutes: 1000, onboarding_status: 'not_started',
     // Contact
     owner_name: '', owner_email: '', owner_phone: '',
@@ -383,21 +382,19 @@ function CreateTenantModal({ onClose, onCreated }) {
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
 
-  // Load plan options from API; fall back to hardcoded list on error
+  // Load agency plan options from API; fall back to hardcoded list on error
   useEffect(() => {
     api.get('/api/v1/admin/pricing/plans')
       .then((res) => {
-        const direct = res.data?.direct_plans || []
-        const agency = res.data?.agency_plans || []
-        const all = [...direct, ...agency].filter((p) => p.is_active !== false)
-        if (all.length > 0) {
-          setPlanOptions(all)
+        const agency = (res.data?.agency_plans || []).filter((p) => p.is_active !== false)
+        if (agency.length > 0) {
+          setPlanOptions(agency)
         } else {
-          setPlanOptions(FALLBACK_PLANS)
+          setPlanOptions(FALLBACK_PLANS.filter(p => p.plan_type === 'agency'))
         }
       })
       .catch(() => {
-        setPlanOptions(FALLBACK_PLANS)
+        setPlanOptions(FALLBACK_PLANS.filter(p => p.plan_type === 'agency'))
       })
   }, [])
 
@@ -420,7 +417,7 @@ function CreateTenantModal({ onClose, onCreated }) {
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!form.name.trim()) { setTab('basic'); return toast.error('Tenant name is required') }
+    if (!form.name.trim()) { setTab('basic'); return toast.error('Agency name is required') }
     setSubmitting(true)
     try {
       const payload = {
@@ -436,7 +433,7 @@ function CreateTenantModal({ onClose, onCreated }) {
         pan_number: form.pan_number.toUpperCase() || null,
       }
       await superAdminAPI.createTenant(payload)
-      toast.success(`Tenant "${form.name}" created`)
+      toast.success(`Agency "${form.name}" created`)
       onCreated()
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to create tenant')
@@ -463,7 +460,7 @@ function CreateTenantModal({ onClose, onCreated }) {
             <div className="w-8 h-8 rounded-lg bg-indigo-50 ring-1 ring-indigo-200/60 flex items-center justify-center">
               <Building2 className="w-4 h-4 text-indigo-600" />
             </div>
-            <h2 id="create-tenant-title" className="text-base font-semibold text-slate-900 tracking-tight">New Tenant</h2>
+            <h2 id="create-tenant-title" className="text-base font-semibold text-slate-900 tracking-tight">New Agency</h2>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Close">
             <X className="w-4 h-4" />
@@ -496,7 +493,7 @@ function CreateTenantModal({ onClose, onCreated }) {
             {/* ── Basic tab ── */}
             {tab === 'basic' && (
               <>
-                <FormField id="ct-name" label="Tenant / Company Name" required>
+                <FormField id="ct-name" label="Agency / Company Name" required>
                   <input id="ct-name" ref={firstInputRef} type="text" value={form.name}
                     onChange={e => set('name', e.target.value)} className={INPUT_CLS}
                     placeholder="Acme Corporation" autoComplete="organization" required />
@@ -507,37 +504,20 @@ function CreateTenantModal({ onClose, onCreated }) {
                     className={INPUT_CLS} placeholder="acme-corporation" />
                 </FormField>
                 <div className="grid grid-cols-2 gap-3">
-                  <FormField id="ct-plan" label="Plan">
+                  <FormField id="ct-plan" label="Agency Plan">
                     <select id="ct-plan" value={form.plan} onChange={e => set('plan', e.target.value)} className={INPUT_CLS}>
                       {planOptions.length === 0 ? (
-                        <option value="starter">Starter</option>
-                      ) : (
                         <>
-                          {planOptions.filter(p => p.plan_type !== 'agency' && !p.id?.startsWith('agency')).length > 0 && (
-                            <optgroup label="Direct Client Plans">
-                              {planOptions
-                                .filter(p => p.plan_type !== 'agency' && !p.id?.startsWith('agency'))
-                                .map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name || (p.id.charAt(0).toUpperCase() + p.id.slice(1))}
-                                  </option>
-                                ))
-                              }
-                            </optgroup>
-                          )}
-                          {planOptions.filter(p => p.plan_type === 'agency' || p.id?.startsWith('agency')).length > 0 && (
-                            <optgroup label="Agency / White-label Plans">
-                              {planOptions
-                                .filter(p => p.plan_type === 'agency' || p.id?.startsWith('agency'))
-                                .map(p => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name || (p.id.charAt(0).toUpperCase() + p.id.slice(1))}
-                                  </option>
-                                ))
-                              }
-                            </optgroup>
-                          )}
+                          <option value="agency_starter">Agency Starter</option>
+                          <option value="agency_growth">Agency Growth</option>
+                          <option value="agency_pro">Agency Pro</option>
                         </>
+                      ) : (
+                        planOptions.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name || p.id}
+                          </option>
+                        ))
                       )}
                     </select>
                   </FormField>
@@ -706,7 +686,7 @@ function CreateTenantModal({ onClose, onCreated }) {
                 className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
                 {submitting
                   ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating…</>
-                  : <><Plus className="w-4 h-4" />Create Tenant</>
+                  : <><Plus className="w-4 h-4" />Create Agency</>
                 }
               </button>
             </div>
