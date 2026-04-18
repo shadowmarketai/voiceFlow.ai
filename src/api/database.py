@@ -271,6 +271,11 @@ def init_models():
     except Exception as e:
         logger.warning(f"Knowledge schema migration skipped: {e}")
 
+    try:
+        _migrate_tenant_business_profile(engine)
+    except Exception as e:
+        logger.warning(f"Tenant business profile migration skipped: {e}")
+
 
 def _migrate_knowledge_schema(engine):
     """Add campaign_id + scope columns to knowledge_documents if missing."""
@@ -288,6 +293,68 @@ def _migrate_knowledge_schema(engine):
         if "scope" not in existing:
             conn.execute(text("ALTER TABLE knowledge_documents ADD COLUMN scope VARCHAR(20) NOT NULL DEFAULT 'agent'"))
             logger.info("knowledge_documents: added scope column")
+
+
+def _migrate_tenant_business_profile(engine):
+    """Add business profile columns to tenants + create tenant_contacts table if missing."""
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    if "tenants" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("tenants")}
+
+    new_columns = [
+        ("company_type",             "VARCHAR(60)"),
+        ("gstin",                    "VARCHAR(15)"),
+        ("pan_number",               "VARCHAR(10)"),
+        ("website_url",              "VARCHAR(500)"),
+        ("owner_name",               "VARCHAR(200)"),
+        ("owner_email",              "VARCHAR(255)"),
+        ("owner_phone",              "VARCHAR(20)"),
+        ("billing_email",            "VARCHAR(255)"),
+        ("billing_address",          "TEXT"),
+        ("contract_start_date",      "DATE"),
+        ("contract_end_date",        "DATE"),
+        ("monthly_billing_amount",   "NUMERIC(12,2)"),
+        ("payment_terms",            "VARCHAR(50)"),
+        ("onboarding_status",        "VARCHAR(50) NOT NULL DEFAULT 'not_started'"),
+        ("onboarding_notes",         "TEXT"),
+        ("go_live_date",             "DATE"),
+        ("tags",                     "JSONB"),
+        ("internal_notes",           "TEXT"),
+    ]
+
+    with engine.begin() as conn:
+        for col, col_type in new_columns:
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE tenants ADD COLUMN {col} {col_type}"))
+                logger.info("tenants: added column %s", col)
+
+        # Create tenant_contacts table if it doesn't exist
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS tenant_contacts (
+                id           SERIAL PRIMARY KEY,
+                tenant_id    INTEGER NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+                name         VARCHAR(200) NOT NULL,
+                email        VARCHAR(255),
+                phone        VARCHAR(20),
+                designation  VARCHAR(100),
+                role         VARCHAR(50) NOT NULL DEFAULT 'general',
+                is_primary   BOOLEAN NOT NULL DEFAULT FALSE,
+                notes        TEXT,
+                created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at   TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_tc_tenant_id ON tenant_contacts(tenant_id)"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role)"
+        ))
+        logger.info("tenant_contacts table ensured")
 
 
 def _migrate_quality_schema(engine):
