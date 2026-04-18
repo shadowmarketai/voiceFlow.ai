@@ -2,12 +2,12 @@
 API middleware: tiered rate limiting, security headers, request validation.
 """
 
-import os
-import time
 import json
 import logging
+import os
+import time
 from collections import defaultdict
-from typing import Dict, Tuple
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -63,7 +63,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app):
         super().__init__(app)
         # {key: (count, window_start)}
-        self._buckets: Dict[str, Tuple[int, float]] = defaultdict(lambda: (0, 0.0))
+        self._buckets: dict[str, tuple[int, float]] = defaultdict(lambda: (0, 0.0))
         self.enabled = APP_ENV not in ("development", "testing") or os.environ.get("FORCE_RATE_LIMIT") == "1"
 
     def _check_limit(self, key: str, rpm: int) -> bool:

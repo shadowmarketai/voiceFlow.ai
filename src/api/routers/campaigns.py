@@ -8,25 +8,30 @@ Budget is in INR. Audience criteria must be valid JSON.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.permissions import require_permission
 from api.models.campaign import (
     Campaign,
-    CampaignStatus as ModelCampaignStatus,
-    CampaignType as ModelCampaignType,
+)
+from api.models.campaign import (
     CampaignPlatform as ModelCampaignPlatform,
 )
+from api.models.campaign import (
+    CampaignStatus as ModelCampaignStatus,
+)
+from api.models.campaign import (
+    CampaignType as ModelCampaignType,
+)
+from api.permissions import require_permission
 from api.schemas.campaign import (
     CampaignCreate,
-    CampaignUpdate,
     CampaignResponse,
     CampaignStatsResponse,
+    CampaignUpdate,
 )
 from api.schemas.common import MessageResponse, PaginatedResponse
 
@@ -54,7 +59,7 @@ def _get_user_id(current_user: dict) -> int:
         return 1
 
 
-def _map_campaign_type(value: Optional[str]) -> Optional[ModelCampaignType]:
+def _map_campaign_type(value: str | None) -> ModelCampaignType | None:
     """Map schema enum string to model enum, or None."""
     if value is None:
         return None
@@ -64,7 +69,7 @@ def _map_campaign_type(value: Optional[str]) -> Optional[ModelCampaignType]:
         return None
 
 
-def _map_campaign_platform(value: Optional[str]) -> Optional[ModelCampaignPlatform]:
+def _map_campaign_platform(value: str | None) -> ModelCampaignPlatform | None:
     if value is None:
         return None
     try:
@@ -132,10 +137,10 @@ def _get_campaign_or_404(
 async def list_campaigns(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    status_filter: Optional[str] = Query(None, alias="status", description="Filter by status"),
-    platform: Optional[str] = Query(None, description="Filter by platform"),
-    campaign_type: Optional[str] = Query(None, alias="type", description="Filter by campaign type"),
-    search: Optional[str] = Query(None, description="Search by name"),
+    status_filter: str | None = Query(None, alias="status", description="Filter by status"),
+    platform: str | None = Query(None, description="Filter by platform"),
+    campaign_type: str | None = Query(None, alias="type", description="Filter by campaign type"),
+    search: str | None = Query(None, description="Search by name"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("campaigns", "read")),
 ) -> PaginatedResponse:
@@ -350,7 +355,7 @@ async def delete_campaign(
         )
 
     campaign.is_deleted = True
-    campaign.deleted_at = datetime.now(timezone.utc)
+    campaign.deleted_at = datetime.now(UTC)
     campaign.deleted_by = user_id
 
     db.commit()
@@ -390,15 +395,16 @@ async def start_campaign(
 
     campaign.status = ModelCampaignStatus.ACTIVE
     if not campaign.start_date:
-        campaign.start_date = datetime.now(timezone.utc)
+        campaign.start_date = datetime.now(UTC)
 
     db.commit()
     db.refresh(campaign)
 
     # Trigger telephony execution (async, non-blocking)
     try:
-        from api.services.campaign_execution import execute_campaign
         import asyncio
+
+        from api.services.campaign_execution import execute_campaign
 
         asyncio.create_task(execute_campaign(
             campaign_id=campaign.id,

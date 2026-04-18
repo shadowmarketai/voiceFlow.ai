@@ -7,12 +7,11 @@ Uses: ICE/STUN/TURN for NAT traversal, Opus codec for audio.
 Cost: Rs 0/min (only server bandwidth costs)
 """
 
-import json
 import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import (
     CallDirection,
@@ -54,7 +53,7 @@ class WebRTCProvider(TelephonyProvider):
         self.enabled = os.getenv("WEBRTC_ENABLED", "true").lower() == "true"
         self.stun_servers = self._parse_stun_servers()
         self.turn_servers = self._parse_turn_servers()
-        self._active_sessions: Dict[str, Dict[str, Any]] = {}
+        self._active_sessions: dict[str, dict[str, Any]] = {}
 
     def is_configured(self) -> bool:
         return self.enabled
@@ -62,13 +61,13 @@ class WebRTCProvider(TelephonyProvider):
     def supports_streaming(self) -> bool:
         return True
 
-    def _parse_stun_servers(self) -> List[Dict[str, Any]]:
+    def _parse_stun_servers(self) -> list[dict[str, Any]]:
         servers_str = os.getenv(
             "WEBRTC_STUN_SERVERS", "stun:stun.l.google.com:19302"
         )
         return [{"urls": s.strip()} for s in servers_str.split(",") if s.strip()]
 
-    def _parse_turn_servers(self) -> List[Dict[str, Any]]:
+    def _parse_turn_servers(self) -> list[dict[str, Any]]:
         turn_url = os.getenv("WEBRTC_TURN_URL", "")
         if not turn_url:
             return []
@@ -80,7 +79,7 @@ class WebRTCProvider(TelephonyProvider):
             }
         ]
 
-    def get_ice_config(self) -> Dict[str, Any]:
+    def get_ice_config(self) -> dict[str, Any]:
         """Get ICE configuration for WebRTC peer connection.
 
         Returns config to be sent to the browser client.
@@ -92,7 +91,7 @@ class WebRTCProvider(TelephonyProvider):
             "rtcpMuxPolicy": "require",
         }
 
-    def get_media_constraints(self) -> Dict[str, Any]:
+    def get_media_constraints(self) -> dict[str, Any]:
         """Get recommended media constraints for the browser."""
         return {
             "audio": {
@@ -109,8 +108,8 @@ class WebRTCProvider(TelephonyProvider):
         self,
         agent_id: str = "",
         tenant_id: str = "",
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Create a new WebRTC session for a browser client.
 
         Returns session_id and ICE config for the client to establish
@@ -142,7 +141,7 @@ class WebRTCProvider(TelephonyProvider):
 
     async def handle_offer(
         self, session_id: str, sdp_offer: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Handle WebRTC SDP offer from browser.
 
         In production, this creates a server-side peer connection
@@ -169,8 +168,8 @@ class WebRTCProvider(TelephonyProvider):
         }
 
     async def handle_ice_candidate(
-        self, session_id: str, candidate: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, session_id: str, candidate: dict[str, Any]
+    ) -> dict[str, Any]:
         """Handle ICE candidate from browser."""
         if session_id not in self._active_sessions:
             return {"success": False, "error": "Session not found"}
@@ -183,7 +182,7 @@ class WebRTCProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """For WebRTC, 'making a call' creates a session.
 
         from_number = session identifier (e.g., browser tab ID)
@@ -195,12 +194,12 @@ class WebRTCProvider(TelephonyProvider):
             metadata=kwargs.get("metadata"),
         )
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         if call_id in self._active_sessions:
             return self._active_sessions[call_id]
         return {"error": "Session not found"}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         if call_id in self._active_sessions:
             session = self._active_sessions[call_id]
             session["status"] = CallStatus.COMPLETED.value
@@ -209,20 +208,20 @@ class WebRTCProvider(TelephonyProvider):
             return {"success": True}
         return {"success": False, "error": "Session not found"}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         session = self._active_sessions.get(call_id, {})
         return session.get("recording_path")
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         # WebRTC doesn't use phone numbers
         return []
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         raise NotImplementedError("WebRTC does not use phone numbers")
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse WebRTC session event."""
         status_map = {
             "created": CallStatus.INITIATED,

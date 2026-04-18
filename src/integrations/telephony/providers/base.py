@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class CallStatus(Enum):
@@ -39,12 +39,12 @@ class PhoneNumber:
     number: str                     # E.164 format
     provider: str
     friendly_name: str
-    capabilities: List[str]         # voice, sms
+    capabilities: list[str]         # voice, sms
     monthly_cost: float
     currency: str = "INR"
     is_active: bool = True
-    assigned_to: Optional[str] = None
-    created_at: Optional[datetime] = None
+    assigned_to: str | None = None
+    created_at: datetime | None = None
 
 
 @dataclass
@@ -58,17 +58,17 @@ class CallRecord:
     to_number: str
     initiated_at: datetime
     channel_type: ChannelType = ChannelType.PSTN
-    answered_at: Optional[datetime] = None
-    ended_at: Optional[datetime] = None
+    answered_at: datetime | None = None
+    ended_at: datetime | None = None
     duration_seconds: int = 0
-    recording_url: Optional[str] = None
+    recording_url: str | None = None
     recording_duration: int = 0
     cost: float = 0.0
     currency: str = "INR"
-    tenant_id: Optional[str] = None
-    assistant_id: Optional[str] = None
-    lead_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    tenant_id: str | None = None
+    assistant_id: str | None = None
+    lead_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class TelephonyProvider(ABC):
@@ -87,35 +87,35 @@ class TelephonyProvider(ABC):
         to_number: str,
         webhook_url: str,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate outbound call."""
 
     @abstractmethod
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         """Get call details."""
 
     @abstractmethod
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """End active call."""
 
     @abstractmethod
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         """Get call recording URL."""
 
     @abstractmethod
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         """List available phone numbers."""
 
     @abstractmethod
     async def buy_phone_number(
         self,
         country: str = "IN",
-        capabilities: Optional[List[str]] = None,
+        capabilities: list[str] | None = None,
     ) -> PhoneNumber:
         """Purchase new phone number."""
 
     @abstractmethod
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse webhook payload into CallRecord."""
 
     def is_configured(self) -> bool:

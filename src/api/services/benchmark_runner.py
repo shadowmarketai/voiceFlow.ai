@@ -18,7 +18,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import re as _re
@@ -135,9 +134,7 @@ async def _get_tts_for_benchmark(text: str, language: str) -> dict[str, Any]:
 
     For English, any provider works (Deepgram Aura has lowest latency).
     """
-    from voice_engine.api_providers import (
-        _sarvam_tts, _edge_tts, _deepgram_tts, synthesize_speech_api
-    )
+    from voice_engine.api_providers import _edge_tts, _sarvam_tts, synthesize_speech_api
 
     is_indic = language in _INDIC_LANG_CODES
 
@@ -251,39 +248,38 @@ async def _benchmark_llm_latency() -> dict[str, Any]:
         char_count = 0
 
         try:
-            async with httpx.AsyncClient(timeout=20) as client:
-                async with client.stream(
-                    "POST",
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": model_id,
-                        "messages": [
-                            {"role": "system", "content": "You are a helpful voice AI assistant for Indian businesses."},
-                            {"role": "user", "content": prompt},
-                        ],
-                        "max_tokens": 200,
-                        "temperature": 0.3,
-                        "stream": True,
-                    },
-                ) as resp:
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        payload = line[5:].strip()
-                        if payload == "[DONE]":
-                            break
-                        try:
-                            obj = _json.loads(payload)
-                            delta = obj["choices"][0].get("delta", {}).get("content")
-                            if delta:
-                                if first_token_time is None:
-                                    first_token_time = time.time()
-                                char_count += len(delta)
-                                # Approximate token count: ~4 chars/token for mixed Hindi+English
-                                token_count = max(token_count + 1, char_count // 4)
-                        except Exception:
-                            continue
+            async with httpx.AsyncClient(timeout=20) as client, client.stream(
+                "POST",
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model_id,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful voice AI assistant for Indian businesses."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "max_tokens": 200,
+                    "temperature": 0.3,
+                    "stream": True,
+                },
+            ) as resp:
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    payload = line[5:].strip()
+                    if payload == "[DONE]":
+                        break
+                    try:
+                        obj = _json.loads(payload)
+                        delta = obj["choices"][0].get("delta", {}).get("content")
+                        if delta:
+                            if first_token_time is None:
+                                first_token_time = time.time()
+                            char_count += len(delta)
+                            # Approximate token count: ~4 chars/token for mixed Hindi+English
+                            token_count = max(token_count + 1, char_count // 4)
+                    except Exception:
+                        continue
         except Exception as exc:
             results[model_label] = {"error": str(exc)[:100], "first_token_ms": None, "tokens_per_sec": None}
             continue

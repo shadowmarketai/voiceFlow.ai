@@ -25,12 +25,12 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
 
-from api.database import db, USE_POSTGRES
+from api.database import USE_POSTGRES, db
 from api.dependencies import get_current_user
 from api.services import notifications
 
@@ -183,8 +183,8 @@ async def get_my_ticket(ticket_id: str, user: dict = Depends(_require_tenant_use
 class CreateTicketReq(BaseModel):
     subject: str
     body: str
-    priority: Optional[str] = "medium"
-    category: Optional[str] = None
+    priority: str | None = "medium"
+    category: str | None = None
 
 
 @router.post("/tickets", status_code=201)
@@ -205,7 +205,7 @@ async def create_ticket(req: CreateTicketReq, user: dict = Depends(_require_tena
         try:
             with db() as conn:
                 sa = conn.execute(
-                    f"SELECT id FROM users WHERE is_super_admin=1 LIMIT 1"
+                    "SELECT id FROM users WHERE is_super_admin=1 LIMIT 1"
                 ).fetchone()
                 if sa: assigned = dict(sa).get("id")
         except Exception:
@@ -298,8 +298,8 @@ async def reply_ticket(ticket_id: str, req: ReplyReq, user: dict = Depends(_requ
 
 
 class UpdateTicketReq(BaseModel):
-    status: Optional[str] = None
-    priority: Optional[str] = None
+    status: str | None = None
+    priority: str | None = None
 
 
 @router.put("/tickets/{ticket_id}")
@@ -346,7 +346,7 @@ async def upload_attachment(
     MAX_BYTES = 10 * 1024 * 1024
     data = await file.read()
     if len(data) > MAX_BYTES:
-        raise HTTPException(413, f"File too large (max 10 MB)")
+        raise HTTPException(413, "File too large (max 10 MB)")
 
     ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
     ext = (file.filename or "file").rsplit(".", 1)[-1] if "." in (file.filename or "") else "bin"

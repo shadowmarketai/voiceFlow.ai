@@ -17,6 +17,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 
 from api.dependencies import get_current_active_user, get_current_user
+from api.permissions import get_accessible_modules, get_role_permissions
 from api.schemas.auth import (
     ForgotPasswordRequest,
     GoogleAuthRequest,
@@ -25,8 +26,8 @@ from api.schemas.auth import (
     RefreshTokenRequest,
     RegisterRequest,
     ResetPasswordRequest,
-    TokenResponse,
     TenantBranding,
+    TokenResponse,
     TwoFactorLoginRequest,
     TwoFactorSetupResponse,
     TwoFactorVerifyRequest,
@@ -34,7 +35,6 @@ from api.schemas.auth import (
     UserUpdate,
 )
 from api.schemas.common import MessageResponse
-from api.permissions import get_accessible_modules, get_role_permissions
 from api.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -166,7 +166,7 @@ def _load_tenant_branding(tenant_id: str | None) -> TenantBranding | None:
     """Load tenant branding fields. Returns None if no tenant."""
     if not tenant_id:
         return None
-    from api.database import db, USE_POSTGRES
+    from api.database import USE_POSTGRES, db
     _ph = "%s" if USE_POSTGRES else "?"
     try:
         with db() as conn:

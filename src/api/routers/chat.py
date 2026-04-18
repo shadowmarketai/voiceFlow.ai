@@ -9,7 +9,6 @@ Anthropic → Deepseek fallback chain).
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -21,10 +20,10 @@ router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 class ChatRequest(BaseModel):
     message: str
-    system_prompt: Optional[str] = "You are a helpful AI voice assistant. Keep replies concise."
-    provider: Optional[str] = "auto"     # auto / groq / gemini / openai / anthropic / deepseek
-    model: Optional[str] = None
-    language: Optional[str] = None
+    system_prompt: str | None = "You are a helpful AI voice assistant. Keep replies concise."
+    provider: str | None = "auto"     # auto / groq / gemini / openai / anthropic / deepseek
+    model: str | None = None
+    language: str | None = None
 
 
 class ChatResponse(BaseModel):

@@ -23,11 +23,9 @@ import asyncio
 import io
 import json
 import logging
-import os
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -88,7 +86,7 @@ class L1Cache:
 
     async def get(
         self, tenant_id: str, voice_id: str
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor] | None:
         key = self._make_key(tenant_id, voice_id)
         async with self._lock:
             entry = self._store.get(key)
@@ -208,7 +206,7 @@ class EmbeddingSerializer:
     @classmethod
     def unpack(
         cls, data: bytes, device: str = "cpu"
-    ) -> Tuple[torch.Tensor, torch.Tensor, dict]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict]:
         """Unpack blob back to tensors + metadata."""
         buf = io.BytesIO(data)
 
@@ -261,7 +259,7 @@ class L2Redis:
 
     async def get(
         self, tenant_id: str, voice_id: str
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor, dict]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict] | None:
         if not self._available or not self._redis:
             return None
         try:
@@ -368,7 +366,7 @@ class L3ObjectStorage:
 
     async def get(
         self, tenant_id: str, voice_id: str
-    ) -> Optional[Tuple[torch.Tensor, torch.Tensor, dict]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, dict] | None:
         if not self._available:
             return None
         try:
@@ -552,7 +550,7 @@ class EmbeddingStore:
         self,
         tenant_id: str,
         voice_id: str,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Load voice embedding. Promotes through cache layers automatically.
         Raises VoiceNotFoundError if not in any layer.
@@ -608,7 +606,7 @@ class EmbeddingStore:
         voice_id: str,
         gpt_cond_latent: torch.Tensor,
         speaker_embedding: torch.Tensor,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
     ) -> None:
         """
         Save voice embedding to all layers.

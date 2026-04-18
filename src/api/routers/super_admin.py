@@ -5,15 +5,15 @@ Tenant management, user management (password reset, role change,
 activate/deactivate), feature toggles, plans, platform stats.
 """
 
-import logging
 import datetime
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 from passlib.context import CryptContext
 
+from api.database import USE_POSTGRES, db
 from api.dependencies import get_current_active_user
-from api.database import db, USE_POSTGRES
 
 logger = logging.getLogger(__name__)
 

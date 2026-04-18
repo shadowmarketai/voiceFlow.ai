@@ -14,12 +14,11 @@ Usage:
 """
 
 import asyncio
-import base64
 import logging
 import os
 import tempfile
 import time
-from typing import Optional, Dict, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -179,27 +178,27 @@ class VoiceTurnRequest:
     def __init__(
         self,
         audio_bytes: bytes,
-        language: Optional[str] = None,
-        assistant_id: Optional[str] = None,
+        language: str | None = None,
+        assistant_id: str | None = None,
         system_prompt: str = "You are a helpful voice assistant. Keep responses under 40 words.",
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         llm_provider: str = "groq",
-        llm_model: Optional[str] = None,
+        llm_model: str | None = None,
         tts_language: str = "en",
-        tts_emotion: Optional[str] = None,
-        dialect: Optional[str] = None,
+        tts_emotion: str | None = None,
+        dialect: str | None = None,
         # Cross-call memory
-        caller_phone: Optional[str] = None,
+        caller_phone: str | None = None,
         # n8n tool use
         tools_enabled: bool = False,
-        agent_tools: Optional[list] = None,
+        agent_tools: list | None = None,
         # Transfer
-        transfer_number: Optional[str] = None,
+        transfer_number: str | None = None,
         # Domain label for corpus collection
         domain: str = "general",
         # Caller identity
-        user_id: Optional[str] = None,
-        tenant_id: Optional[str] = None,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
     ):
         self.audio_bytes = audio_bytes
         self.language = language
@@ -228,7 +227,7 @@ class VoiceTurnResponse:
         audio_base64: str,
         audio_format: str,
         sample_rate: int,
-        analysis: Dict[str, Any],
+        analysis: dict[str, Any],
         latency_ms: float,
         tts_engine: str,
     ):
@@ -240,7 +239,7 @@ class VoiceTurnResponse:
         self.latency_ms = latency_ms
         self.tts_engine = tts_engine
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "text": self.text,
             "audio_base64": self.audio_base64,
@@ -301,7 +300,7 @@ class VoiceAIService:
 
     def _get_eos(self):
         if self._eos_engine is None:
-            from voice_engine.eos import EOSEngine, EOSConfig
+            from voice_engine.eos import EOSConfig, EOSEngine
             self._eos_engine = EOSEngine(EOSConfig(
                 min_silence_ms=500,
                 indian_language_mode=True,
@@ -313,7 +312,7 @@ class VoiceAIService:
         self,
         audio_bytes: bytes,
         sample_rate: int = 16000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Pre-process audio: noise reduction → VAD → extract speech.
 
         Returns dict with cleaned audio bytes, VAD result, and whether
@@ -361,7 +360,7 @@ class VoiceAIService:
             "duration_s": len(audio) / sample_rate,
         }
 
-    async def transcribe_and_analyze(self, audio_bytes: bytes, language: Optional[str] = None) -> Dict[str, Any]:
+    async def transcribe_and_analyze(self, audio_bytes: bytes, language: str | None = None) -> dict[str, Any]:
         """
         Step 1: STT + emotion + intent analysis.
 
@@ -439,11 +438,11 @@ class VoiceAIService:
         self,
         text: str,
         language: str = "en",
-        emotion: Optional[str] = None,
-        detected_customer_emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        detected_customer_emotion: str | None = None,
+        voice_id: str | None = None,
         use_case: str = "sales_bot",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Step 3: TTS — convert AI text response to audio.
 
@@ -452,7 +451,7 @@ class VoiceAIService:
         """
         # Try local TTS engines first
         try:
-            from tts.config import TTSRequest, Language, EmotionType
+            from tts.config import EmotionType, Language, TTSRequest
 
             lang_map = {
                 "en": Language.ENGLISH, "ta": Language.TAMIL, "hi": Language.HINDI,
@@ -567,7 +566,8 @@ class VoiceAIService:
                    "to": chosen_lang, "reason": lang_reason}
 
         # Smart turn guard (streaming path)
-        from voice_engine.smart_turn import evaluate_turn, TurnSignal as _TS
+        from voice_engine.smart_turn import TurnSignal as _TS
+        from voice_engine.smart_turn import evaluate_turn
         _turn = evaluate_turn(
             transcript=user_text, language=chosen_lang,
             emotion_result=emotion_result,
@@ -790,7 +790,7 @@ class VoiceAIService:
                         request.tts_language, chosen_lang, lang_reason)
 
         # Smart turn evaluation — backchannel guard + human-handoff trigger
-        from voice_engine.smart_turn import evaluate_turn, TurnSignal
+        from voice_engine.smart_turn import TurnSignal, evaluate_turn
         turn = evaluate_turn(
             transcript=user_text,
             language=chosen_lang,
@@ -949,7 +949,8 @@ class VoiceAIService:
         # --- Step 3: TTS — TADA first, then Sarvam fallback ─────────────────
         tts_result = None
         try:
-            from tts.tada_engine import synthesize as tada_synthesize, is_available as tada_ready
+            from tts.tada_engine import is_available as tada_ready
+            from tts.tada_engine import synthesize as tada_synthesize
             if tada_ready():
                 tts_result = await tada_synthesize(
                     text=ai_text,
@@ -1037,7 +1038,7 @@ class VoiceAIService:
 
 
 # Singleton
-_voice_ai_service: Optional[VoiceAIService] = None
+_voice_ai_service: VoiceAIService | None = None
 
 
 def get_voice_ai_service() -> VoiceAIService:

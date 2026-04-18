@@ -13,8 +13,6 @@ to find the natural end of an utterance.
 import logging
 import time
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
 
 import numpy as np
 
@@ -89,15 +87,15 @@ class EOSEngine:
                 break
     """
 
-    def __init__(self, config: Optional[EOSConfig] = None):
+    def __init__(self, config: EOSConfig | None = None):
         self.config = config or EOSConfig()
         if self.config.indian_language_mode:
             self.config.min_silence_ms += 100
 
         # Streaming state
         self._speech_started = False
-        self._speech_start_time: Optional[float] = None
-        self._last_speech_time: Optional[float] = None
+        self._speech_start_time: float | None = None
+        self._last_speech_time: float | None = None
         self._peak_energy: float = 0.0
         self._chunk_count: int = 0
 

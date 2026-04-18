@@ -11,14 +11,12 @@ Features:
 - Conversation session management per phone number
 """
 
-import base64
 import hashlib
 import hmac
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional
 
 import httpx
 
@@ -46,10 +44,10 @@ class WhatsAppMessage:
     from_number: str
     timestamp: str
     message_type: str  # text, audio, image, document, interactive
-    text: Optional[str] = None
-    audio_id: Optional[str] = None
-    audio_mime_type: Optional[str] = None
-    display_name: Optional[str] = None
+    text: str | None = None
+    audio_id: str | None = None
+    audio_mime_type: str | None = None
+    display_name: str | None = None
 
 
 @dataclass
@@ -187,7 +185,7 @@ class WhatsAppClient:
 
 # ── Singleton ─────────────────────────────────────────────────────
 
-_client: Optional[WhatsAppClient] = None
+_client: WhatsAppClient | None = None
 
 
 def get_whatsapp_client() -> WhatsAppClient:
@@ -200,7 +198,7 @@ def get_whatsapp_client() -> WhatsAppClient:
 # ── Message parsing ───────────────────────────────────────────────
 
 
-def parse_webhook_message(body: dict) -> Optional[WhatsAppMessage]:
+def parse_webhook_message(body: dict) -> WhatsAppMessage | None:
     """Parse an incoming WhatsApp webhook payload into a WhatsAppMessage."""
     try:
         entry = body.get("entry", [{}])[0]

@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -49,8 +49,8 @@ def create_app() -> FastAPI:
     # ── Security Middleware ───────────────────────────────────
     from api.middleware import (
         RateLimitMiddleware,
-        SecurityHeadersMiddleware,
         RequestSizeLimitMiddleware,
+        SecurityHeadersMiddleware,
     )
     application.add_middleware(RequestSizeLimitMiddleware)
     application.add_middleware(SecurityHeadersMiddleware)
@@ -267,6 +267,7 @@ def _register_lifecycle(application: FastAPI) -> None:
         try:
             if os.environ.get("CORPUS_MINIO_ENDPOINT"):
                 import aioboto3
+
                 from voice_engine.fine_tune_scheduler import MoshiFineTuneScheduler
                 s3_session = aioboto3.Session()
                 ft_scheduler = MoshiFineTuneScheduler(
@@ -556,18 +557,19 @@ def _include_routers(application: FastAPI) -> None:
 def _load_voice_pipeline(application: FastAPI) -> None:
     """Load the full voice AI pipeline endpoints (STT -> LLM -> TTS)."""
     try:
-        from typing import Optional
+
         from fastapi import File, UploadFile
-        from voice_engine.voice_ai_service import get_voice_ai_service, VoiceTurnRequest
+
+        from voice_engine.voice_ai_service import VoiceTurnRequest, get_voice_ai_service
 
         @application.post("/api/v1/voice/respond")
         async def voice_respond(
             file: UploadFile = File(...),
-            language: Optional[str] = None,
+            language: str | None = None,
             system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
             llm_provider: str = "groq",
             tts_language: str = "en",
-            voice_id: Optional[str] = None,
+            voice_id: str | None = None,
         ):
             """Full voice conversation turn: upload audio -> get AI voice response."""
             audio_bytes = await file.read()
@@ -600,11 +602,11 @@ def _load_voice_pipeline(application: FastAPI) -> None:
         @application.post("/api/v1/voice/respond-stream")
         async def voice_respond_stream(
             file: UploadFile = File(...),
-            language: Optional[str] = None,
+            language: str | None = None,
             system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
             llm_provider: str = "groq",
             tts_language: str = "en",
-            voice_id: Optional[str] = None,
+            voice_id: str | None = None,
         ):
             """Streaming voice turn — yields SSE events with audio chunks.
 
@@ -644,7 +646,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             file: UploadFile = File(...),
             response_text: str = "Thank you for your message.",
             tts_language: str = "en",
-            voice_id: Optional[str] = None,
+            voice_id: str | None = None,
         ):
             """Analyse customer audio and synthesize a given response text."""
             audio_bytes = await file.read()

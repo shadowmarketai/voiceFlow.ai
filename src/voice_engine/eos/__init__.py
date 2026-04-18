@@ -8,6 +8,6 @@ Providers:
   - Smart EOS (uses VAD + trailing silence + utterance analysis)
 """
 
-from voice_engine.eos.eos_engine import EOSEngine, EOSResult, EOSConfig
+from voice_engine.eos.eos_engine import EOSConfig, EOSEngine, EOSResult
 
 __all__ = ["EOSEngine", "EOSResult", "EOSConfig"]

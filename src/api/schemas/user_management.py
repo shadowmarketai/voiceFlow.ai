@@ -4,7 +4,6 @@ VoiceFlow Marketing AI - User Management Schemas
 Pydantic models for admin user management endpoints.
 """
 
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -16,12 +15,12 @@ class UserListItem(BaseModel):
     full_name: str
     role: str = "user"
     is_active: bool = True
-    company: Optional[str] = None
+    company: str | None = None
     plan: str = "starter"
-    created_at: Optional[str] = None
-    last_login_at: Optional[str] = None
-    oauth_provider: Optional[str] = None
-    avatar_url: Optional[str] = None
+    created_at: str | None = None
+    last_login_at: str | None = None
+    oauth_provider: str | None = None
+    avatar_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,20 +48,20 @@ class UserInviteRequest(BaseModel):
     email: EmailStr
     full_name: str = Field(..., min_length=1, max_length=200)
     role: str = Field(default="user", pattern="^(admin|manager|agent|user|viewer)$")
-    company: Optional[str] = Field(default=None, max_length=200)
+    company: str | None = Field(default=None, max_length=200)
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class UserUpdateRequest(BaseModel):
     """Request to update a user's details."""
-    full_name: Optional[str] = Field(default=None, max_length=200)
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = Field(default=None, max_length=20)
-    company: Optional[str] = Field(default=None, max_length=200)
-    role: Optional[str] = Field(default=None, pattern="^(admin|manager|agent|user|viewer)$")
-    plan: Optional[str] = Field(default=None, max_length=50)
-    is_active: Optional[bool] = None
+    full_name: str | None = Field(default=None, max_length=200)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=20)
+    company: str | None = Field(default=None, max_length=200)
+    role: str | None = Field(default=None, pattern="^(admin|manager|agent|user|viewer)$")
+    plan: str | None = Field(default=None, max_length=50)
+    is_active: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,12 +74,12 @@ class UserDetailResponse(BaseModel):
     role: str = "user"
     is_active: bool = True
     is_verified: bool = False
-    company: Optional[str] = None
-    phone: Optional[str] = None
+    company: str | None = None
+    phone: str | None = None
     plan: str = "starter"
-    created_at: Optional[str] = None
-    last_login_at: Optional[str] = None
-    oauth_provider: Optional[str] = None
-    avatar_url: Optional[str] = None
+    created_at: str | None = None
+    last_login_at: str | None = None
+    oauth_provider: str | None = None
+    avatar_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

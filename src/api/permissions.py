@@ -8,7 +8,6 @@ Actions: create, read, update, delete
 """
 
 import logging
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 

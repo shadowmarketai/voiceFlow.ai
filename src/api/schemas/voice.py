@@ -5,7 +5,6 @@ Request/response models for voice processing endpoints.
 Uses Pydantic v2 ConfigDict (KB-014).
 """
 
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,10 +12,10 @@ from pydantic import BaseModel, ConfigDict, Field
 class VoiceProcessRequest(BaseModel):
     """Request model for voice processing via URL."""
 
-    audio_url: Optional[str] = Field(
+    audio_url: str | None = Field(
         default=None, description="URL of the audio file to process"
     )
-    language: Optional[str] = Field(
+    language: str | None = Field(
         default=None,
         description="Language hint (e.g. 'hi', 'ta', 'en')",
     )
@@ -26,7 +25,7 @@ class VoiceProcessRequest(BaseModel):
     enable_intent: bool = Field(
         default=True, description="Enable marketing intent classification"
     )
-    callback_url: Optional[str] = Field(
+    callback_url: str | None = Field(
         default=None, description="URL for async result callback"
     )
 
@@ -80,32 +79,32 @@ class VoiceAnalysisResponse(BaseModel):
 
     id: int
     request_id: str
-    transcription: Optional[str] = None
-    language: Optional[str] = None
-    dialect: Optional[str] = None
-    confidence: Optional[float] = None
+    transcription: str | None = None
+    language: str | None = None
+    dialect: str | None = None
+    confidence: float | None = None
 
-    emotion: Optional[str] = None
-    emotion_confidence: Optional[float] = None
-    emotion_scores: Optional[dict[str, float]] = None
+    emotion: str | None = None
+    emotion_confidence: float | None = None
+    emotion_scores: dict[str, float] | None = None
 
     gen_z_score: float = 0.0
     is_code_mixed: bool = False
-    languages_detected: Optional[dict[str, float]] = None
+    languages_detected: dict[str, float] | None = None
 
-    intent: Optional[str] = None
-    intent_confidence: Optional[float] = None
+    intent: str | None = None
+    intent_confidence: float | None = None
     lead_score: float = 0.0
     sentiment: float = 0.0
 
-    keywords: Optional[list[str]] = None
-    source: Optional[str] = None
-    phone_number: Optional[str] = None
+    keywords: list[str] | None = None
+    source: str | None = None
+    phone_number: str | None = None
 
-    processing_time_ms: Optional[float] = None
-    audio_duration_seconds: Optional[float] = None
+    processing_time_ms: float | None = None
+    audio_duration_seconds: float | None = None
 
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -113,14 +112,14 @@ class VoiceAnalysisResponse(BaseModel):
 class VoiceRespondRequest(BaseModel):
     """Request model for the full voice conversation turn endpoint."""
 
-    language: Optional[str] = None
+    language: str | None = None
     system_prompt: str = Field(
         default="You are a helpful sales assistant. Keep responses under 40 words.",
         max_length=2000,
     )
     llm_provider: str = Field(default="groq", description="LLM provider: groq, anthropic, openai")
     tts_language: str = Field(default="en", description="TTS output language")
-    voice_id: Optional[str] = None
+    voice_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -133,6 +132,6 @@ class VoiceAnalyzeAndSpeakRequest(BaseModel):
         max_length=5000,
     )
     tts_language: str = Field(default="en")
-    voice_id: Optional[str] = None
+    voice_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)

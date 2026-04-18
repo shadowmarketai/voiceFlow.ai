@@ -44,7 +44,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ async def save_profile(phone: str, profile: dict[str, Any]) -> None:
     if r is None:
         return
     try:
-        profile["last_saved_ts"] = datetime.now(timezone.utc).isoformat()
+        profile["last_saved_ts"] = datetime.now(UTC).isoformat()
         await r.set(_caller_key(phone), json.dumps(profile, ensure_ascii=False),
                     ex=_TTL_SECONDS)
     except Exception:
@@ -322,7 +322,7 @@ async def on_call_end(
         return
 
     profile["call_count"] = profile.get("call_count", 0) + 1
-    profile["last_call_ts"] = datetime.now(timezone.utc).isoformat()
+    profile["last_call_ts"] = datetime.now(UTC).isoformat()
     if final_intent:
         profile["last_intent"] = final_intent
     if note:

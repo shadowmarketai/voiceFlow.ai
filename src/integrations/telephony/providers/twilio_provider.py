@@ -9,7 +9,7 @@ Docs: https://www.twilio.com/docs/voice
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -48,7 +48,7 @@ class TwilioProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 f"{self.base_url}/Calls.json",
@@ -78,7 +78,7 @@ class TwilioProvider(TelephonyProvider):
         to_number: str,
         stream_url: str,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate call with Twilio Media Streams for real-time audio."""
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -109,14 +109,14 @@ class TwilioProvider(TelephonyProvider):
                 }
             return {"success": False, "provider": self.name, "error": resp.text}
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/Calls/{call_id}.json", auth=self._auth()
             )
             return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{self.base_url}/Calls/{call_id}.json",
@@ -125,7 +125,7 @@ class TwilioProvider(TelephonyProvider):
             )
             return {"success": resp.status_code == 200}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/Calls/{call_id}/Recordings.json",
@@ -137,7 +137,7 @@ class TwilioProvider(TelephonyProvider):
                     return recordings[0].get("media_url")
         return None
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/IncomingPhoneNumbers.json", auth=self._auth()
@@ -159,7 +159,7 @@ class TwilioProvider(TelephonyProvider):
             ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         async with httpx.AsyncClient(timeout=15) as client:
             search = await client.get(
@@ -190,7 +190,7 @@ class TwilioProvider(TelephonyProvider):
                 )
             raise RuntimeError(f"Twilio buy failed: {buy.text}")
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         status_map = {
             "queued": CallStatus.INITIATED,
             "ringing": CallStatus.RINGING,
@@ -221,5 +221,5 @@ class TwilioProvider(TelephonyProvider):
         )
 
     @staticmethod
-    def _parse_caps(caps: Dict) -> List[str]:
+    def _parse_caps(caps: dict) -> list[str]:
         return [k for k, v in caps.items() if v and k in ("voice", "sms", "mms")]

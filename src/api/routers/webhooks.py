@@ -11,14 +11,15 @@ import logging
 import secrets
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.permissions import require_permission
 from api.models.webhook import APIKey, WebhookConfig, WebhookDeliveryLog
+from api.permissions import require_permission
+from api.schemas.common import PaginatedResponse
 from api.schemas.webhook import (
     APIKeyCreate,
     APIKeyCreatedResponse,
@@ -29,7 +30,6 @@ from api.schemas.webhook import (
     WebhookTestResponse,
     WebhookUpdate,
 )
-from api.schemas.common import PaginatedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +256,7 @@ async def revoke_api_key(
         )
 
     api_key.is_active = False
-    api_key.revoked_at = datetime.now(timezone.utc)
+    api_key.revoked_at = datetime.now(UTC)
     api_key.revoked_reason = "Revoked by user"
     db.commit()
 
@@ -446,7 +446,7 @@ async def test_webhook(
     test_payload = {
         "event": "test.ping",
         "event_id": event_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "data": {
             "message": "This is a test event from VoiceFlow Marketing AI",
             "webhook_id": webhook.id,
@@ -536,7 +536,7 @@ async def test_webhook(
 
     # Update webhook stats
     webhook.total_deliveries += 1
-    webhook.last_delivery_at = datetime.now(timezone.utc)
+    webhook.last_delivery_at = datetime.now(UTC)
     webhook.last_delivery_status = response_status
     if success:
         webhook.successful_deliveries += 1

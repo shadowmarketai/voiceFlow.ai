@@ -13,7 +13,6 @@ Endpoints:
 
 import logging
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse
@@ -44,7 +43,7 @@ class WidgetMessageResponse(BaseModel):
     """AI response sent back to the widget."""
 
     text: str
-    audio_base64: Optional[str] = None
+    audio_base64: str | None = None
     audio_format: str = "wav"
     session_id: str
 
@@ -204,7 +203,7 @@ async def widget_send_message(body: WidgetMessageRequest):
 
     # Fallback: echo-style response when service is unavailable
     return WidgetMessageResponse(
-        text=f"Thank you for your message. Our team will get back to you shortly.",
+        text="Thank you for your message. Our team will get back to you shortly.",
         audio_base64=None,
         audio_format="wav",
         session_id=body.session_id,

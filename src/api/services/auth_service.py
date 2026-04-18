@@ -12,8 +12,7 @@ Rules enforced:
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
@@ -61,7 +60,7 @@ class AuthService:
     # ── Token Creation (KB-004: PyJWT only) ──────────────────────
 
     @staticmethod
-    def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
         """Create a JWT access token using PyJWT (KB-004).
 
         Args:
@@ -72,7 +71,7 @@ class AuthService:
             Encoded JWT string.
         """
         to_encode = data.copy()
-        expire = datetime.now(timezone.utc) + (
+        expire = datetime.now(UTC) + (
             expires_delta
             or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         )
@@ -80,7 +79,7 @@ class AuthService:
         # blacklisted on logout/refresh without invalidating all sessions.
         to_encode.update({
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "type": "access",
             "jti": uuid.uuid4().hex,
         })
@@ -92,7 +91,7 @@ class AuthService:
         return encoded
 
     @staticmethod
-    def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
         """Create a JWT refresh token using PyJWT (KB-004).
 
         Args:
@@ -103,13 +102,13 @@ class AuthService:
             Encoded JWT string.
         """
         to_encode = data.copy()
-        expire = datetime.now(timezone.utc) + (
+        expire = datetime.now(UTC) + (
             expires_delta
             or timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
         )
         to_encode.update({
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
             "type": "refresh",
             "jti": uuid.uuid4().hex,
         })
@@ -156,8 +155,8 @@ class AuthService:
         email: str,
         password: str,
         full_name: str,
-        company: Optional[str] = None,
-        phone: Optional[str] = None,
+        company: str | None = None,
+        phone: str | None = None,
     ) -> dict:
         """Register a new user account.
 
@@ -184,7 +183,7 @@ class AuthService:
 
             user_id = f"user-{uuid.uuid4().hex[:8]}"
             hashed = cls.hash_password(password)
-            created_at = datetime.now(timezone.utc).isoformat()
+            created_at = datetime.now(UTC).isoformat()
 
             conn.execute(
                 """
@@ -275,7 +274,7 @@ class AuthService:
         with db() as conn:
             conn.execute(
                 "UPDATE users SET last_login_at = ? WHERE id = ?",
-                (datetime.now(timezone.utc).isoformat(), user_dict["id"]),
+                (datetime.now(UTC).isoformat(), user_dict["id"]),
             )
 
         safe_user = _safe_user(user_dict)
@@ -395,7 +394,7 @@ class AuthService:
     # ── User Profile ─────────────────────────────────────────────
 
     @classmethod
-    def get_user_by_email(cls, email: str) -> Optional[dict]:
+    def get_user_by_email(cls, email: str) -> dict | None:
         """Fetch a user by email."""
         with db() as conn:
             row = conn.execute(
@@ -406,7 +405,7 @@ class AuthService:
         return dict(row)
 
     @classmethod
-    def get_user_by_id(cls, user_id: str) -> Optional[dict]:
+    def get_user_by_id(cls, user_id: str) -> dict | None:
         """Fetch a user by ID."""
         with db() as conn:
             row = conn.execute(
@@ -632,8 +631,8 @@ class AuthService:
             raise UnauthorizedError(detail="Google authentication failed")
 
         # Decode the ID token to get user info
-        from google.oauth2 import id_token
         from google.auth.transport import requests as google_requests
+        from google.oauth2 import id_token
 
         try:
             idinfo = id_token.verify_oauth2_token(
@@ -674,7 +673,7 @@ class AuthService:
             else:
                 # New user via Google
                 user_id = f"user-{uuid.uuid4().hex[:8]}"
-                created_at = datetime.now(timezone.utc).isoformat()
+                created_at = datetime.now(UTC).isoformat()
                 conn.execute(
                     """
                     INSERT INTO users (id, email, name, full_name, hashed_password, role, plan, company, phone,
@@ -719,7 +718,7 @@ class AuthService:
     # ── Forgot / Reset Password ─────────────────────────────────
 
     @classmethod
-    def create_password_reset_token(cls, email: str) -> Optional[str]:
+    def create_password_reset_token(cls, email: str) -> str | None:
         """Create a short-lived JWT for password reset.
 
         Returns None (silently) if email doesn't exist, to prevent enumeration.

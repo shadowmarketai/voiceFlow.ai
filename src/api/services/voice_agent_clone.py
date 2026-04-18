@@ -11,14 +11,13 @@ import logging
 import os
 import uuid
 import wave
-from typing import Optional
 
 import aiohttp
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.voice_agent import ClonedVoice
 from api.config import settings
+from api.models.voice_agent import ClonedVoice
 
 logger = logging.getLogger(__name__)
 
@@ -35,12 +34,11 @@ def validate_reference_audio(audio_bytes: bytes) -> dict:
         raise ValueError(f"Audio file too large (max {MAX_REFERENCE_SIZE_MB}MB)")
 
     try:
-        with io.BytesIO(audio_bytes) as buf:
-            with wave.open(buf, "rb") as wf:
-                frames = wf.getnframes()
-                rate = wf.getframerate()
-                channels = wf.getnchannels()
-                duration = frames / float(rate)
+        with io.BytesIO(audio_bytes) as buf, wave.open(buf, "rb") as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            channels = wf.getnchannels()
+            duration = frames / float(rate)
     except wave.Error:
         raise ValueError("Invalid WAV file. Please upload a valid WAV audio file.")
 
@@ -143,7 +141,7 @@ async def list_voices(
     return list(result.scalars().all())
 
 
-async def get_voice(db: AsyncSession, voice_id: int) -> Optional[ClonedVoice]:
+async def get_voice(db: AsyncSession, voice_id: int) -> ClonedVoice | None:
     """Get a specific cloned voice by ID."""
     return await db.get(ClonedVoice, voice_id)
 
@@ -162,7 +160,7 @@ async def test_voice(
     voice_id: int,
     test_text: str = "Hello, this is a test of the cloned voice.",
     db: AsyncSession = None,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Generate a sample audio clip using the cloned voice."""
     voice = await db.get(ClonedVoice, voice_id) if db else None
     if voice is None or voice.status != "ready":

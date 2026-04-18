@@ -12,13 +12,11 @@ Features:
 - Call handling configuration
 """
 
+import secrets
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
-import os
-import json
-import secrets
+from typing import Any
 
 
 class LLMProvider(Enum):
@@ -67,18 +65,18 @@ class VoiceSettings:
     provider: VoiceProvider = VoiceProvider.VOICEFLOW_NATIVE  # Default: built-in TTS (no API key needed)
     voice_id: str = ""
     voice_name: str = "Rachel"
-    
+
     # Voice parameters
     stability: float = 0.5
     similarity_boost: float = 0.75
     speed: float = 1.0
     pitch: float = 0.0
-    
+
     # Language
     language: AssistantLanguage = AssistantLanguage.ENGLISH
-    
+
     # Custom voice cloning
-    custom_voice_url: Optional[str] = None
+    custom_voice_url: str | None = None
 
 
 @dataclass
@@ -86,17 +84,17 @@ class LLMSettings:
     """LLM configuration"""
     provider: LLMProvider = LLMProvider.ANTHROPIC
     model: str = "claude-3-sonnet-20240229"
-    
+
     # Parameters
     temperature: float = 0.7
     max_tokens: int = 500
-    
+
     # System prompt
     system_prompt: str = ""
-    
+
     # Custom endpoint (for self-hosted models)
-    custom_endpoint: Optional[str] = None
-    custom_api_key: Optional[str] = None
+    custom_endpoint: str | None = None
+    custom_api_key: str | None = None
 
 
 @dataclass
@@ -105,28 +103,28 @@ class CallSettings:
     # Greeting
     greeting_message: str = "Hello! How can I help you today?"
     greeting_delay_ms: int = 500
-    
+
     # Silence handling
     silence_timeout_seconds: int = 5
     max_silence_count: int = 3
     silence_message: str = "Are you still there?"
-    
+
     # Call duration
     max_call_duration_seconds: int = 600  # 10 minutes
     warning_before_end_seconds: int = 60
-    
+
     # Transfer
     enable_transfer: bool = True
-    transfer_number: Optional[str] = None
-    transfer_keywords: List[str] = field(default_factory=lambda: ["speak to agent", "human", "transfer"])
-    
+    transfer_number: str | None = None
+    transfer_keywords: list[str] = field(default_factory=lambda: ["speak to agent", "human", "transfer"])
+
     # Recording
     record_calls: bool = True
-    
+
     # End call
-    end_call_keywords: List[str] = field(default_factory=lambda: ["goodbye", "bye", "end call"])
+    end_call_keywords: list[str] = field(default_factory=lambda: ["goodbye", "bye", "end call"])
     end_call_message: str = "Thank you for calling. Goodbye!"
-    
+
     # Voicemail
     enable_voicemail: bool = True
     voicemail_after_rings: int = 5
@@ -138,16 +136,16 @@ class KnowledgeBase:
     id: str
     name: str
     description: str
-    
+
     # Content
-    documents: List[Dict[str, str]] = field(default_factory=list)  # [{title, content}]
-    urls: List[str] = field(default_factory=list)
-    faqs: List[Dict[str, str]] = field(default_factory=list)  # [{question, answer}]
-    
+    documents: list[dict[str, str]] = field(default_factory=list)  # [{title, content}]
+    urls: list[str] = field(default_factory=list)
+    faqs: list[dict[str, str]] = field(default_factory=list)  # [{question, answer}]
+
     # Embedding
     embedding_model: str = "text-embedding-3-small"
     vector_store: str = "pinecone"  # pinecone, weaviate, qdrant
-    
+
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -159,34 +157,34 @@ class Assistant:
     tenant_id: str
     name: str
     description: str
-    
+
     # Settings
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     llm: LLMSettings = field(default_factory=LLMSettings)
     call: CallSettings = field(default_factory=CallSettings)
-    
+
     # Knowledge base
-    knowledge_base_id: Optional[str] = None
-    
+    knowledge_base_id: str | None = None
+
     # Phone number
-    phone_number_id: Optional[str] = None
-    
+    phone_number_id: str | None = None
+
     # Personality
     personality: str = "professional"  # professional, friendly, formal, casual
     industry: str = "general"  # real_estate, healthcare, ecommerce, support
-    
+
     # Templates
     prompt_template: str = ""
-    
+
     # Status
     is_active: bool = True
     is_published: bool = False
-    
+
     # Stats
     total_calls: int = 0
     avg_call_duration: float = 0
     successful_calls: int = 0
-    
+
     # Timestamps
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
@@ -194,7 +192,7 @@ class Assistant:
 
 class AssistantTemplates:
     """Pre-built assistant templates for different industries"""
-    
+
     TEMPLATES = {
         "real_estate": {
             "name": "Real Estate Agent",
@@ -408,14 +406,14 @@ Keep responses concise for phone conversations.""",
             ]
         },
     }
-    
+
     @classmethod
-    def get_template(cls, template_id: str) -> Optional[Dict]:
+    def get_template(cls, template_id: str) -> dict | None:
         """Get template by ID"""
         return cls.TEMPLATES.get(template_id)
-    
+
     @classmethod
-    def list_templates(cls) -> List[Dict]:
+    def list_templates(cls) -> list[dict]:
         """List all available templates"""
         return [
             {
@@ -432,7 +430,7 @@ class AssistantService:
     """
     Assistant management service
     """
-    
+
     # Available voices by provider
     VOICES = {
         VoiceProvider.ELEVENLABS: [
@@ -459,7 +457,7 @@ class AssistantService:
             {"id": "ta-IN-Standard-B", "name": "Tamil Male", "gender": "male", "accent": "indian"},
         ]
     }
-    
+
     # LLM Models
     LLM_MODELS = {
         LLMProvider.ANTHROPIC: [
@@ -478,12 +476,12 @@ class AssistantService:
             {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B", "quality": "good", "speed": "fast"},
         ]
     }
-    
+
     def __init__(self, db=None):
         self.db = db
-        self._assistants: Dict[str, Assistant] = {}
-        self._knowledge_bases: Dict[str, KnowledgeBase] = {}
-    
+        self._assistants: dict[str, Assistant] = {}
+        self._knowledge_bases: dict[str, KnowledgeBase] = {}
+
     def create_assistant(
         self,
         tenant_id: str,
@@ -496,25 +494,25 @@ class AssistantService:
         Create a new AI assistant
         """
         assistant_id = secrets.token_urlsafe(16)
-        
+
         # Start with template if provided
         if template_id:
             template = AssistantTemplates.get_template(template_id)
             if template:
                 kwargs.setdefault("personality", template["personality"])
                 kwargs.setdefault("industry", template["industry"])
-                
+
                 # Apply template settings
                 if "llm" not in kwargs:
                     kwargs["llm"] = LLMSettings(
                         system_prompt=template["system_prompt"]
                     )
-                
+
                 if "call" not in kwargs:
                     kwargs["call"] = CallSettings(
                         greeting_message=template["greeting"]
                     )
-        
+
         assistant = Assistant(
             id=assistant_id,
             tenant_id=tenant_id,
@@ -526,11 +524,11 @@ class AssistantService:
             personality=kwargs.get("personality", "professional"),
             industry=kwargs.get("industry", "general")
         )
-        
+
         self._assistants[assistant_id] = assistant
-        
+
         return assistant
-    
+
     def create_from_template(
         self,
         tenant_id: str,
@@ -543,18 +541,18 @@ class AssistantService:
         template = AssistantTemplates.get_template(template_id)
         if not template:
             raise ValueError(f"Template not found: {template_id}")
-        
+
         return self.create_assistant(
             tenant_id=tenant_id,
             name=name or template["name"],
             description=template["description"],
             template_id=template_id
         )
-    
+
     def update_assistant(
         self,
         assistant_id: str,
-        updates: Dict[str, Any]
+        updates: dict[str, Any]
     ) -> Assistant:
         """
         Update assistant settings
@@ -562,47 +560,47 @@ class AssistantService:
         assistant = self._assistants.get(assistant_id)
         if not assistant:
             raise ValueError("Assistant not found")
-        
+
         # Update basic fields
-        for field in ["name", "description", "personality", "industry", "is_active"]:
-            if field in updates:
-                setattr(assistant, field, updates[field])
-        
+        for field_name in ["name", "description", "personality", "industry", "is_active"]:
+            if field_name in updates:
+                setattr(assistant, field_name, updates[field_name])
+
         # Update nested settings
         if "voice" in updates:
             for key, value in updates["voice"].items():
                 setattr(assistant.voice, key, value)
-        
+
         if "llm" in updates:
             for key, value in updates["llm"].items():
                 setattr(assistant.llm, key, value)
-        
+
         if "call" in updates:
             for key, value in updates["call"].items():
                 setattr(assistant.call, key, value)
-        
+
         assistant.updated_at = datetime.now()
-        
+
         return assistant
-    
-    def get_assistant(self, assistant_id: str) -> Optional[Assistant]:
+
+    def get_assistant(self, assistant_id: str) -> Assistant | None:
         """Get assistant by ID"""
         return self._assistants.get(assistant_id)
-    
-    def list_assistants(self, tenant_id: str) -> List[Assistant]:
+
+    def list_assistants(self, tenant_id: str) -> list[Assistant]:
         """List all assistants for tenant"""
         return [
             a for a in self._assistants.values()
             if a.tenant_id == tenant_id
         ]
-    
+
     def delete_assistant(self, assistant_id: str) -> bool:
         """Delete assistant"""
         if assistant_id in self._assistants:
             del self._assistants[assistant_id]
             return True
         return False
-    
+
     def assign_phone_number(
         self,
         assistant_id: str,
@@ -612,23 +610,23 @@ class AssistantService:
         assistant = self._assistants.get(assistant_id)
         if not assistant:
             raise ValueError("Assistant not found")
-        
+
         assistant.phone_number_id = phone_number_id
         assistant.updated_at = datetime.now()
-        
+
         return assistant
-    
+
     def create_knowledge_base(
         self,
         tenant_id: str,
         name: str,
         description: str = "",
-        documents: List[Dict] = None,
-        faqs: List[Dict] = None
+        documents: list[dict] = None,
+        faqs: list[dict] = None
     ) -> KnowledgeBase:
         """Create knowledge base for assistant"""
         kb_id = secrets.token_urlsafe(16)
-        
+
         kb = KnowledgeBase(
             id=kb_id,
             name=name,
@@ -636,11 +634,11 @@ class AssistantService:
             documents=documents or [],
             faqs=faqs or []
         )
-        
+
         self._knowledge_bases[kb_id] = kb
-        
+
         return kb
-    
+
     def attach_knowledge_base(
         self,
         assistant_id: str,
@@ -650,20 +648,20 @@ class AssistantService:
         assistant = self._assistants.get(assistant_id)
         if not assistant:
             raise ValueError("Assistant not found")
-        
+
         if knowledge_base_id not in self._knowledge_bases:
             raise ValueError("Knowledge base not found")
-        
+
         assistant.knowledge_base_id = knowledge_base_id
         assistant.updated_at = datetime.now()
-        
+
         return assistant
-    
+
     def get_available_voices(
         self,
         provider: VoiceProvider = None,
         language: AssistantLanguage = None
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Get available voices"""
         if provider:
             voices = self.VOICES.get(provider, [])
@@ -671,7 +669,7 @@ class AssistantService:
             voices = []
             for p_voices in self.VOICES.values():
                 voices.extend(p_voices)
-        
+
         # Filter by language/accent if specified
         if language:
             # Map language to accent
@@ -683,23 +681,23 @@ class AssistantService:
             accents = accent_map.get(language, [])
             if accents:
                 voices = [v for v in voices if v.get("accent") in accents]
-        
+
         return voices
-    
+
     def get_available_models(
         self,
         provider: LLMProvider = None
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Get available LLM models"""
         if provider:
             return self.LLM_MODELS.get(provider, [])
-        
+
         all_models = []
         for p, models in self.LLM_MODELS.items():
             for m in models:
                 all_models.append({**m, "provider": p.value})
         return all_models
-    
+
     def generate_system_prompt(
         self,
         assistant: Assistant
@@ -708,7 +706,7 @@ class AssistantService:
         Generate complete system prompt for assistant
         """
         base_prompt = assistant.llm.system_prompt or ""
-        
+
         # Add personality traits
         personality_traits = {
             "professional": "Be professional, knowledgeable, and efficient.",
@@ -716,9 +714,9 @@ class AssistantService:
             "formal": "Be formal, respectful, and precise.",
             "casual": "Be casual, relaxed, and conversational."
         }
-        
+
         personality = personality_traits.get(assistant.personality, "")
-        
+
         # Add industry context
         industry_context = {
             "real_estate": "You are helping with real estate inquiries.",
@@ -727,9 +725,9 @@ class AssistantService:
             "finance": "You are helping with financial services.",
             "general": "You are a general-purpose assistant."
         }
-        
+
         industry = industry_context.get(assistant.industry, "")
-        
+
         # Add knowledge base context
         kb_context = ""
         if assistant.knowledge_base_id:
@@ -738,7 +736,7 @@ class AssistantService:
                 kb_context = "\n\nFAQ Reference:\n"
                 for faq in kb.faqs[:10]:  # Limit to 10 FAQs
                     kb_context += f"Q: {faq['question']}\nA: {faq['answer']}\n\n"
-        
+
         # Combine all parts
         full_prompt = f"""
 {base_prompt}
@@ -755,9 +753,9 @@ Voice Call Guidelines:
 
 {kb_context}
 """.strip()
-        
+
         return full_prompt
-    
+
     def record_call(
         self,
         assistant_id: str,
@@ -768,11 +766,11 @@ Voice Call Guidelines:
         assistant = self._assistants.get(assistant_id)
         if not assistant:
             return
-        
+
         assistant.total_calls += 1
         if successful:
             assistant.successful_calls += 1
-        
+
         # Update average duration
         total_duration = assistant.avg_call_duration * (assistant.total_calls - 1)
         assistant.avg_call_duration = (total_duration + duration_seconds) / assistant.total_calls
@@ -805,9 +803,9 @@ class UpdateAssistantRequest(BaseModel):
     personality: str = None
     industry: str = None
     is_active: bool = None
-    voice: Dict = None
-    llm: Dict = None
-    call: Dict = None
+    voice: dict = None
+    llm: dict = None
+    call: dict = None
 
 
 @assistant_router.get("/templates")
@@ -821,7 +819,7 @@ async def list_voices(provider: str = None, language: str = None):
     """List available voices"""
     p = VoiceProvider(provider) if provider else None
     l = AssistantLanguage(language) if language else None
-    
+
     return {"voices": assistant_service.get_available_voices(p, l)}
 
 
@@ -829,7 +827,7 @@ async def list_voices(provider: str = None, language: str = None):
 async def list_models(provider: str = None):
     """List available LLM models"""
     p = LLMProvider(provider) if provider else None
-    
+
     return {"models": assistant_service.get_available_models(p)}
 
 
@@ -847,7 +845,7 @@ async def create_assistant(
         personality=request.personality,
         industry=request.industry
     )
-    
+
     return {
         "assistant_id": assistant.id,
         "name": assistant.name,
@@ -859,7 +857,7 @@ async def create_assistant(
 async def list_assistants(tenant_id: str = "demo_tenant"):
     """List all assistants"""
     assistants = assistant_service.list_assistants(tenant_id)
-    
+
     return {
         "assistants": [
             {
@@ -881,10 +879,10 @@ async def list_assistants(tenant_id: str = "demo_tenant"):
 async def get_assistant(assistant_id: str):
     """Get assistant details"""
     assistant = assistant_service.get_assistant(assistant_id)
-    
+
     if not assistant:
         raise HTTPException(status_code=404, detail="Assistant not found")
-    
+
     return {
         "id": assistant.id,
         "name": assistant.name,
@@ -925,7 +923,7 @@ async def update_assistant(
     try:
         updates = request.dict(exclude_none=True)
         assistant = assistant_service.update_assistant(assistant_id, updates)
-        
+
         return {"status": "updated", "assistant_id": assistant.id}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))

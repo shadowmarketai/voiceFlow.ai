@@ -5,10 +5,16 @@ Analytics event tracking for dashboards, reporting, and aggregation.
 """
 
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
-    String, Integer, Float, DateTime, JSON, ForeignKey, Index,
+    JSON,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -30,48 +36,48 @@ class AnalyticsEvent(Base):
 
     # Event classification
     event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
-    event_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    event_category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "voice", "crm", "marketing", "billing"
-    event_action: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # "created", "updated", "converted"
+    event_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    event_category: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "voice", "crm", "marketing", "billing"
+    event_action: Mapped[str | None] = mapped_column(String(100), nullable=True)  # "created", "updated", "converted"
 
     # Context references
-    voice_analysis_id: Mapped[Optional[int]] = mapped_column(
+    voice_analysis_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("voice_analyses.id", ondelete="SET NULL"), nullable=True, index=True,
     )
-    lead_id: Mapped[Optional[int]] = mapped_column(
+    lead_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("crm_leads.id", ondelete="SET NULL"), nullable=True, index=True,
     )
-    campaign_id: Mapped[Optional[int]] = mapped_column(
+    campaign_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True,
     )
-    deal_id: Mapped[Optional[int]] = mapped_column(
+    deal_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("crm_deals.id", ondelete="SET NULL"), nullable=True, index=True,
     )
 
     # Event data (flexible schema)
-    properties: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    properties: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Date dimensions for aggregation (denormalized for query performance)
-    event_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
-    hour: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    day_of_week: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # 0=Monday, 6=Sunday
-    week_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    month: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    event_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    hour: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0=Monday, 6=Sunday
+    week_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Metrics
-    value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
     count: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Source tracking
-    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "web", "api", "system"
-    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
-    user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "web", "api", "system"
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Owner (tenant isolation)
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
     )
 

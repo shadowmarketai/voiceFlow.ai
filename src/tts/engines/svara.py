@@ -7,12 +7,13 @@ License: Open Source
 
 import asyncio
 import io
+import json
+import logging
 import os
 import time
 import uuid
-import json
-from typing import Optional, AsyncGenerator, Dict, Any
-import logging
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from tts.engines.base import BaseTTSEngine
 
@@ -50,7 +51,7 @@ class SvaraTTSEngine(BaseTTSEngine):
         "bodo": "Bodo", "ne": "Nepali"
     }
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.model_id = "canopy-ai/svara-tts"
         self.model_size = config.get("model_size", "400M")
@@ -66,8 +67,8 @@ class SvaraTTSEngine(BaseTTSEngine):
             logger.info("Loading Svara TTS model (%s): %s", self.model_size, self.model_id)
 
             try:
-                from transformers import AutoModelForCausalLM, AutoTokenizer
                 import torch
+                from transformers import AutoModelForCausalLM, AutoTokenizer
 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -121,8 +122,8 @@ class SvaraTTSEngine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs
@@ -154,13 +155,13 @@ class SvaraTTSEngine(BaseTTSEngine):
         text: str,
         language: str,
         emotion: str,
-        voice_id: Optional[str],
+        voice_id: str | None,
         pace: float
     ) -> bytes:
         """Synthesize using Svara TTS model"""
-        import torch
         import numpy as np
         import scipy.io.wavfile as wavfile
+        import torch
 
         lang_name = self.LANGUAGE_CODES.get(language, "English")
         emotion_params = self.EMOTION_PARAMS.get(emotion, self.EMOTION_PARAMS["neutral"])
@@ -240,8 +241,8 @@ class SvaraTTSEngine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs

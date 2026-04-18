@@ -7,12 +7,16 @@ Minimal CRM models for analytics integration.
 from enum import Enum as PyEnum
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, Integer, String, Text, Enum,
+    DateTime,
+    Enum,
+    Float,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.sql import func
 
-from api.models.base import Base, TimestampMixin, SoftDeleteMixin
+from api.models.base import Base, SoftDeleteMixin, TimestampMixin
 
 
 class LeadStatus(str, PyEnum):

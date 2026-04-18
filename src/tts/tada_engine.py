@@ -155,8 +155,9 @@ async def synthesize(
         )
 
         # Convert numpy array → WAV bytes → base64
-        import numpy as np
         import wave
+
+        import numpy as np
 
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:

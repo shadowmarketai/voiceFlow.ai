@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -48,7 +48,7 @@ class ExotelProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 f"{self.base_url}/Calls/connect",
@@ -73,14 +73,14 @@ class ExotelProvider(TelephonyProvider):
                 }
             return {"success": False, "provider": self.name, "error": resp.text}
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/Calls/{call_id}", auth=self._auth()
             )
             return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{self.base_url}/Calls/{call_id}",
@@ -89,11 +89,11 @@ class ExotelProvider(TelephonyProvider):
             )
             return {"success": resp.status_code == 200}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         call = await self.get_call(call_id)
         return call.get("Call", {}).get("RecordingUrl")
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/IncomingPhoneNumbers", auth=self._auth()
@@ -114,13 +114,13 @@ class ExotelProvider(TelephonyProvider):
             ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         raise NotImplementedError(
             "Exotel requires manual approval — contact support to provision numbers"
         )
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         status_map = {
             "initiated": CallStatus.INITIATED,
             "ringing": CallStatus.RINGING,

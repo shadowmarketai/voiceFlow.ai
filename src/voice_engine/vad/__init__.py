@@ -8,6 +8,6 @@ Providers:
   - Energy-based VAD (fallback — no ML required)
 """
 
-from voice_engine.vad.vad_engine import VADEngine, VADResult, VADProvider
+from voice_engine.vad.vad_engine import VADEngine, VADProvider, VADResult
 
 __all__ = ["VADEngine", "VADResult", "VADProvider"]

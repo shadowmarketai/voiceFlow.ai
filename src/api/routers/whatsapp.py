@@ -12,11 +12,12 @@ Endpoints:
 """
 
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Request, HTTPException, Query, Header
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
+
+from integrations.whatsapp.whatsapp_service import WhatsAppSession
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class SendMessageRequest(BaseModel):
 
 class SendMessageResponse(BaseModel):
     status: str
-    message_id: Optional[str] = None
+    message_id: str | None = None
     voice_sent: bool = False
 
 
@@ -70,7 +71,7 @@ async def verify_webhook(
 @router.post("/webhook")
 async def handle_webhook(
     request: Request,
-    x_hub_signature_256: Optional[str] = Header(None),
+    x_hub_signature_256: str | None = Header(None),
 ):
     """Handle incoming WhatsApp messages.
 
@@ -85,10 +86,10 @@ async def handle_webhook(
 
     # Verify signature in production
     from integrations.whatsapp.whatsapp_service import (
-        verify_webhook_signature,
-        parse_webhook_message,
-        get_whatsapp_client,
         _get_or_create_session,
+        get_whatsapp_client,
+        parse_webhook_message,
+        verify_webhook_signature,
     )
 
     if x_hub_signature_256:
@@ -205,7 +206,7 @@ async def whatsapp_status():
             "step_1": "Create a Meta Developer Account at developers.facebook.com",
             "step_2": "Create a WhatsApp Business App",
             "step_3": "Set WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN in .env",
-            "step_4": f"Set webhook URL to: https://your-domain.com/api/v1/whatsapp/webhook",
+            "step_4": "Set webhook URL to: https://your-domain.com/api/v1/whatsapp/webhook",
             "step_5": "Subscribe to 'messages' webhook field",
         },
     }
@@ -215,7 +216,7 @@ async def whatsapp_status():
 
 
 async def _generate_text_response(
-    text: str, session: "WhatsAppSession"
+    text: str, session: WhatsAppSession
 ) -> str:
     """Generate an AI response for a text message."""
     try:
@@ -236,7 +237,7 @@ async def _generate_text_response(
 
 
 async def _process_voice_message(
-    audio_bytes: bytes, session: "WhatsAppSession"
+    audio_bytes: bytes, session: WhatsAppSession
 ) -> dict:
     """Process a voice note through the Voice AI pipeline."""
     result = {

@@ -169,7 +169,7 @@ class GeminiLiveS2S:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
                 msg = json.loads(raw)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Gemini receive timeout")
                 break
             except Exception as exc:

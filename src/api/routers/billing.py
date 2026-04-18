@@ -12,10 +12,10 @@ import hmac
 import json
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
@@ -127,9 +127,9 @@ class SubscribeRequest(BaseModel):
 
     plan_id: str = Field(..., description="Plan ID: starter, professional, enterprise")
     billing_cycle: str = Field(default="monthly", description="monthly or yearly")
-    customer_name: Optional[str] = Field(default=None, max_length=200)
-    customer_email: Optional[str] = Field(default=None, max_length=255)
-    customer_phone: Optional[str] = Field(default=None, max_length=20)
+    customer_name: str | None = Field(default=None, max_length=200)
+    customer_email: str | None = Field(default=None, max_length=255)
+    customer_phone: str | None = Field(default=None, max_length=20)
 
     @field_validator("plan_id")
     @classmethod
@@ -152,7 +152,7 @@ class CancelRequest(BaseModel):
     """Cancel a subscription."""
 
     cancel_immediately: bool = Field(default=False, description="Cancel now or at cycle end")
-    reason: Optional[str] = Field(default=None, max_length=1000)
+    reason: str | None = Field(default=None, max_length=1000)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -176,10 +176,10 @@ class SubscriptionResponse(BaseModel):
     plan_name: str
     status: str
     billing_cycle: str
-    current_period_start: Optional[str] = None
-    current_period_end: Optional[str] = None
-    cancelled_at: Optional[str] = None
-    razorpay_subscription_id: Optional[str] = None
+    current_period_start: str | None = None
+    current_period_end: str | None = None
+    cancelled_at: str | None = None
+    razorpay_subscription_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -191,8 +191,8 @@ class InvoiceResponse(BaseModel):
     status: str
     description: str
     created_at: str
-    paid_at: Optional[str] = None
-    razorpay_payment_id: Optional[str] = None
+    paid_at: str | None = None
+    razorpay_payment_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -202,7 +202,7 @@ class UsageResponse(BaseModel):
     plan_name: str
     status: str
     billing_cycle: str
-    current_period_end: Optional[str] = None
+    current_period_end: str | None = None
     usage: dict[str, Any] = {}
     limits: dict[str, Any] = {}
 
@@ -291,8 +291,8 @@ async def get_subscription(
             plan_name="Starter (Trial)",
             status="trialing",
             billing_cycle="monthly",
-            current_period_start=datetime.now(timezone.utc).isoformat(),
-            current_period_end=(datetime.now(timezone.utc) + timedelta(days=14)).isoformat(),
+            current_period_start=datetime.now(UTC).isoformat(),
+            current_period_end=(datetime.now(UTC) + timedelta(days=14)).isoformat(),
         )
 
     plan = PLANS.get(sub["plan_id"], PLANS["starter"])
@@ -350,7 +350,7 @@ async def subscribe(
         amount_inr = plan["price_monthly_inr"]
         period_days = 30
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     subscription_id = f"sub_{secrets.token_urlsafe(16)}"
 
     sub_record = {
@@ -433,7 +433,7 @@ async def cancel_subscription(
             detail="No active subscription found",
         )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if body.cancel_immediately:
         sub["status"] = "cancelled"
@@ -595,10 +595,11 @@ async def get_usage(
     Queries actual database counts for leads, voice analyses (call minutes),
     campaigns, etc. and compares against the plan's limits.
     """
+    from sqlalchemy import func
+
+    from api.models.campaign import Campaign as CampaignModel
     from api.models.crm import Lead
     from api.models.voice import VoiceAnalysis
-    from api.models.campaign import Campaign as CampaignModel
-    from sqlalchemy import func
 
     user_id = _get_user_id_str(current_user)
     sub = _subscriptions.get(user_id)

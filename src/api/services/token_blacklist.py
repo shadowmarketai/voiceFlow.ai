@@ -19,7 +19,6 @@ import logging
 import os
 import time
 from datetime import datetime
-from typing import Optional
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +65,7 @@ class _RedisBlacklist:
         return bool(self._r.exists(f"token_blacklist:{jti}"))
 
 
-_backend: Optional[_MemoryBlacklist | _RedisBlacklist] = None
+_backend: _MemoryBlacklist | _RedisBlacklist | None = None
 
 
 def _get():

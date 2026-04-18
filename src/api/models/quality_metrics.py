@@ -10,7 +10,7 @@ Three narrow tables keep the metrics endpoint fast and queryable:
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Float, Integer, String, Boolean, Index
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base

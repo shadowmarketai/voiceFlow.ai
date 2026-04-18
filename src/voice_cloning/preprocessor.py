@@ -5,9 +5,7 @@ Cleans and validates audio samples before embedding extraction.
 """
 
 import logging
-import os
 import tempfile
-from typing import Dict, Optional, Tuple
 
 import librosa
 import numpy as np
@@ -22,7 +20,7 @@ class AudioPreprocessor:
     def __init__(self, target_sr: int = 22050):
         self.target_sr = target_sr
 
-    def load_and_normalize(self, file_path: str) -> Tuple[np.ndarray, int]:
+    def load_and_normalize(self, file_path: str) -> tuple[np.ndarray, int]:
         """Load audio and normalize to target sample rate."""
         audio, sr = librosa.load(file_path, sr=None, mono=True)
         if sr != self.target_sr:
@@ -64,7 +62,7 @@ class AudioPreprocessor:
             return 60.0
         return float(10 * np.log10(signal_power / (noise_floor + 1e-10)))
 
-    def quality_check(self, audio: np.ndarray, sr: int) -> Dict:
+    def quality_check(self, audio: np.ndarray, sr: int) -> dict:
         """Check if sample meets minimum quality for cloning."""
         duration = len(audio) / sr
         snr = self.calculate_snr(audio)
@@ -89,7 +87,7 @@ class AudioPreprocessor:
             issues.append(f"For best quality, record 30s-5min (currently {duration:.1f}s)")
         return issues
 
-    def process(self, file_path: str) -> Dict:
+    def process(self, file_path: str) -> dict:
         """Full preprocessing pipeline. Returns processed audio + quality report."""
         audio, sr = self.load_and_normalize(file_path)
         audio = self.remove_noise(audio, sr)
@@ -99,7 +97,8 @@ class AudioPreprocessor:
         quality = self.quality_check(audio, sr)
 
         # Save processed audio to temp file
-        processed_path = tempfile.mktemp(suffix=".wav")
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as _tmp:
+            processed_path = _tmp.name
         sf.write(processed_path, audio, sr)
 
         return {

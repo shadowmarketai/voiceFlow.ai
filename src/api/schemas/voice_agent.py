@@ -5,10 +5,8 @@ Pydantic v2 schemas for voice cloning, knowledge base, and recordings.
 KB-008: NO 'any' type — every field explicitly typed.
 """
 
-from typing import Optional
 
-from pydantic import BaseModel, Field, ConfigDict
-
+from pydantic import BaseModel, ConfigDict, Field
 
 # ── Voice Cloning ──────────────────────────────────────────────
 
@@ -25,13 +23,13 @@ class VoiceResponse(BaseModel):
 
     id: int
     name: str
-    person_name: Optional[str] = None
+    person_name: str | None = None
     tts_engine: str
     language: str
     status: str
     is_active: bool
     reference_duration_seconds: float
-    internal_voice_id: Optional[str] = None
+    internal_voice_id: str | None = None
     created_at: str
 
 
@@ -46,27 +44,27 @@ class KnowledgeAddRequest(BaseModel):
     content: str = Field(..., min_length=1)
     doc_type: str = Field("document", description="document, faq, product_catalog, script")
     scope: str = Field("agent", description="global | campaign | agent")
-    agent_id: Optional[str] = None
-    campaign_id: Optional[str] = None
+    agent_id: str | None = None
+    campaign_id: str | None = None
     tenant_id: str = Field("default")
-    question: Optional[str] = None
-    answer: Optional[str] = None
+    question: str | None = None
+    answer: str | None = None
 
 
 class KnowledgeBulkRequest(BaseModel):
     tenant_id: str = Field("default")
     scope: str = Field("agent")
-    agent_id: Optional[str] = None
-    campaign_id: Optional[str] = None
+    agent_id: str | None = None
+    campaign_id: str | None = None
     items: list[dict] = Field(..., min_length=1)
 
 
 class KnowledgeUpdateRequest(BaseModel):
-    title: Optional[str] = None
-    content: Optional[str] = None
-    question: Optional[str] = None
-    answer: Optional[str] = None
-    is_active: Optional[bool] = None
+    title: str | None = None
+    content: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    is_active: bool | None = None
 
 
 class KnowledgeResponse(BaseModel):
@@ -76,11 +74,11 @@ class KnowledgeResponse(BaseModel):
     title: str
     doc_type: str
     scope: str = "agent"
-    agent_id: Optional[str] = None
-    campaign_id: Optional[str] = None
+    agent_id: str | None = None
+    campaign_id: str | None = None
     content: str
-    question: Optional[str] = None
-    answer: Optional[str] = None
+    question: str | None = None
+    answer: str | None = None
     chunk_index: int
     is_active: bool
     created_at: str
@@ -94,16 +92,16 @@ class RecordingResponse(BaseModel):
     id: int
     call_id: str
     caller_number: str
-    agent_voice_id: Optional[str] = None
+    agent_voice_id: str | None = None
     sip_provider: str
     duration_seconds: float
     audio_format: str
     recording_size_bytes: int
-    full_transcript: Optional[str] = None
-    caller_emotion: Optional[str] = None
-    caller_intent: Optional[str] = None
-    caller_sentiment: Optional[float] = None
-    lead_score: Optional[float] = None
-    started_at: Optional[str] = None
-    ended_at: Optional[str] = None
+    full_transcript: str | None = None
+    caller_emotion: str | None = None
+    caller_intent: str | None = None
+    caller_sentiment: float | None = None
+    lead_score: float | None = None
+    started_at: str | None = None
+    ended_at: str | None = None
     created_at: str

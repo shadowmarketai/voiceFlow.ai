@@ -21,12 +21,12 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 
-from api.database import db, USE_POSTGRES
+from api.database import USE_POSTGRES, db
 from api.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,7 @@ class CreateUserReq(BaseModel):
     email: EmailStr
     name: str
     password: str
-    phone: Optional[str] = None
+    phone: str | None = None
 
 
 @router.post("/users", status_code=201)
@@ -142,9 +142,9 @@ async def create_tenant_user(
 
 
 class UpdateUserReq(BaseModel):
-    name: Optional[str] = None
-    phone: Optional[str] = None
-    is_active: Optional[bool] = None
+    name: str | None = None
+    phone: str | None = None
+    is_active: bool | None = None
 
 
 @router.put("/users/{user_id}")

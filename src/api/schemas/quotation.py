@@ -4,9 +4,8 @@ Swetha Structures CRM - Quotation Schemas
 Pydantic v2 schemas for PEB quotation system.
 """
 
-from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,14 +45,14 @@ class PEBInput(BaseModel):
     side_cladding_type: SheetType = SheetType.BARE
 
     mezzanine_required: bool = False
-    mezz_length: Optional[float] = Field(default=None, ge=0)
-    mezz_width: Optional[float] = Field(default=None, ge=0)
+    mezz_length: float | None = Field(default=None, ge=0)
+    mezz_width: float | None = Field(default=None, ge=0)
 
-    lighting_sqft: Optional[float] = Field(default=None, ge=0)
+    lighting_sqft: float | None = Field(default=None, ge=0)
 
     # Optional rate overrides
-    steel_rate_main: Optional[float] = None
-    steel_rate_mezz: Optional[float] = None
+    steel_rate_main: float | None = None
+    steel_rate_mezz: float | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,7 +68,7 @@ class BOQItem(BaseModel):
     rate: float
     amount: float
     category: str
-    sub_note: Optional[str] = None
+    sub_note: str | None = None
 
 
 class BOQResult(BaseModel):
@@ -89,10 +88,10 @@ class QuotationCreate(BaseModel):
 
     lead_id: int = Field(..., description="CRM lead ID (required)")
     project_name: str = Field(..., min_length=1, max_length=500)
-    client_name: Optional[str] = Field(default=None, max_length=300)
-    client_location: Optional[str] = Field(default=None, max_length=500)
+    client_name: str | None = Field(default=None, max_length=300)
+    client_location: str | None = Field(default=None, max_length=500)
     building_params: PEBInput
-    notes: Optional[str] = None
+    notes: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,11 +99,11 @@ class QuotationCreate(BaseModel):
 class QuotationUpdate(BaseModel):
     """Update an existing quotation (partial)."""
 
-    project_name: Optional[str] = Field(default=None, max_length=500)
-    client_name: Optional[str] = Field(default=None, max_length=300)
-    client_location: Optional[str] = Field(default=None, max_length=500)
-    building_params: Optional[PEBInput] = None
-    notes: Optional[str] = None
+    project_name: str | None = Field(default=None, max_length=500)
+    client_name: str | None = Field(default=None, max_length=300)
+    client_location: str | None = Field(default=None, max_length=500)
+    building_params: PEBInput | None = None
+    notes: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -122,18 +121,18 @@ class QuotationResponse(BaseModel):
     lead_id: int
     user_id: str
     project_name: str
-    client_name: Optional[str] = None
-    client_location: Optional[str] = None
-    building_params: Optional[dict[str, Any]] = None
-    boq_results: Optional[dict[str, Any]] = None
+    client_name: str | None = None
+    client_location: str | None = None
+    building_params: dict[str, Any] | None = None
+    boq_results: dict[str, Any] | None = None
     total_amount: float = 0.0
     rate_per_sqft: float = 0.0
     status: str = "draft"
     revision: int = 1
-    parent_quotation_id: Optional[int] = None
-    pdf_path: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    parent_quotation_id: int | None = None
+    pdf_path: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -145,8 +144,8 @@ class QuotationLogResponse(BaseModel):
     quotation_id: int
     user_id: str
     action: str
-    details: Optional[dict[str, Any]] = None
-    created_at: Optional[str] = None
+    details: dict[str, Any] | None = None
+    created_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

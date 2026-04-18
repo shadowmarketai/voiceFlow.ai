@@ -29,7 +29,7 @@ import time
 import uuid
 from collections import defaultdict
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import (
     APIRouter,
@@ -42,7 +42,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from api.config import settings
@@ -120,10 +120,10 @@ class ConversationMessage(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     role: MessageRole
     text: str
-    audio_base64: Optional[str] = None
-    emotion: Optional[str] = None
-    language: Optional[str] = None
-    confidence: Optional[float] = None
+    audio_base64: str | None = None
+    emotion: str | None = None
+    language: str | None = None
+    confidence: float | None = None
     timestamp: str = Field(
         default_factory=lambda: datetime.datetime.utcnow().isoformat()
     )
@@ -134,7 +134,7 @@ class ConversationSession(BaseModel):
     agent_id: str
     language: str
     started_at: str
-    ended_at: Optional[str] = None
+    ended_at: str | None = None
     messages: list[ConversationMessage] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -142,7 +142,7 @@ class ConversationSession(BaseModel):
 class StartConversationRequest(BaseModel):
     agent_id: str = "sales-assistant-en"
     language: str = "en"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -157,26 +157,26 @@ class StartConversationResponse(BaseModel):
 
 class TextMessageRequest(BaseModel):
     text: str
-    language: Optional[str] = None
+    language: str | None = None
 
 
 class TextMessageResponse(BaseModel):
     message_id: str
     text: str
-    audio_base64: Optional[str] = None
-    emotion: Optional[str] = None
-    format: Optional[str] = None
+    audio_base64: str | None = None
+    emotion: str | None = None
+    format: str | None = None
 
 
 class AudioMessageResponse(BaseModel):
     message_id: str
     transcription: str
     response_text: str
-    response_audio_base64: Optional[str] = None
-    emotion: Optional[str] = None
+    response_audio_base64: str | None = None
+    emotion: str | None = None
     language: str
     confidence: float
-    format: Optional[str] = None
+    format: str | None = None
 
 
 class ConversationHistoryResponse(BaseModel):
@@ -186,7 +186,7 @@ class ConversationHistoryResponse(BaseModel):
     message_count: int
     messages: list[ConversationMessage]
     started_at: str
-    ended_at: Optional[str] = None
+    ended_at: str | None = None
 
 
 class AgentConfigResponse(BaseModel):
@@ -253,7 +253,7 @@ def _get_agent(agent_id: str) -> dict[str, Any]:
     return agent
 
 
-def _validate_api_key(api_key: Optional[str]) -> bool:
+def _validate_api_key(api_key: str | None) -> bool:
     """Validate an API key. Returns True for authenticated, False for anonymous.
 
     In demo mode, any non-empty key or empty key is accepted.
@@ -372,7 +372,7 @@ async def _generate_llm_response(
 
 async def _transcribe_audio(
     audio_bytes: bytes,
-    language: Optional[str] = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Transcribe audio bytes. Uses voice engine if available, else mock."""
     try:
@@ -401,8 +401,8 @@ async def _transcribe_audio(
 async def _synthesize_audio(
     text: str,
     language: str = "en",
-    voice_id: Optional[str] = None,
-) -> Optional[str]:
+    voice_id: str | None = None,
+) -> str | None:
     """Synthesize text to audio. Returns base64-encoded audio or None."""
     try:
         from voice_engine.voice_ai_service import get_voice_ai_service
@@ -610,7 +610,7 @@ async def send_audio_message(
     session_id: str,
     request: Request,
     file: UploadFile = File(..., description="Audio file (WAV, MP3, WebM, OGG)"),
-    language: Optional[str] = None,
+    language: str | None = None,
 ):
     """Upload an audio file, get transcription + AI voice response."""
     session = _get_session(session_id)
@@ -1032,9 +1032,9 @@ ws_router = APIRouter(prefix="/api/v1/voice/conversation", tags=["Voice Conversa
 async def voice_conversation_ws(
     websocket: WebSocket,
     agent_id: str = Query("sales-assistant-en"),
-    session_id: Optional[str] = Query(None),
-    api_key: Optional[str] = Query(None),
-    language: Optional[str] = Query(None),
+    session_id: str | None = Query(None),
+    api_key: str | None = Query(None),
+    language: str | None = Query(None),
     client_tier: str = Query("standard"),
 ):
     """Real-time WebSocket voice conversation endpoint.

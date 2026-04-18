@@ -6,10 +6,18 @@ API keys are stored as SHA-256 hashes and support granular permissions.
 """
 
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
-    String, Integer, Float, Boolean, DateTime, JSON, Text, ForeignKey, Index,
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,18 +40,18 @@ class APIKey(TimestampMixin, Base):
 
     # Key info
     key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    key_prefix: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)  # First 8 chars for identification
+    key_prefix: Mapped[str | None] = mapped_column(String(8), nullable=True)  # First 8 chars for identification
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Permissions (granular access control)
-    permissions: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    permissions: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Example: ["voice:read", "voice:write", "crm:sync", "campaign:read", "analytics:read"]
 
     # Scopes (additional resource-level restrictions)
-    allowed_ips: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # IP whitelist
-    allowed_origins: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # CORS origins
-    allowed_endpoints: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # specific endpoint patterns
+    allowed_ips: Mapped[list | None] = mapped_column(JSON, nullable=True)  # IP whitelist
+    allowed_origins: Mapped[list | None] = mapped_column(JSON, nullable=True)  # CORS origins
+    allowed_endpoints: Mapped[list | None] = mapped_column(JSON, nullable=True)  # specific endpoint patterns
 
     # Rate limiting
     rate_limit_per_minute: Mapped[int] = mapped_column(Integer, default=60, server_default="60")
@@ -52,17 +60,17 @@ class APIKey(TimestampMixin, Base):
 
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Usage tracking
-    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_used_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     total_requests: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     total_errors: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Expiry
-    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # Owner (tenant isolation)
     user_id: Mapped[int] = mapped_column(
@@ -94,18 +102,18 @@ class WebhookConfig(TimestampMixin, Base):
     # Webhook info
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     url: Mapped[str] = mapped_column(String(500), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Events to trigger on
-    events: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    events: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Example: ["voice.processed", "lead.created", "lead.scored", "churn.detected",
     #           "campaign.completed", "ticket.created", "deal.won"]
 
     # Security
-    secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # HMAC signing secret
-    headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Additional headers to send
-    auth_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # "none", "basic", "bearer", "hmac"
-    auth_credentials: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # encrypted auth value
+    secret: Mapped[str | None] = mapped_column(String(255), nullable=True)  # HMAC signing secret
+    headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # Additional headers to send
+    auth_type: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "none", "basic", "bearer", "hmac"
+    auth_credentials: Mapped[str | None] = mapped_column(String(500), nullable=True)  # encrypted auth value
 
     # Delivery configuration
     http_method: Mapped[str] = mapped_column(String(10), default="POST", server_default="POST")
@@ -122,14 +130,14 @@ class WebhookConfig(TimestampMixin, Base):
     successful_deliveries: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     failed_deliveries: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    last_delivery_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_delivery_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # HTTP status code
-    last_error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    last_delivery_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_delivery_status: Mapped[int | None] = mapped_column(Integer, nullable=True)  # HTTP status code
+    last_error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Auto-disable on failures
     auto_disable_after_failures: Mapped[int] = mapped_column(Integer, default=10, server_default="10")
-    disabled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    disabled_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    disabled_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Owner (tenant isolation)
     user_id: Mapped[int] = mapped_column(
@@ -138,7 +146,7 @@ class WebhookConfig(TimestampMixin, Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="webhook_configs")
-    delivery_logs: Mapped[List["WebhookDeliveryLog"]] = relationship(
+    delivery_logs: Mapped[list["WebhookDeliveryLog"]] = relationship(
         "WebhookDeliveryLog", back_populates="webhook_config", cascade="all, delete-orphan", lazy="dynamic",
     )
 
@@ -162,25 +170,25 @@ class WebhookDeliveryLog(Base):
 
     # Delivery info
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    event_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+    event_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     # Request
     request_url: Mapped[str] = mapped_column(String(500), nullable=False)
-    request_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    request_body: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    request_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_body: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Response
-    response_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    response_headers: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
-    response_body: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    response_body: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timing
-    duration_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # Retry info
     attempt_number: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     is_success: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Foreign keys
     webhook_config_id: Mapped[int] = mapped_column(

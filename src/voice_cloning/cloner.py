@@ -13,15 +13,12 @@ Supports multiple backends:
 import base64
 import logging
 import os
-import tempfile
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-import soundfile as sf
-
-from voice_cloning.preprocessor import AudioPreprocessor
 from voice_cloning.encoder import SpeakerEncoder
+from voice_cloning.preprocessor import AudioPreprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +33,7 @@ class VoiceCloner:
         self.preprocessor = AudioPreprocessor()
         self.encoder = SpeakerEncoder(provider="auto")
         self._xtts = None
-        self._voice_registry: Dict[str, Dict] = {}
+        self._voice_registry: dict[str, dict] = {}
         os.makedirs(SAMPLES_DIR, exist_ok=True)
         os.makedirs(OUTPUTS_DIR, exist_ok=True)
         self._reload_from_db()
@@ -62,7 +59,7 @@ class VoiceCloner:
         voice_name: str,
         file_extension: str = ".wav",
         tenant_id: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Upload + preprocess + quality check + extract embedding.
 
         Returns voice_id + quality report.
@@ -118,7 +115,7 @@ class VoiceCloner:
         language: str = "en",
         speed: float = 1.0,
         provider: str = "auto",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Generate speech in a cloned voice.
 
         Returns audio_base64 + metadata.
@@ -177,7 +174,7 @@ class VoiceCloner:
         return "edge_tts"
 
     def _synthesize_xtts(
-        self, voice: Dict, text: str, language: str,
+        self, voice: dict, text: str, language: str,
         speed: float, output_path: str,
     ):
         """Synthesize using XTTS v2 (self-hosted, free)."""
@@ -199,7 +196,7 @@ class VoiceCloner:
         )
 
     def _synthesize_elevenlabs(
-        self, voice: Dict, text: str, language: str, output_path: str,
+        self, voice: dict, text: str, language: str, output_path: str,
     ):
         """Synthesize using ElevenLabs API (paid, highest quality)."""
         import httpx
@@ -217,7 +214,7 @@ class VoiceCloner:
                 resp = httpx.post(
                     "https://api.elevenlabs.io/v1/voices/add",
                     headers={"xi-api-key": api_key},
-                    files={"files": (f"sample.wav", f, "audio/wav")},
+                    files={"files": ("sample.wav", f, "audio/wav")},
                     data={"name": voice["voice_name"], "description": "VoiceFlow AI clone"},
                     timeout=60,
                 )
@@ -241,11 +238,12 @@ class VoiceCloner:
             f.write(resp.content)
 
     def _synthesize_edge_tts(
-        self, voice: Dict, text: str, language: str,
+        self, voice: dict, text: str, language: str,
         speed: float, output_path: str,
     ):
         """Fallback: Edge TTS (free, no real cloning but language-appropriate voice)."""
         import asyncio
+
         import edge_tts
 
         # Pick best voice for language + gender hint from embedding
@@ -268,7 +266,7 @@ class VoiceCloner:
 
         asyncio.run(_generate())
 
-    def list_voices(self, tenant_id: str = "") -> List[Dict]:
+    def list_voices(self, tenant_id: str = "") -> list[dict]:
         """List all registered voices."""
         voices = list(self._voice_registry.values())
         if tenant_id:
@@ -286,7 +284,7 @@ class VoiceCloner:
             for v in voices
         ]
 
-    def get_voice(self, voice_id: str) -> Optional[Dict]:
+    def get_voice(self, voice_id: str) -> dict | None:
         return self._voice_registry.get(voice_id)
 
     def delete_voice(self, voice_id: str) -> bool:
@@ -301,7 +299,7 @@ class VoiceCloner:
 
 
 # Singleton
-_cloner: Optional[VoiceCloner] = None
+_cloner: VoiceCloner | None = None
 
 
 def get_voice_cloner() -> VoiceCloner:

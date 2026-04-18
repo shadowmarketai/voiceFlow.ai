@@ -9,17 +9,16 @@ Combines BharatVoice AI + ZenVoice capabilities:
 - Marketing Intent Classification
 """
 
-import torch
-import whisper
+import re
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
 import librosa
 import numpy as np
-from transformers import pipeline, AutoModelForAudioClassification, AutoFeatureExtractor
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
-from enum import Enum
-import re
-import json
-from pathlib import Path
+import torch
+import whisper
+from transformers import pipeline
 
 
 class Dialect(Enum):
@@ -63,27 +62,27 @@ class VoiceAnalysisResult:
     language: str
     dialect: Dialect
     confidence: float
-    
+
     # Emotion
     emotion: Emotion
     emotion_confidence: float
-    emotion_scores: Dict[str, float]
-    
+    emotion_scores: dict[str, float]
+
     # Gen Z & Slang
     gen_z_score: float
-    slang_detected: List[Dict[str, str]]
-    code_mixing: Dict[str, Any]
-    
+    slang_detected: list[dict[str, str]]
+    code_mixing: dict[str, Any]
+
     # Marketing Intelligence
     intent: MarketingIntent
     intent_confidence: float
     lead_score: float
     sentiment: float  # -1 to 1
-    
+
     # Keywords & Entities
-    keywords: List[str]
-    entities: Dict[str, List[str]]
-    
+    keywords: list[str]
+    entities: dict[str, list[str]]
+
     # Metadata
     processing_time_ms: float
     audio_duration_s: float
@@ -93,7 +92,7 @@ class GenZSlangDetector:
     """
     Detects and translates Gen Z slang across Indian languages
     """
-    
+
     SLANG_DATABASE = {
         # Universal Gen Z
         "lit": {"meaning": "amazing/exciting", "emotion": "excited", "gen_z_score": 0.9},
@@ -125,7 +124,7 @@ class GenZSlangDetector:
         "rent free": {"meaning": "constantly thinking about", "emotion": "neutral", "gen_z_score": 0.85},
         "ate that": {"meaning": "did great", "emotion": "happy", "gen_z_score": 0.9},
         "sending me": {"meaning": "making me laugh", "emotion": "happy", "gen_z_score": 0.85},
-        
+
         # Hindi Gen Z
         "bhaukaal": {"meaning": "domination/power", "emotion": "excited", "gen_z_score": 0.85},
         "sahi hai": {"meaning": "it's good/okay", "emotion": "neutral", "gen_z_score": 0.6},
@@ -136,7 +135,7 @@ class GenZSlangDetector:
         "bindaas": {"meaning": "carefree", "emotion": "happy", "gen_z_score": 0.65},
         "jhol": {"meaning": "problem/issue", "emotion": "frustrated", "gen_z_score": 0.7},
         "pataka": {"meaning": "attractive person", "emotion": "excited", "gen_z_score": 0.75},
-        
+
         # Tamil Gen Z
         "mass": {"meaning": "stylish/cool", "emotion": "excited", "gen_z_score": 0.8},
         "vera level": {"meaning": "next level", "emotion": "excited", "gen_z_score": 0.85},
@@ -147,14 +146,14 @@ class GenZSlangDetector:
         "vaangala": {"meaning": "didn't get it", "emotion": "neutral", "gen_z_score": 0.7},
         "too much": {"meaning": "over the top", "emotion": "frustrated", "gen_z_score": 0.65},
     }
-    
-    def detect(self, text: str) -> Tuple[List[Dict], float]:
+
+    def detect(self, text: str) -> tuple[list[dict], float]:
         """
         Detect slang in text and return matches with Gen Z score
         """
         text_lower = text.lower()
         detected = []
-        
+
         for slang, info in self.SLANG_DATABASE.items():
             if slang in text_lower:
                 detected.append({
@@ -163,7 +162,7 @@ class GenZSlangDetector:
                     "emotion_hint": info["emotion"],
                     "gen_z_score": info["gen_z_score"]
                 })
-        
+
         # Calculate overall Gen Z score
         if detected:
             avg_score = sum(d["gen_z_score"] for d in detected) / len(detected)
@@ -171,7 +170,7 @@ class GenZSlangDetector:
             gen_z_score = min(1.0, avg_score * (1 + len(detected) * 0.1))
         else:
             gen_z_score = 0.0
-            
+
         return detected, gen_z_score
 
 
@@ -179,7 +178,7 @@ class DialectDetector:
     """
     Detects Tamil and Hindi dialects from text patterns
     """
-    
+
     DIALECT_MARKERS = {
         Dialect.KONGU: {
             "patterns": ["le", "la", "ppa", "ma", "nnu", "nga", "kku"],
@@ -207,14 +206,14 @@ class DialectDetector:
             "weight": 1.0
         }
     }
-    
-    def detect(self, text: str) -> Tuple[Dialect, float]:
+
+    def detect(self, text: str) -> tuple[Dialect, float]:
         """
         Detect dialect from text
         """
         text_lower = text.lower()
         scores = {}
-        
+
         for dialect, markers in self.DIALECT_MARKERS.items():
             score = 0
             for pattern in markers["patterns"]:
@@ -224,12 +223,12 @@ class DialectDetector:
                 if word in text_lower:
                     score += 2
             scores[dialect] = score * markers["weight"]
-        
+
         if max(scores.values()) > 0:
             best_dialect = max(scores, key=scores.get)
             confidence = scores[best_dialect] / (sum(scores.values()) + 1)
             return best_dialect, min(confidence, 1.0)
-        
+
         return Dialect.UNKNOWN, 0.0
 
 
@@ -237,7 +236,7 @@ class CodeMixingAnalyzer:
     """
     Analyzes code-mixing patterns in multilingual text
     """
-    
+
     # Common romanized Tamil words (Tanglish)
     TAMIL_ROMANIZED = {
         "machan", "machaan", "da", "di", "pa", "ma", "anna", "akka",
@@ -258,11 +257,11 @@ class CodeMixingAnalyzer:
         "bahut", "bohot", "achha", "bura", "chalo", "chal",
         "dekho", "dekh", "suno", "suniye", "bolo", "batao",
         "karo", "karna", "lena", "dena", "jana", "aana",
-        "matlab", "matlab", "pakka", "sach", "jhooth",
+        "matlab", "pakka", "sach", "jhooth",
         "paisa", "kitna", "khareedna", "lelo", "abhi",
     }
 
-    def analyze(self, text: str) -> Dict[str, Any]:
+    def analyze(self, text: str) -> dict[str, Any]:
         """
         Analyze code-mixing in text.
         Detects both native-script and romanized (Tanglish/Hinglish) mixing.
@@ -290,25 +289,25 @@ class CodeMixingAnalyzer:
                 languages["english"] += 1
             else:
                 languages["mixed"] += 1
-        
+
         total = len(words)
         if total == 0:
             return {"is_code_mixed": False, "languages": {}, "mixing_ratio": 0.0}
-        
+
         # Calculate ratios
         ratios = {k: v / total for k, v in languages.items() if v > 0}
-        
+
         # Determine if code-mixed
         non_zero_langs = sum(1 for v in languages.values() if v > 0)
         is_code_mixed = non_zero_langs > 1
-        
+
         # Calculate mixing ratio (0 = single language, 1 = perfectly mixed)
         if non_zero_langs <= 1:
             mixing_ratio = 0.0
         else:
             max_ratio = max(ratios.values())
             mixing_ratio = 1 - max_ratio
-        
+
         return {
             "is_code_mixed": is_code_mixed,
             "languages": ratios,
@@ -321,7 +320,7 @@ class MarketingIntentClassifier:
     """
     Classifies marketing intent from voice transcription
     """
-    
+
     INTENT_KEYWORDS = {
         MarketingIntent.PURCHASE: [
             "buy", "purchase", "order", "want", "khareedna", "lena",
@@ -348,19 +347,19 @@ class MarketingIntentClassifier:
             "cancel", "vapas", "return", "cancel pannu"
         ]
     }
-    
-    def classify(self, text: str, emotion: Emotion) -> Tuple[MarketingIntent, float, float]:
+
+    def classify(self, text: str, emotion: Emotion) -> tuple[MarketingIntent, float, float]:
         """
         Classify marketing intent and calculate lead score
         Returns: (intent, confidence, lead_score)
         """
         text_lower = text.lower()
         scores = {}
-        
+
         for intent, keywords in self.INTENT_KEYWORDS.items():
             score = sum(1 for kw in keywords if kw in text_lower)
             scores[intent] = score
-        
+
         # Determine intent
         if max(scores.values()) > 0:
             intent = max(scores, key=scores.get)
@@ -368,23 +367,23 @@ class MarketingIntentClassifier:
         else:
             intent = MarketingIntent.INQUIRY
             confidence = 0.3
-        
+
         # Calculate lead score (0-100)
         lead_score = self._calculate_lead_score(intent, emotion, confidence)
-        
+
         # Check for churn risk
         if intent == MarketingIntent.CANCEL or emotion in [Emotion.ANGRY, Emotion.FRUSTRATED]:
             if confidence > 0.5:
                 intent = MarketingIntent.CHURN_RISK
-        
+
         # Check for upsell opportunity — only when inquiry (not direct purchase)
         # with positive emotion suggests existing customer exploring more
         if intent == MarketingIntent.INQUIRY and emotion in [Emotion.HAPPY, Emotion.EXCITED]:
             if scores.get(MarketingIntent.PURCHASE, 0) > 0 and confidence > 0.6:
                 intent = MarketingIntent.UPSELL_OPPORTUNITY
-        
+
         return intent, confidence, lead_score
-    
+
     def _calculate_lead_score(self, intent: MarketingIntent, emotion: Emotion, confidence: float) -> float:
         """Calculate lead score based on intent and emotion"""
         base_scores = {
@@ -397,7 +396,7 @@ class MarketingIntentClassifier:
             MarketingIntent.CANCEL: 10,
             MarketingIntent.CHURN_RISK: 5
         }
-        
+
         emotion_modifiers = {
             Emotion.EXCITED: 1.2,
             Emotion.HAPPY: 1.1,
@@ -406,10 +405,10 @@ class MarketingIntentClassifier:
             Emotion.FRUSTRATED: 0.7,
             Emotion.ANGRY: 0.5
         }
-        
+
         base = base_scores.get(intent, 50)
         modifier = emotion_modifiers.get(emotion, 1.0)
-        
+
         return min(100, base * modifier * confidence)
 
 
@@ -417,7 +416,7 @@ class VoiceFlowEngine:
     """
     Main Voice AI Engine - combines all capabilities
     """
-    
+
     def __init__(self, model_size: str = "base", device: str = None):
         """
         Initialize the engine
@@ -427,7 +426,7 @@ class VoiceFlowEngine:
             device: Device to use ("cuda", "cpu", or None for auto)
         """
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-        
+
         # Initialize Whisper for ASR
         print(f"Loading Whisper {model_size} model...")
         self.whisper_model = whisper.load_model(model_size, device=self.device)
@@ -443,15 +442,15 @@ class VoiceFlowEngine:
             )
         except Exception as e:
             print(f"Emotion classifier unavailable (will use text-based fallback): {e}")
-        
+
         # Initialize helper modules
         self.slang_detector = GenZSlangDetector()
         self.dialect_detector = DialectDetector()
         self.code_mixer = CodeMixingAnalyzer()
         self.intent_classifier = MarketingIntentClassifier()
-        
+
         print("VoiceFlow Engine initialized!")
-    
+
     def process_audio(
         self,
         audio_path: str = None,
@@ -470,49 +469,49 @@ class VoiceFlowEngine:
         """
         import time
         start_time = time.time()
-        
+
         # Load audio if path provided
         if audio_path:
             audio_array, sample_rate = librosa.load(audio_path, sr=16000)
-        
+
         audio_duration = len(audio_array) / sample_rate
-        
+
         # Step 1: Transcription with Whisper
         transcription_result = self.whisper_model.transcribe(
             audio_array,
             language=language,
             task="transcribe"
         )
-        
+
         transcription = transcription_result["text"].strip()
         detected_language = transcription_result.get("language", "en")
-        
+
         # Step 2: Emotion Detection
         emotion, emotion_confidence, emotion_scores = self._detect_emotion(audio_array)
-        
+
         # Step 3: Dialect Detection
         dialect, dialect_confidence = self.dialect_detector.detect(transcription)
-        
+
         # Step 4: Gen Z Slang Detection
         slang_detected, gen_z_score = self.slang_detector.detect(transcription)
-        
+
         # Step 5: Code-mixing Analysis
         code_mixing = self.code_mixer.analyze(transcription)
-        
+
         # Step 6: Marketing Intent Classification
         intent, intent_confidence, lead_score = self.intent_classifier.classify(
             transcription, emotion
         )
-        
+
         # Step 7: Extract keywords and entities
         keywords = self._extract_keywords(transcription)
         entities = self._extract_entities(transcription)
-        
+
         # Step 8: Calculate sentiment
         sentiment = self._calculate_sentiment(emotion, emotion_scores)
-        
+
         processing_time = (time.time() - start_time) * 1000
-        
+
         return VoiceAnalysisResult(
             transcription=transcription,
             language=detected_language,
@@ -533,8 +532,8 @@ class VoiceFlowEngine:
             processing_time_ms=processing_time,
             audio_duration_s=audio_duration
         )
-    
-    def _detect_emotion(self, audio_array: np.ndarray) -> Tuple[Emotion, float, Dict]:
+
+    def _detect_emotion(self, audio_array: np.ndarray) -> tuple[Emotion, float, dict]:
         """Detect emotion from audio (falls back to neutral if classifier unavailable)"""
         if self.emotion_classifier is None:
             return Emotion.NEUTRAL, 0.5, {"neutral": 0.5}
@@ -542,6 +541,7 @@ class VoiceFlowEngine:
         try:
             # Save temp file for emotion classifier
             import tempfile
+
             import soundfile as sf
 
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
@@ -570,16 +570,16 @@ class VoiceFlowEngine:
         except Exception as e:
             print(f"Emotion detection failed: {e}")
             return Emotion.NEUTRAL, 0.5, {"neutral": 0.5}
-    
-    def _extract_keywords(self, text: str) -> List[str]:
+
+    def _extract_keywords(self, text: str) -> list[str]:
         """Extract keywords from transcription"""
         # Simple keyword extraction
         stop_words = {"the", "a", "an", "is", "are", "was", "were", "i", "you", "we", "they",
                       "it", "this", "that", "and", "or", "but", "in", "on", "at", "to", "for"}
-        
+
         words = re.findall(r'\b\w+\b', text.lower())
         keywords = [w for w in words if w not in stop_words and len(w) > 2]
-        
+
         # Return top 10 unique keywords
         seen = set()
         unique_keywords = []
@@ -587,23 +587,23 @@ class VoiceFlowEngine:
             if kw not in seen:
                 seen.add(kw)
                 unique_keywords.append(kw)
-        
+
         return unique_keywords[:10]
-    
-    def _extract_entities(self, text: str) -> Dict[str, List[str]]:
+
+    def _extract_entities(self, text: str) -> dict[str, list[str]]:
         """Extract named entities"""
         entities = {
             "products": [],
             "numbers": [],
             "dates": []
         }
-        
+
         # Extract numbers
         entities["numbers"] = re.findall(r'\b\d+(?:\.\d+)?\b', text)
-        
+
         return entities
-    
-    def _calculate_sentiment(self, emotion: Emotion, scores: Dict) -> float:
+
+    def _calculate_sentiment(self, emotion: Emotion, scores: dict) -> float:
         """Calculate sentiment score from -1 to 1"""
         sentiment_weights = {
             Emotion.HAPPY: 0.8,
@@ -613,7 +613,7 @@ class VoiceFlowEngine:
             Emotion.FRUSTRATED: -0.7,
             Emotion.ANGRY: -1.0
         }
-        
+
         return sentiment_weights.get(emotion, 0.0)
 
 
@@ -630,10 +630,10 @@ if __name__ == "__main__":
     # Test the engine
     print("VoiceFlow Marketing AI - Voice Engine Test")
     print("=" * 50)
-    
+
     # Create engine
     engine = VoiceFlowEngine(model_size="tiny")
-    
+
     # Test slang detection
     test_texts = [
         "Bro that product is totally lit fr fr, no cap it's bussin!",
@@ -642,14 +642,14 @@ if __name__ == "__main__":
         "I want to buy this product, what's the price?",
         "This is not working, I want a refund immediately!"
     ]
-    
+
     print("\nSlang Detection Tests:")
     for text in test_texts:
         slang, score = engine.slang_detector.detect(text)
         dialect, _ = engine.dialect_detector.detect(text)
         code_mix = engine.code_mixer.analyze(text)
         intent, conf, lead = engine.intent_classifier.classify(text, Emotion.NEUTRAL)
-        
+
         print(f"\nText: {text[:50]}...")
         print(f"  Gen Z Score: {score:.2f}")
         print(f"  Slang: {[s['word'] for s in slang]}")

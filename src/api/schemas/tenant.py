@@ -6,10 +6,9 @@ Uses Pydantic v2 ConfigDict (KB-014).
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ── Request Schemas ─────────────────────────────────────────────
 
@@ -19,24 +18,24 @@ class TenantCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=200)
     slug: str = Field(..., min_length=1, max_length=100, pattern="^[a-z0-9-]+$")
-    domain: Optional[str] = Field(default=None, max_length=255)
-    logo_url: Optional[str] = Field(default=None, max_length=500)
-    favicon_url: Optional[str] = Field(default=None, max_length=500)
-    primary_color: Optional[str] = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
-    secondary_color: Optional[str] = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
-    contact_email: Optional[str] = Field(default=None, max_length=255)
-    contact_phone: Optional[str] = Field(default=None, max_length=20)
-    address: Optional[str] = None
+    domain: str | None = Field(default=None, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=500)
+    favicon_url: str | None = Field(default=None, max_length=500)
+    primary_color: str | None = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
+    secondary_color: str | None = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
+    contact_email: str | None = Field(default=None, max_length=255)
+    contact_phone: str | None = Field(default=None, max_length=20)
+    address: str | None = None
     plan: str = Field(default="starter", max_length=50)
     max_users: int = Field(default=5, ge=1)
     max_voice_minutes: int = Field(default=100, ge=0)
     max_leads: int = Field(default=500, ge=0)
-    feature_flags: Optional[dict[str, Any]] = None
-    settings: Optional[dict[str, Any]] = None
+    feature_flags: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
     default_language: str = Field(default="en", max_length=10)
     default_currency: str = Field(default="INR", max_length=3)
     timezone: str = Field(default="Asia/Kolkata", max_length=50)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    industry: str | None = Field(default=None, max_length=100)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,26 +43,26 @@ class TenantCreate(BaseModel):
 class TenantUpdate(BaseModel):
     """Update tenant configuration."""
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    domain: Optional[str] = Field(default=None, max_length=255)
-    logo_url: Optional[str] = Field(default=None, max_length=500)
-    favicon_url: Optional[str] = Field(default=None, max_length=500)
-    primary_color: Optional[str] = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
-    secondary_color: Optional[str] = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
-    custom_css: Optional[str] = None
-    contact_email: Optional[str] = Field(default=None, max_length=255)
-    contact_phone: Optional[str] = Field(default=None, max_length=20)
-    address: Optional[str] = None
-    plan: Optional[str] = Field(default=None, max_length=50)
-    max_users: Optional[int] = Field(default=None, ge=1)
-    max_voice_minutes: Optional[int] = Field(default=None, ge=0)
-    max_leads: Optional[int] = Field(default=None, ge=0)
-    settings: Optional[dict[str, Any]] = None
-    default_language: Optional[str] = Field(default=None, max_length=10)
-    default_currency: Optional[str] = Field(default=None, max_length=3)
-    timezone: Optional[str] = Field(default=None, max_length=50)
-    industry: Optional[str] = Field(default=None, max_length=100)
-    is_active: Optional[bool] = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    domain: str | None = Field(default=None, max_length=255)
+    logo_url: str | None = Field(default=None, max_length=500)
+    favicon_url: str | None = Field(default=None, max_length=500)
+    primary_color: str | None = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
+    secondary_color: str | None = Field(default=None, max_length=7, pattern="^#[0-9A-Fa-f]{6}$")
+    custom_css: str | None = None
+    contact_email: str | None = Field(default=None, max_length=255)
+    contact_phone: str | None = Field(default=None, max_length=20)
+    address: str | None = None
+    plan: str | None = Field(default=None, max_length=50)
+    max_users: int | None = Field(default=None, ge=1)
+    max_voice_minutes: int | None = Field(default=None, ge=0)
+    max_leads: int | None = Field(default=None, ge=0)
+    settings: dict[str, Any] | None = None
+    default_language: str | None = Field(default=None, max_length=10)
+    default_currency: str | None = Field(default=None, max_length=3)
+    timezone: str | None = Field(default=None, max_length=50)
+    industry: str | None = Field(default=None, max_length=100)
+    is_active: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,31 +84,31 @@ class TenantResponse(BaseModel):
     id: int
     name: str
     slug: str
-    domain: Optional[str] = None
-    logo_url: Optional[str] = None
-    favicon_url: Optional[str] = None
-    primary_color: Optional[str] = None
-    secondary_color: Optional[str] = None
-    custom_css: Optional[str] = None
-    contact_email: Optional[str] = None
-    contact_phone: Optional[str] = None
-    address: Optional[str] = None
+    domain: str | None = None
+    logo_url: str | None = None
+    favicon_url: str | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    custom_css: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
+    address: str | None = None
     plan: str = "starter"
     max_users: int = 5
     max_voice_minutes: int = 100
     max_leads: int = 500
-    feature_flags: Optional[dict[str, Any]] = None
-    settings: Optional[dict[str, Any]] = None
+    feature_flags: dict[str, Any] | None = None
+    settings: dict[str, Any] | None = None
     default_language: str = "en"
     default_currency: str = "INR"
     timezone: str = "Asia/Kolkata"
-    industry: Optional[str] = None
+    industry: str | None = None
     is_active: bool = True
-    trial_ends_at: Optional[datetime] = None
+    trial_ends_at: datetime | None = None
     current_voice_minutes_used: float = 0.0
     current_lead_count: int = 0
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,7 +126,7 @@ class TenantStatsResponse(BaseModel):
     lead_count: int = 0
     max_leads: int = 500
     is_active: bool = True
-    trial_ends_at: Optional[datetime] = None
+    trial_ends_at: datetime | None = None
     users_usage_percentage: float = 0.0
     voice_usage_percentage: float = 0.0
     leads_usage_percentage: float = 0.0

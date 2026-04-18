@@ -4,7 +4,6 @@ LiveKit API Router — Room management and token generation.
 
 import logging
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -20,7 +19,7 @@ class CreateRoomRequest(BaseModel):
     agent_id: str = ""
     agent_name: str = "AI Assistant"
     user_name: str = "User"
-    room_name: Optional[str] = None
+    room_name: str | None = None
 
 
 class RoomTokenResponse(BaseModel):

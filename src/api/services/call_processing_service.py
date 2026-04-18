@@ -16,19 +16,18 @@ import logging
 import os
 import tempfile
 import uuid
-from typing import Optional
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.models.voice import VoiceAnalysis, EmotionType, IntentType, DialectType
 from api.models.crm import Lead, LeadStatus
+from api.models.voice import DialectType, EmotionType, IntentType, VoiceAnalysis
 
 logger = logging.getLogger(__name__)
 
 
-def _map_enum(value: Optional[str], enum_class, default=None):
+def _map_enum(value: str | None, enum_class, default=None):
     """Safely map a string value to an enum member."""
     if not value:
         return default
@@ -38,7 +37,7 @@ def _map_enum(value: Optional[str], enum_class, default=None):
         return default
 
 
-async def download_recording(recording_url: str, timeout: int = 60) -> Optional[bytes]:
+async def download_recording(recording_url: str, timeout: int = 60) -> bytes | None:
     """Download a call recording from the telephony provider URL."""
     if not recording_url:
         return None
@@ -59,8 +58,8 @@ async def download_recording(recording_url: str, timeout: int = 60) -> Optional[
 async def run_voice_analysis(
     audio_bytes: bytes,
     voice_engine,
-    language: Optional[str] = None,
-) -> Optional[dict]:
+    language: str | None = None,
+) -> dict | None:
     """Run voice analysis pipeline on audio bytes. Returns result dict."""
     if voice_engine is None:
         logger.warning("Voice engine not available, skipping analysis")
@@ -109,13 +108,13 @@ async def run_voice_analysis(
 def persist_call_analysis(
     db: Session,
     analysis_result: dict,
-    user_id: Optional[int],
-    phone_number: Optional[str] = None,
-    recording_url: Optional[str] = None,
-    call_direction: Optional[str] = None,
+    user_id: int | None,
+    phone_number: str | None = None,
+    recording_url: str | None = None,
+    call_direction: str | None = None,
     source: str = "telephony",
-    provider_call_id: Optional[str] = None,
-    lead_id: Optional[int] = None,
+    provider_call_id: str | None = None,
+    lead_id: int | None = None,
 ) -> VoiceAnalysis:
     """Persist voice analysis result from a call to the database."""
     request_id = str(uuid.uuid4())
@@ -155,7 +154,7 @@ def persist_call_analysis(
     return record
 
 
-def find_lead_by_phone(db: Session, user_id: int, phone: str) -> Optional[Lead]:
+def find_lead_by_phone(db: Session, user_id: int, phone: str) -> Lead | None:
     """Find a CRM lead by phone number for a given user."""
     if not phone:
         return None
@@ -200,13 +199,13 @@ async def process_call_recording(
     db: Session,
     voice_engine,
     recording_url: str,
-    phone_number: Optional[str] = None,
-    call_direction: Optional[str] = None,
-    provider: Optional[str] = None,
-    provider_call_id: Optional[str] = None,
-    user_id: Optional[int] = None,
+    phone_number: str | None = None,
+    call_direction: str | None = None,
+    provider: str | None = None,
+    provider_call_id: str | None = None,
+    user_id: int | None = None,
     duration_seconds: int = 0,
-) -> Optional[dict]:
+) -> dict | None:
     """
     Full call processing pipeline:
     1. Download recording

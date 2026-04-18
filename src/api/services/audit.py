@@ -21,7 +21,6 @@ All writes are best-effort: audit never breaks the primary flow.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
 from fastapi import Request

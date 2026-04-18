@@ -6,9 +6,10 @@ Supports: 21 languages, 12 emotion types
 
 import asyncio
 import io
-import time
-from typing import Optional, AsyncGenerator, Dict, Any
 import logging
+import time
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from tts.engines.base import BaseTTSEngine
 
@@ -27,7 +28,7 @@ class IndicParlerTTSEngine(BaseTTSEngine):
     - Streaming support
     - ~200-500ms latency
     """
-    
+
     EMOTION_PROMPTS = {
         "happy": "speaks in a happy, cheerful, and upbeat tone with high energy",
         "sad": "speaks in a sad, melancholic tone with low energy and slower pace",
@@ -45,10 +46,10 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         "excited": "speaks in an excited, enthusiastic tone with high energy",
         "empathetic": "speaks in an empathetic, understanding tone with warmth"
     }
-    
+
     LANGUAGE_CODES = {
         "ta": "Tamil",
-        "hi": "Hindi", 
+        "hi": "Hindi",
         "te": "Telugu",
         "kn": "Kannada",
         "ml": "Malayalam",
@@ -60,8 +61,8 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         "or": "Odia",
         "as": "Assamese"
     }
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.model_id = "ai4bharat/indic-parler-tts"
         self.processor = None
@@ -78,8 +79,8 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             logger.info("Loading Indic Parler-TTS model: %s", self.model_id)
 
             # Import here to avoid loading at module level
-            from transformers import AutoTokenizer, AutoModelForTextToWaveform
             import torch
+            from transformers import AutoModelForTextToWaveform, AutoTokenizer
 
             device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.info("Using device: %s", device)
@@ -107,7 +108,7 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             except ImportError:
                 logger.error("Neither transformers nor edge-tts installed — Indic Parler-TTS unavailable")
                 return False
-    
+
     async def unload_model(self) -> bool:
         """Unload model from memory"""
         try:
@@ -117,16 +118,16 @@ class IndicParlerTTSEngine(BaseTTSEngine):
                 self.model = None
                 self.tokenizer = None
                 self.is_loaded = False
-                
+
                 import torch
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                    
+
             return True
         except Exception as e:
             logger.error(f"Failed to unload model: {e}")
             return False
-    
+
     def _build_prompt(
         self,
         language: str,
@@ -134,13 +135,13 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         pace: float = 1.0,
         pitch: float = 1.0,
         energy: str = "normal",
-        dialect: Optional[str] = None
+        dialect: str | None = None
     ) -> str:
         """Build descriptive prompt for TTS"""
-        
+
         lang_name = self.LANGUAGE_CODES.get(language, "Tamil")
         emotion_desc = self.EMOTION_PROMPTS.get(emotion, self.EMOTION_PROMPTS["neutral"])
-        
+
         # Build pace description
         if pace < 0.8:
             pace_desc = "very slowly"
@@ -152,7 +153,7 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             pace_desc = "at a moderate pace"
         else:
             pace_desc = "at a normal pace"
-        
+
         # Build pitch description
         if pitch < 0.8:
             pitch_desc = "in a deep voice"
@@ -164,7 +165,7 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             pitch_desc = "in a slightly high voice"
         else:
             pitch_desc = ""
-        
+
         # Dialect handling for Tamil
         dialect_desc = ""
         if language == "ta" and dialect:
@@ -175,7 +176,7 @@ class IndicParlerTTSEngine(BaseTTSEngine):
                 "tirunelveli": "with a Tirunelveli accent"
             }
             dialect_desc = dialect_map.get(dialect, "")
-        
+
         # Combine prompt
         prompt_parts = [
             f"A {lang_name} speaker",
@@ -184,10 +185,10 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             pace_desc,
             pitch_desc
         ]
-        
+
         prompt = " ".join(filter(None, prompt_parts))
         return prompt
-    
+
     async def _fallback_synthesize(self, text: str, language: str, pace: float) -> bytes:
         """Fallback using edge-tts for Indian languages"""
         import edge_tts
@@ -217,11 +218,11 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
-        dialect: Optional[str] = None,
+        dialect: str | None = None,
         **kwargs
     ) -> bytes:
         """Generate audio from text"""
@@ -240,8 +241,8 @@ class IndicParlerTTSEngine(BaseTTSEngine):
             return audio_bytes
 
         try:
-            import torch
             import scipy.io.wavfile as wavfile
+            import torch
 
             # Build descriptive prompt
             prompt = self._build_prompt(language, emotion, pace, pitch, kwargs.get("energy"), dialect)
@@ -285,30 +286,30 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         except Exception as e:
             logger.error("Synthesis failed: %s", e)
             raise
-    
+
     async def synthesize_stream(
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs
     ) -> AsyncGenerator[bytes, None]:
         """Generate audio stream (chunked)"""
-        
+
         # For now, generate full audio and chunk it
         # Future: implement true streaming with model
         audio = await self.synthesize(
             text, language, emotion, voice_id, pace, pitch, **kwargs
         )
-        
+
         chunk_size = 4096
         for i in range(0, len(audio), chunk_size):
             yield audio[i:i + chunk_size]
             await asyncio.sleep(0.01)
-    
+
     async def clone_voice(
         self,
         reference_audio: bytes,
@@ -319,26 +320,26 @@ class IndicParlerTTSEngine(BaseTTSEngine):
         Clone voice from reference audio
         Note: Indic Parler-TTS uses speaker embeddings
         """
-        import uuid
         import os
-        
+        import uuid
+
         voice_id = f"voice_{uuid.uuid4().hex[:8]}"
-        
+
         # Save reference audio
         voice_dir = f"voices/{voice_id}"
         os.makedirs(voice_dir, exist_ok=True)
-        
+
         with open(f"{voice_dir}/reference.wav", "wb") as f:
             f.write(reference_audio)
-        
+
         # Extract speaker embedding (simplified)
         # In production, use the model's speaker encoder
-        
+
         logger.info(f"Voice cloned: {voice_name} -> {voice_id}")
         return voice_id
-    
+
     def get_supported_languages(self) -> list:
         return list(self.LANGUAGE_CODES.keys())
-    
+
     def get_supported_emotions(self) -> list:
         return list(self.EMOTION_PROMPTS.keys())

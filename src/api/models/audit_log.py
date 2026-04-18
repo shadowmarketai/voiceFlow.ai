@@ -7,7 +7,7 @@ is no UPDATE or DELETE path, by design (DPDP Article 8.6, SOC 2 CC7.2).
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Index, Integer, String, Text
+from sqlalchemy import DateTime, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base

@@ -7,7 +7,6 @@ background noise, echo, and poor line quality.
 
 import logging
 from enum import Enum
-from typing import Optional
 
 import numpy as np
 
@@ -49,7 +48,7 @@ class NoiseReductionEngine:
         self,
         audio: np.ndarray,
         sample_rate: int = 16000,
-        noise_profile: Optional[np.ndarray] = None,
+        noise_profile: np.ndarray | None = None,
     ) -> np.ndarray:
         """Reduce noise from audio.
 
@@ -90,7 +89,7 @@ class NoiseReductionEngine:
         self,
         audio: np.ndarray,
         sample_rate: int,
-        noise_profile: Optional[np.ndarray] = None,
+        noise_profile: np.ndarray | None = None,
     ) -> np.ndarray:
         """Spectral gating noise reduction.
 

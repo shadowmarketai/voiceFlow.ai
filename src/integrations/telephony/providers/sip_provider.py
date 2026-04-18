@@ -11,7 +11,7 @@ import logging
 import os
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .base import (
     CallDirection,
@@ -53,7 +53,7 @@ class SIPProvider(TelephonyProvider):
         self.password = os.getenv("SIP_PASSWORD", "")
         self.transport = os.getenv("SIP_TRANSPORT", "udp")
         self.audio_socket_port = int(os.getenv("SIP_AUDIO_SOCKET_PORT", "4573"))
-        self._active_calls: Dict[str, Dict[str, Any]] = {}
+        self._active_calls: dict[str, dict[str, Any]] = {}
 
     def is_configured(self) -> bool:
         return bool(self.host)
@@ -67,7 +67,7 @@ class SIPProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate outbound SIP call.
 
         In production, this sends a SIP INVITE via a SIP library
@@ -102,12 +102,12 @@ class SIPProvider(TelephonyProvider):
             "audio_socket_port": self.audio_socket_port,
         }
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         if call_id in self._active_calls:
             return self._active_calls[call_id]
         return {"error": "Call not found", "call_id": call_id}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """Send SIP BYE to end call."""
         if call_id in self._active_calls:
             self._active_calls[call_id]["status"] = CallStatus.COMPLETED.value
@@ -116,11 +116,11 @@ class SIPProvider(TelephonyProvider):
             return {"success": True}
         return {"success": False, "error": "Call not found"}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         call = self._active_calls.get(call_id, {})
         return call.get("recording_path")
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         # SIP trunks use DID numbers configured on the PBX
         did_numbers = os.getenv("SIP_DID_NUMBERS", "").split(",")
         return [
@@ -137,13 +137,13 @@ class SIPProvider(TelephonyProvider):
         ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         raise NotImplementedError(
             "SIP DID numbers are provisioned via your SIP trunk provider"
         )
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse Asterisk/FreeSWITCH webhook (AMI/ESL event)."""
         status_map = {
             "INVITE": CallStatus.INITIATED,

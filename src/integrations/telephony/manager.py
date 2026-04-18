@@ -17,12 +17,11 @@ Direct Connect (zero telephony cost):
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .providers import (
     BolnaProvider,
     CallRecord,
-    CallStatus,
     ExotelProvider,
     PhoneNumber,
     SIPProvider,
@@ -50,7 +49,7 @@ class TelephonyManager:
     """
 
     def __init__(self):
-        self._providers: Dict[str, TelephonyProvider] = {
+        self._providers: dict[str, TelephonyProvider] = {
             "telecmi": TeleCMIProvider(),
             "bolna": BolnaProvider(),
             "vobiz": VobizProvider(),
@@ -73,7 +72,7 @@ class TelephonyManager:
         self.bulk_priority = ["vobiz", "telecmi", "exotel"]
 
     @property
-    def providers(self) -> Dict[str, TelephonyProvider]:
+    def providers(self) -> dict[str, TelephonyProvider]:
         return self._providers
 
     def get_provider(self, name: str) -> TelephonyProvider:
@@ -81,7 +80,7 @@ class TelephonyManager:
             raise ValueError(f"Unknown provider: {name}")
         return self._providers[name]
 
-    def get_configured_providers(self) -> Dict[str, TelephonyProvider]:
+    def get_configured_providers(self) -> dict[str, TelephonyProvider]:
         """Return only providers that have credentials configured."""
         return {
             name: p for name, p in self._providers.items() if p.is_configured()
@@ -90,7 +89,7 @@ class TelephonyManager:
     def select_provider(
         self,
         to_number: str,
-        preferred_provider: Optional[str] = None,
+        preferred_provider: str | None = None,
         call_type: str = "standard",
     ) -> str:
         """Select best provider based on destination and call type.
@@ -136,10 +135,10 @@ class TelephonyManager:
         from_number: str,
         to_number: str,
         webhook_url: str,
-        preferred_provider: Optional[str] = None,
+        preferred_provider: str | None = None,
         call_type: str = "standard",
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Make call with automatic provider selection and failover."""
         provider_name = self.select_provider(
             to_number, preferred_provider, call_type
@@ -177,9 +176,9 @@ class TelephonyManager:
 
         return result
 
-    async def list_all_numbers(self) -> List[PhoneNumber]:
+    async def list_all_numbers(self) -> list[PhoneNumber]:
         """List phone numbers from all configured providers."""
-        all_numbers: List[PhoneNumber] = []
+        all_numbers: list[PhoneNumber] = []
         for name, provider in self._providers.items():
             if not provider.is_configured():
                 continue
@@ -194,8 +193,8 @@ class TelephonyManager:
         self,
         to_number: str,
         duration_minutes: float,
-        provider: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        provider: str | None = None,
+    ) -> dict[str, Any]:
         """Estimate call cost across all providers."""
         if not provider:
             provider = self.select_provider(to_number)
@@ -226,11 +225,11 @@ class TelephonyManager:
             "comparison": comparison,
         }
 
-    def parse_webhook(self, provider: str, payload: Dict) -> CallRecord:
+    def parse_webhook(self, provider: str, payload: dict) -> CallRecord:
         """Parse webhook from any provider."""
         return self._providers[provider].parse_webhook(payload)
 
-    def get_provider_status(self) -> Dict[str, Any]:
+    def get_provider_status(self) -> dict[str, Any]:
         """Get status of all providers (for admin dashboard)."""
         return {
             name: {

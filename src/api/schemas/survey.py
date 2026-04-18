@@ -6,10 +6,9 @@ Uses Pydantic v2 ConfigDict (KB-014).
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ── Request Schemas ─────────────────────────────────────────────
 
@@ -18,24 +17,24 @@ class SurveyCreate(BaseModel):
     """Create a new survey."""
 
     title: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = None
-    questions: Optional[list[dict[str, Any]]] = None
-    logic: Optional[dict[str, Any]] = None
-    theme: Optional[dict[str, Any]] = None
-    logo_url: Optional[str] = Field(default=None, max_length=500)
-    thank_you_message: Optional[str] = None
-    redirect_url: Optional[str] = Field(default=None, max_length=500)
+    description: str | None = None
+    questions: list[dict[str, Any]] | None = None
+    logic: dict[str, Any] | None = None
+    theme: dict[str, Any] | None = None
+    logo_url: str | None = Field(default=None, max_length=500)
+    thank_you_message: str | None = None
+    redirect_url: str | None = Field(default=None, max_length=500)
     is_anonymous: bool = False
     allow_multiple_responses: bool = False
     require_auth: bool = False
     show_progress_bar: bool = True
     randomize_questions: bool = False
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
-    max_responses: Optional[int] = Field(default=None, ge=1)
-    distribution_channels: Optional[list[str]] = None
-    tags: Optional[list[str]] = None
-    campaign_id: Optional[int] = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    max_responses: int | None = Field(default=None, ge=1)
+    distribution_channels: list[str] | None = None
+    tags: list[str] | None = None
+    campaign_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -43,24 +42,24 @@ class SurveyCreate(BaseModel):
 class SurveyUpdate(BaseModel):
     """Update an existing survey."""
 
-    title: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    description: Optional[str] = None
-    questions: Optional[list[dict[str, Any]]] = None
-    logic: Optional[dict[str, Any]] = None
-    theme: Optional[dict[str, Any]] = None
-    logo_url: Optional[str] = Field(default=None, max_length=500)
-    thank_you_message: Optional[str] = None
-    redirect_url: Optional[str] = Field(default=None, max_length=500)
-    is_anonymous: Optional[bool] = None
-    allow_multiple_responses: Optional[bool] = None
-    require_auth: Optional[bool] = None
-    show_progress_bar: Optional[bool] = None
-    randomize_questions: Optional[bool] = None
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
-    max_responses: Optional[int] = Field(default=None, ge=1)
-    distribution_channels: Optional[list[str]] = None
-    tags: Optional[list[str]] = None
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = None
+    questions: list[dict[str, Any]] | None = None
+    logic: dict[str, Any] | None = None
+    theme: dict[str, Any] | None = None
+    logo_url: str | None = Field(default=None, max_length=500)
+    thank_you_message: str | None = None
+    redirect_url: str | None = Field(default=None, max_length=500)
+    is_anonymous: bool | None = None
+    allow_multiple_responses: bool | None = None
+    require_auth: bool | None = None
+    show_progress_bar: bool | None = None
+    randomize_questions: bool | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    max_responses: int | None = Field(default=None, ge=1)
+    distribution_channels: list[str] | None = None
+    tags: list[str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -69,15 +68,15 @@ class SurveyResponseCreate(BaseModel):
     """Submit a survey response."""
 
     answers: dict[str, Any] = Field(..., description="Question ID to answer mapping")
-    respondent_name: Optional[str] = Field(default=None, max_length=200)
-    respondent_email: Optional[str] = Field(default=None, max_length=255)
-    respondent_phone: Optional[str] = Field(default=None, max_length=20)
+    respondent_name: str | None = Field(default=None, max_length=200)
+    respondent_email: str | None = Field(default=None, max_length=255)
+    respondent_phone: str | None = Field(default=None, max_length=20)
     is_complete: bool = True
-    source: Optional[str] = Field(default=None, max_length=50)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    lead_id: Optional[int] = None
-    contact_id: Optional[int] = None
+    source: str | None = Field(default=None, max_length=50)
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    lead_id: int | None = None
+    contact_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -90,21 +89,21 @@ class SurveyResponseDetail(BaseModel):
 
     id: int
     answers: dict[str, Any]
-    respondent_name: Optional[str] = None
-    respondent_email: Optional[str] = None
-    respondent_phone: Optional[str] = None
+    respondent_name: str | None = None
+    respondent_email: str | None = None
+    respondent_phone: str | None = None
     is_complete: bool = False
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    completion_time_seconds: Optional[float] = None
-    source: Optional[str] = None
-    nps_score: Optional[int] = None
-    satisfaction_score: Optional[float] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    completion_time_seconds: float | None = None
+    source: str | None = None
+    nps_score: int | None = None
+    satisfaction_score: float | None = None
     survey_id: int
-    user_id: Optional[str] = None
-    lead_id: Optional[int] = None
-    contact_id: Optional[int] = None
-    created_at: Optional[datetime] = None
+    user_id: str | None = None
+    lead_id: int | None = None
+    contact_id: int | None = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -114,34 +113,34 @@ class SurveyDetail(BaseModel):
 
     id: int
     title: str
-    description: Optional[str] = None
-    slug: Optional[str] = None
+    description: str | None = None
+    slug: str | None = None
     status: str
-    questions: Optional[list[dict[str, Any]]] = None
-    logic: Optional[dict[str, Any]] = None
-    theme: Optional[dict[str, Any]] = None
-    logo_url: Optional[str] = None
-    thank_you_message: Optional[str] = None
-    redirect_url: Optional[str] = None
+    questions: list[dict[str, Any]] | None = None
+    logic: dict[str, Any] | None = None
+    theme: dict[str, Any] | None = None
+    logo_url: str | None = None
+    thank_you_message: str | None = None
+    redirect_url: str | None = None
     is_anonymous: bool = False
     allow_multiple_responses: bool = False
     require_auth: bool = False
     show_progress_bar: bool = True
     randomize_questions: bool = False
-    starts_at: Optional[datetime] = None
-    ends_at: Optional[datetime] = None
-    max_responses: Optional[int] = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    max_responses: int | None = None
     total_responses: int = 0
     total_started: int = 0
-    avg_completion_time_seconds: Optional[float] = None
-    completion_rate: Optional[float] = None
-    avg_nps_score: Optional[float] = None
-    distribution_channels: Optional[list[str]] = None
-    tags: Optional[list[str]] = None
+    avg_completion_time_seconds: float | None = None
+    completion_rate: float | None = None
+    avg_nps_score: float | None = None
+    distribution_channels: list[str] | None = None
+    tags: list[str] | None = None
     user_id: str
-    campaign_id: Optional[int] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    campaign_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -153,9 +152,9 @@ class SurveyAnalyticsResponse(BaseModel):
     title: str
     total_responses: int = 0
     total_started: int = 0
-    completion_rate: Optional[float] = None
-    avg_completion_time_seconds: Optional[float] = None
-    avg_nps_score: Optional[float] = None
+    completion_rate: float | None = None
+    avg_completion_time_seconds: float | None = None
+    avg_nps_score: float | None = None
     nps_distribution: dict[str, int] = Field(default_factory=dict)
     answer_distribution: dict[str, Any] = Field(default_factory=dict)
     responses_by_source: dict[str, int] = Field(default_factory=dict)

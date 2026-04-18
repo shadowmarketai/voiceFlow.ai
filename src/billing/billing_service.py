@@ -11,16 +11,17 @@ Features:
 - Razorpay payment gateway
 """
 
+import hashlib
+import hmac
+import json
+import os
+import secrets
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from enum import Enum
-import os
-import hmac
-import hashlib
+from typing import Any
+
 import httpx
-import json
-import secrets
 
 
 class PaymentStatus(Enum):
@@ -50,7 +51,7 @@ class Plan:
     price_monthly: float
     price_yearly: float
     currency: str = "INR"
-    
+
     # Limits
     max_users: int = 1
     max_leads: int = 500
@@ -58,14 +59,14 @@ class Plan:
     max_assistants: int = 1
     max_workflows: int = 5
     max_integrations: int = 2
-    
+
     # Features
-    features: List[str] = field(default_factory=list)
+    features: list[str] = field(default_factory=list)
     is_popular: bool = False
-    
+
     # Razorpay plan ID
-    razorpay_monthly_plan_id: Optional[str] = None
-    razorpay_yearly_plan_id: Optional[str] = None
+    razorpay_monthly_plan_id: str | None = None
+    razorpay_yearly_plan_id: str | None = None
 
 
 @dataclass
@@ -74,24 +75,24 @@ class Subscription:
     id: str
     tenant_id: str
     plan_id: str
-    
+
     status: SubscriptionStatus = SubscriptionStatus.TRIALING
     billing_cycle: str = "monthly"  # monthly, yearly
-    
+
     # Dates
-    trial_ends_at: Optional[datetime] = None
-    current_period_start: Optional[datetime] = None
-    current_period_end: Optional[datetime] = None
-    cancelled_at: Optional[datetime] = None
-    
+    trial_ends_at: datetime | None = None
+    current_period_start: datetime | None = None
+    current_period_end: datetime | None = None
+    cancelled_at: datetime | None = None
+
     # Razorpay
-    razorpay_subscription_id: Optional[str] = None
-    razorpay_customer_id: Optional[str] = None
-    
+    razorpay_subscription_id: str | None = None
+    razorpay_customer_id: str | None = None
+
     # Credits
     credit_balance: float = 0.0
     call_minutes_used: int = 0
-    
+
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -102,27 +103,27 @@ class Invoice:
     id: str
     tenant_id: str
     subscription_id: str
-    
+
     amount: float
     currency: str = "INR"
     status: str = "pending"  # pending, paid, failed
-    
+
     # Razorpay
-    razorpay_invoice_id: Optional[str] = None
-    razorpay_payment_id: Optional[str] = None
-    
+    razorpay_invoice_id: str | None = None
+    razorpay_payment_id: str | None = None
+
     # Details
-    line_items: List[Dict] = field(default_factory=list)
+    line_items: list[dict] = field(default_factory=list)
     tax_amount: float = 0.0
     discount_amount: float = 0.0
-    
+
     # Dates
     invoice_date: datetime = field(default_factory=datetime.now)
-    due_date: Optional[datetime] = None
-    paid_at: Optional[datetime] = None
-    
+    due_date: datetime | None = None
+    paid_at: datetime | None = None
+
     # PDF
-    pdf_url: Optional[str] = None
+    pdf_url: str | None = None
 
 
 @dataclass
@@ -130,17 +131,17 @@ class CreditTransaction:
     """Credit transaction record"""
     id: str
     tenant_id: str
-    
+
     amount: float
     balance_after: float
-    
+
     transaction_type: str  # credit, debit, refund
     description: str
-    
+
     # Reference
-    reference_type: Optional[str] = None  # call, sms, api
-    reference_id: Optional[str] = None
-    
+    reference_type: str | None = None  # call, sms, api
+    reference_id: str | None = None
+
     created_at: datetime = field(default_factory=datetime.now)
 
 
@@ -148,24 +149,24 @@ class RazorpayClient:
     """
     Razorpay API client
     """
-    
+
     def __init__(self):
         self.key_id = os.getenv("RAZORPAY_KEY_ID")
         self.key_secret = os.getenv("RAZORPAY_KEY_SECRET")
         self.base_url = "https://api.razorpay.com/v1"
         self.webhook_secret = os.getenv("RAZORPAY_WEBHOOK_SECRET")
-    
+
     def _get_auth(self):
         """Get basic auth tuple"""
         return (self.key_id, self.key_secret)
-    
+
     async def create_customer(
         self,
         name: str,
         email: str,
         phone: str,
-        notes: Dict = None
-    ) -> Dict[str, Any]:
+        notes: dict = None
+    ) -> dict[str, Any]:
         """Create Razorpay customer"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -180,15 +181,15 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def create_plan(
         self,
         plan_name: str,
         amount: int,  # In paise
         period: str = "monthly",
         interval: int = 1,
-        notes: Dict = None
-    ) -> Dict[str, Any]:
+        notes: dict = None
+    ) -> dict[str, Any]:
         """Create Razorpay subscription plan"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -207,14 +208,14 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def create_subscription(
         self,
         plan_id: str,
         customer_id: str,
         total_count: int = 12,  # Number of billing cycles
-        notes: Dict = None
-    ) -> Dict[str, Any]:
+        notes: dict = None
+    ) -> dict[str, Any]:
         """Create Razorpay subscription"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -230,12 +231,12 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def cancel_subscription(
         self,
         subscription_id: str,
         cancel_at_cycle_end: bool = True
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Cancel Razorpay subscription"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -245,14 +246,14 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def create_order(
         self,
         amount: int,  # In paise
         currency: str = "INR",
         receipt: str = None,
-        notes: Dict = None
-    ) -> Dict[str, Any]:
+        notes: dict = None
+    ) -> dict[str, Any]:
         """Create Razorpay order for one-time payment"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -267,12 +268,12 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def capture_payment(
         self,
         payment_id: str,
         amount: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Capture authorized payment"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -282,18 +283,18 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     async def create_refund(
         self,
         payment_id: str,
         amount: int = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create refund"""
         async with httpx.AsyncClient() as client:
             data = {}
             if amount:
                 data["amount"] = amount
-            
+
             response = await client.post(
                 f"{self.base_url}/payments/{payment_id}/refund",
                 auth=self._get_auth(),
@@ -301,7 +302,7 @@ class RazorpayClient:
             )
             response.raise_for_status()
             return response.json()
-    
+
     def verify_webhook_signature(
         self,
         payload: bytes,
@@ -310,15 +311,15 @@ class RazorpayClient:
         """Verify Razorpay webhook signature"""
         if not self.webhook_secret:
             return True
-        
+
         expected = hmac.new(
             self.webhook_secret.encode(),
             payload,
             hashlib.sha256
         ).hexdigest()
-        
+
         return hmac.compare_digest(expected, signature)
-    
+
     def verify_payment_signature(
         self,
         order_id: str,
@@ -332,7 +333,7 @@ class RazorpayClient:
             message.encode(),
             hashlib.sha256
         ).hexdigest()
-        
+
         return hmac.compare_digest(expected, signature)
 
 
@@ -340,7 +341,7 @@ class BillingService:
     """
     Billing and subscription management
     """
-    
+
     # Default plans
     DEFAULT_PLANS = {
         "starter": Plan(
@@ -430,7 +431,7 @@ class BillingService:
             ]
         )
     }
-    
+
     # Usage-based pricing
     USAGE_PRICING = {
         "call_minute": 1.50,      # ₹1.50 per extra minute
@@ -440,7 +441,7 @@ class BillingService:
         "storage_gb": 50,         # ₹50 per GB per month
         "phone_number": 500       # ₹500 per number per month
     }
-    
+
     # Credit packages
     CREDIT_PACKAGES = [
         {"amount": 2000, "credits": 2000, "bonus": 0},
@@ -449,24 +450,24 @@ class BillingService:
         {"amount": 10000, "credits": 11500, "bonus": 1500},
         {"amount": 15000, "credits": 18000, "bonus": 3000}
     ]
-    
+
     def __init__(self, db=None):
         self.db = db
         self.razorpay = RazorpayClient()
-        
+
         # In-memory storage (use DB in production)
-        self._subscriptions: Dict[str, Subscription] = {}
-        self._invoices: Dict[str, Invoice] = {}
-        self._transactions: List[CreditTransaction] = []
-    
-    def get_plans(self) -> List[Plan]:
+        self._subscriptions: dict[str, Subscription] = {}
+        self._invoices: dict[str, Invoice] = {}
+        self._transactions: list[CreditTransaction] = []
+
+    def get_plans(self) -> list[Plan]:
         """Get all available plans"""
         return list(self.DEFAULT_PLANS.values())
-    
-    def get_plan(self, plan_id: str) -> Optional[Plan]:
+
+    def get_plan(self, plan_id: str) -> Plan | None:
         """Get plan by ID"""
         return self.DEFAULT_PLANS.get(plan_id)
-    
+
     async def create_subscription(
         self,
         tenant_id: str,
@@ -483,7 +484,7 @@ class BillingService:
         plan = self.get_plan(plan_id)
         if not plan:
             raise ValueError(f"Invalid plan: {plan_id}")
-        
+
         # Create Razorpay customer
         customer = await self.razorpay.create_customer(
             name=customer_name,
@@ -491,13 +492,13 @@ class BillingService:
             phone=customer_phone,
             notes={"tenant_id": tenant_id}
         )
-        
+
         # Create Razorpay subscription
         razorpay_plan_id = (
             plan.razorpay_monthly_plan_id if billing_cycle == "monthly"
             else plan.razorpay_yearly_plan_id
         )
-        
+
         if razorpay_plan_id:
             rz_subscription = await self.razorpay.create_subscription(
                 plan_id=razorpay_plan_id,
@@ -506,7 +507,7 @@ class BillingService:
             )
         else:
             rz_subscription = {"id": None}
-        
+
         # Create subscription record
         now = datetime.now()
         subscription = Subscription(
@@ -521,11 +522,11 @@ class BillingService:
             razorpay_subscription_id=rz_subscription.get("id"),
             razorpay_customer_id=customer["id"]
         )
-        
+
         self._subscriptions[subscription.id] = subscription
-        
+
         return subscription
-    
+
     async def activate_subscription(
         self,
         subscription_id: str,
@@ -537,18 +538,18 @@ class BillingService:
         subscription = self._subscriptions.get(subscription_id)
         if not subscription:
             raise ValueError("Subscription not found")
-        
+
         subscription.status = SubscriptionStatus.ACTIVE
         subscription.trial_ends_at = None
         subscription.updated_at = datetime.now()
-        
+
         # Create invoice for first payment
         plan = self.get_plan(subscription.plan_id)
         price = (
             plan.price_monthly if subscription.billing_cycle == "monthly"
             else plan.price_yearly
         )
-        
+
         invoice = Invoice(
             id=secrets.token_urlsafe(16),
             tenant_id=subscription.tenant_id,
@@ -563,11 +564,11 @@ class BillingService:
                 "amount": price
             }]
         )
-        
+
         self._invoices[invoice.id] = invoice
-        
+
         return subscription
-    
+
     async def cancel_subscription(
         self,
         subscription_id: str,
@@ -579,29 +580,29 @@ class BillingService:
         subscription = self._subscriptions.get(subscription_id)
         if not subscription:
             raise ValueError("Subscription not found")
-        
+
         # Cancel in Razorpay
         if subscription.razorpay_subscription_id:
             await self.razorpay.cancel_subscription(
                 subscription.razorpay_subscription_id,
                 cancel_at_cycle_end=not cancel_immediately
             )
-        
+
         if cancel_immediately:
             subscription.status = SubscriptionStatus.CANCELLED
         else:
             # Will cancel at period end
             subscription.cancelled_at = datetime.now()
-        
+
         subscription.updated_at = datetime.now()
-        
+
         return subscription
-    
+
     async def upgrade_subscription(
         self,
         subscription_id: str,
         new_plan_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Upgrade subscription to higher plan
         
@@ -610,22 +611,22 @@ class BillingService:
         subscription = self._subscriptions.get(subscription_id)
         if not subscription:
             raise ValueError("Subscription not found")
-        
+
         old_plan = self.get_plan(subscription.plan_id)
         new_plan = self.get_plan(new_plan_id)
-        
+
         if not new_plan:
             raise ValueError("Invalid new plan")
-        
+
         # Calculate proration
         days_remaining = (subscription.current_period_end - datetime.now()).days
         total_days = 30 if subscription.billing_cycle == "monthly" else 365
-        
+
         old_daily = old_plan.price_monthly / total_days
         new_daily = new_plan.price_monthly / total_days
-        
+
         proration = (new_daily - old_daily) * days_remaining
-        
+
         return {
             "subscription_id": subscription_id,
             "old_plan": old_plan.name,
@@ -634,7 +635,7 @@ class BillingService:
             "days_remaining": days_remaining,
             "effective_immediately": True
         }
-    
+
     async def add_credits(
         self,
         tenant_id: str,
@@ -650,22 +651,22 @@ class BillingService:
             if pkg["amount"] == amount_inr:
                 package = pkg
                 break
-        
+
         if not package:
             # Custom amount without bonus
             credits = amount_inr
         else:
             credits = package["credits"]
-        
+
         # Get current subscription
         subscription = self._get_tenant_subscription(tenant_id)
         if not subscription:
             raise ValueError("No active subscription")
-        
+
         # Update balance
         old_balance = subscription.credit_balance
         subscription.credit_balance += credits
-        
+
         # Create transaction
         transaction = CreditTransaction(
             id=secrets.token_urlsafe(16),
@@ -677,11 +678,11 @@ class BillingService:
             reference_type="payment",
             reference_id=payment_id
         )
-        
+
         self._transactions.append(transaction)
-        
+
         return transaction
-    
+
     def deduct_credits(
         self,
         tenant_id: str,
@@ -696,12 +697,12 @@ class BillingService:
         subscription = self._get_tenant_subscription(tenant_id)
         if not subscription:
             raise ValueError("No active subscription")
-        
+
         if subscription.credit_balance < amount:
             raise ValueError("Insufficient credits")
-        
+
         subscription.credit_balance -= amount
-        
+
         transaction = CreditTransaction(
             id=secrets.token_urlsafe(16),
             tenant_id=tenant_id,
@@ -712,29 +713,29 @@ class BillingService:
             reference_type=reference_type,
             reference_id=reference_id
         )
-        
+
         self._transactions.append(transaction)
-        
+
         return transaction
-    
+
     def record_call_usage(
         self,
         tenant_id: str,
         duration_minutes: float,
         call_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Record call usage and deduct if over limit
         """
         subscription = self._get_tenant_subscription(tenant_id)
         if not subscription:
             raise ValueError("No active subscription")
-        
+
         plan = self.get_plan(subscription.plan_id)
-        
+
         # Update usage
         subscription.call_minutes_used += int(duration_minutes)
-        
+
         result = {
             "minutes_used": duration_minutes,
             "total_used": subscription.call_minutes_used,
@@ -742,16 +743,16 @@ class BillingService:
             "overage": False,
             "charge": 0
         }
-        
+
         # Check for overage
         if subscription.call_minutes_used > plan.max_call_minutes:
             overage = subscription.call_minutes_used - plan.max_call_minutes
             charge = overage * self.USAGE_PRICING["call_minute"]
-            
+
             result["overage"] = True
             result["charge"] = charge
             result["overage_minutes"] = overage
-            
+
             # Deduct from credits
             if subscription.credit_balance >= charge:
                 self.deduct_credits(
@@ -762,15 +763,15 @@ class BillingService:
                     reference_id=call_id
                 )
                 result["charged_to_credits"] = True
-        
+
         return result
-    
+
     async def create_payment_order(
         self,
         tenant_id: str,
         amount: float,
         purpose: str = "credits"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create Razorpay order for one-time payment
         """
@@ -782,7 +783,7 @@ class BillingService:
                 "purpose": purpose
             }
         )
-        
+
         return {
             "order_id": order["id"],
             "amount": amount,
@@ -790,7 +791,7 @@ class BillingService:
             "key_id": self.razorpay.key_id,
             "notes": order.get("notes", {})
         }
-    
+
     def verify_payment(
         self,
         order_id: str,
@@ -805,58 +806,58 @@ class BillingService:
             payment_id=payment_id,
             signature=signature
         )
-    
+
     async def handle_webhook(
         self,
         payload: bytes,
         signature: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Handle Razorpay webhook events
         """
         # Verify signature
         if not self.razorpay.verify_webhook_signature(payload, signature):
             raise ValueError("Invalid webhook signature")
-        
+
         event = json.loads(payload)
         event_type = event.get("event")
-        
+
         if event_type == "subscription.activated":
             # Activate subscription
             subscription_id = event["payload"]["subscription"]["entity"]["id"]
             # Find and activate...
-            
+
         elif event_type == "subscription.charged":
             # Create invoice for recurring payment
             pass
-            
+
         elif event_type == "subscription.cancelled":
             # Mark subscription as cancelled
             pass
-            
+
         elif event_type == "payment.captured":
             # Payment successful
             pass
-            
+
         elif event_type == "payment.failed":
             # Handle failed payment
             pass
-        
+
         return {"status": "processed", "event": event_type}
-    
+
     def get_usage_summary(
         self,
         tenant_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get usage summary for tenant
         """
         subscription = self._get_tenant_subscription(tenant_id)
         if not subscription:
             return {"error": "No subscription found"}
-        
+
         plan = self.get_plan(subscription.plan_id)
-        
+
         return {
             "plan": plan.name,
             "status": subscription.status.value,
@@ -874,12 +875,12 @@ class BillingService:
                 "can_purchase": True
             }
         }
-    
+
     def get_invoices(
         self,
         tenant_id: str,
         limit: int = 10
-    ) -> List[Invoice]:
+    ) -> list[Invoice]:
         """
         Get tenant invoices
         """
@@ -887,12 +888,12 @@ class BillingService:
             inv for inv in self._invoices.values()
             if inv.tenant_id == tenant_id
         ][:limit]
-    
+
     def get_transactions(
         self,
         tenant_id: str,
         limit: int = 50
-    ) -> List[CreditTransaction]:
+    ) -> list[CreditTransaction]:
         """
         Get credit transactions
         """
@@ -900,11 +901,11 @@ class BillingService:
             tx for tx in self._transactions
             if tx.tenant_id == tenant_id
         ][:limit]
-    
+
     def _get_tenant_subscription(
         self,
         tenant_id: str
-    ) -> Optional[Subscription]:
+    ) -> Subscription | None:
         """Get active subscription for tenant"""
         for sub in self._subscriptions.values():
             if sub.tenant_id == tenant_id and sub.status in [
@@ -919,7 +920,7 @@ class BillingService:
 # FastAPI Endpoints
 # ============================================
 
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 billing_router = APIRouter(prefix="/api/v1/billing", tags=["Billing"])
@@ -987,7 +988,7 @@ async def create_subscription(
             customer_email=request.customer_email,
             customer_phone=request.customer_phone
         )
-        
+
         return {
             "subscription_id": subscription.id,
             "status": subscription.status.value,
@@ -1065,7 +1066,7 @@ async def razorpay_webhook(request: Request):
     """Handle Razorpay webhooks"""
     payload = await request.body()
     signature = request.headers.get("X-Razorpay-Signature", "")
-    
+
     try:
         result = await billing_service.handle_webhook(payload, signature)
         return result

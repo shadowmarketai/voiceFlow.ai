@@ -12,7 +12,6 @@ POST /api/v1/voice-clone/elevenlabs-clone — Clone via ElevenLabs API (Pro)
 
 import logging
 import os
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -214,16 +213,17 @@ async def quality_check(audio_file: UploadFile = File(...)):
 
     Use this to validate a sample before committing to cloning.
     """
-    from voice_cloning.preprocessor import AudioPreprocessor
-    import tempfile
     import os
+    import tempfile
+
+    from voice_cloning.preprocessor import AudioPreprocessor
 
     audio_bytes = await audio_file.read()
     ext = "." + (audio_file.filename or "check.wav").rsplit(".", 1)[-1].lower()
 
-    tmp = tempfile.mktemp(suffix=ext)
-    with open(tmp, "wb") as f:
-        f.write(audio_bytes)
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as _tmp:
+        _tmp.write(audio_bytes)
+        tmp = _tmp.name
 
     try:
         preprocessor = AudioPreprocessor()

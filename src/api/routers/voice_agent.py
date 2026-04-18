@@ -12,23 +12,21 @@ Uses require_permission("voiceAI", ...) + get_async_db.
 import base64
 import io
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.database import get_async_db
 from api.permissions import require_permission
 from api.schemas.voice_agent import (
-    VoiceCloneRequest,
-    VoiceResponse,
-    VoiceTestRequest,
     KnowledgeAddRequest,
     KnowledgeBulkRequest,
-    KnowledgeUpdateRequest,
     KnowledgeResponse,
+    KnowledgeUpdateRequest,
     RecordingResponse,
+    VoiceResponse,
+    VoiceTestRequest,
 )
 from api.services import voice_agent_clone, voice_agent_knowledge, voice_agent_recordings
 
@@ -245,10 +243,10 @@ async def bulk_add_knowledge_endpoint(
 
 @router.get("/knowledge", response_model=list[KnowledgeResponse])
 async def list_knowledge_endpoint(
-    scope: Optional[str] = Query(None, description="global | campaign | agent"),
-    agent_id: Optional[str] = Query(None),
-    campaign_id: Optional[str] = Query(None),
-    doc_type: Optional[str] = Query(None),
+    scope: str | None = Query(None, description="global | campaign | agent"),
+    agent_id: str | None = Query(None),
+    campaign_id: str | None = Query(None),
+    doc_type: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_async_db),
@@ -301,9 +299,9 @@ async def delete_knowledge_endpoint(
 async def upload_knowledge_file(
     file: UploadFile = File(...),
     scope: str = Form("agent"),
-    agent_id: Optional[str] = Form(None),
-    campaign_id: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
+    agent_id: str | None = Form(None),
+    campaign_id: str | None = Form(None),
+    title: str | None = Form(None),
     doc_type: str = Form("document"),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(require_permission("voiceAI", "create")),
@@ -382,9 +380,9 @@ async def upload_knowledge_file(
 async def scrape_url_knowledge(
     url: str = Form(...),
     scope: str = Form("agent"),
-    agent_id: Optional[str] = Form(None),
-    campaign_id: Optional[str] = Form(None),
-    title: Optional[str] = Form(None),
+    agent_id: str | None = Form(None),
+    campaign_id: str | None = Form(None),
+    title: str | None = Form(None),
     doc_type: str = Form("document"),
     db: AsyncSession = Depends(get_async_db),
     user: dict = Depends(require_permission("voiceAI", "create")),

@@ -7,7 +7,7 @@ Uses Pydantic v2 ConfigDict (KB-014).
 """
 
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -41,32 +41,32 @@ class CampaignCreate(BaseModel):
     """Create a new marketing campaign."""
 
     name: str = Field(..., min_length=1, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=5000)
-    campaign_type: Optional[CampaignType] = None
-    platform: Optional[CampaignPlatform] = None
+    description: str | None = Field(default=None, max_length=5000)
+    campaign_type: CampaignType | None = None
+    platform: CampaignPlatform | None = None
 
     # Audience
-    audience_type: Optional[str] = Field(
+    audience_type: str | None = Field(
         default=None,
         max_length=50,
         description="e.g. emotion_based, intent_based, dialect_based",
     )
-    audience_criteria: Optional[dict[str, Any]] = Field(
+    audience_criteria: dict[str, Any] | None = Field(
         default=None,
         description="JSON criteria for audience selection",
     )
 
     # Budget in INR (paisa for Razorpay compatibility)
-    budget: Optional[float] = Field(default=None, ge=0.0, description="Budget in INR")
+    budget: float | None = Field(default=None, ge=0.0, description="Budget in INR")
     currency: str = Field(default="INR", max_length=3)
 
     # Schedule
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start_date: str | None = None
+    end_date: str | None = None
 
     @field_validator("audience_criteria")
     @classmethod
-    def validate_audience_criteria(cls, v: Optional[dict]) -> Optional[dict]:
+    def validate_audience_criteria(cls, v: dict | None) -> dict | None:
         """Ensure audience_criteria is valid JSON if provided."""
         if v is not None and not isinstance(v, dict):
             raise ValueError("audience_criteria must be a valid JSON object")
@@ -85,24 +85,24 @@ class CampaignCreate(BaseModel):
 class CampaignUpdate(BaseModel):
     """Update an existing marketing campaign (partial update)."""
 
-    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    description: Optional[str] = Field(default=None, max_length=5000)
-    campaign_type: Optional[CampaignType] = None
-    platform: Optional[CampaignPlatform] = None
-    status: Optional[CampaignStatus] = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=5000)
+    campaign_type: CampaignType | None = None
+    platform: CampaignPlatform | None = None
+    status: CampaignStatus | None = None
 
-    audience_type: Optional[str] = Field(default=None, max_length=50)
-    audience_criteria: Optional[dict[str, Any]] = None
+    audience_type: str | None = Field(default=None, max_length=50)
+    audience_criteria: dict[str, Any] | None = None
 
-    budget: Optional[float] = Field(default=None, ge=0.0)
-    currency: Optional[str] = Field(default=None, max_length=3)
+    budget: float | None = Field(default=None, ge=0.0)
+    currency: str | None = Field(default=None, max_length=3)
 
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start_date: str | None = None
+    end_date: str | None = None
 
     @field_validator("audience_criteria")
     @classmethod
-    def validate_audience_criteria(cls, v: Optional[dict]) -> Optional[dict]:
+    def validate_audience_criteria(cls, v: dict | None) -> dict | None:
         if v is not None and not isinstance(v, dict):
             raise ValueError("audience_criteria must be a valid JSON object")
         return v
@@ -115,16 +115,16 @@ class CampaignResponse(BaseModel):
 
     id: str
     name: str
-    description: Optional[str] = None
-    campaign_type: Optional[str] = None
-    platform: Optional[str] = None
+    description: str | None = None
+    campaign_type: str | None = None
+    platform: str | None = None
     status: str = "draft"
 
-    audience_type: Optional[str] = None
-    audience_criteria: Optional[dict[str, Any]] = None
-    audience_size: Optional[int] = None
+    audience_type: str | None = None
+    audience_criteria: dict[str, Any] | None = None
+    audience_size: int | None = None
 
-    budget: Optional[float] = None
+    budget: float | None = None
     spent: float = 0.0
     currency: str = "INR"
 
@@ -132,11 +132,11 @@ class CampaignResponse(BaseModel):
     clicks: int = 0
     conversions: int = 0
 
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
+    start_date: str | None = None
+    end_date: str | None = None
 
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

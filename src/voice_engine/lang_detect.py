@@ -22,7 +22,6 @@ that is the single biggest CSAT lever for multilingual India buyers.
 from __future__ import annotations
 
 import re
-from typing import Iterable
 
 # Unicode script ranges → ISO language codes (primary-use mapping).
 # Multi-language scripts: Devanagari defaults to Hindi; users who speak

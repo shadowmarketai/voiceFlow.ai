@@ -13,7 +13,7 @@ import hmac
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -45,7 +45,7 @@ class VobizProvider(TelephonyProvider):
     def is_configured(self) -> bool:
         return bool(self.api_key and self.sender_id)
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "X-Api-Key": self.api_key,
             "Content-Type": "application/json",
@@ -62,7 +62,7 @@ class VobizProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Single outbound call via Vobiz OBD."""
         payload = {
             "sender_id": self.sender_id,
@@ -93,14 +93,14 @@ class VobizProvider(TelephonyProvider):
 
     async def broadcast(
         self,
-        phone_numbers: List[str],
-        audio_url: Optional[str] = None,
-        tts_text: Optional[str] = None,
+        phone_numbers: list[str],
+        audio_url: str | None = None,
+        tts_text: str | None = None,
         tts_language: str = "hi",
         webhook_url: str = "",
         campaign_name: str = "",
-        schedule_time: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        schedule_time: str | None = None,
+    ) -> dict[str, Any]:
         """Vobiz voice broadcast — send same message to many numbers.
 
         Ideal for:
@@ -146,9 +146,9 @@ class VobizProvider(TelephonyProvider):
         self,
         name: str,
         welcome_audio_url: str,
-        dtmf_actions: Dict[str, str],
+        dtmf_actions: dict[str, str],
         webhook_url: str = "",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create Vobiz IVR flow.
 
         dtmf_actions maps keypress to action:
@@ -172,7 +172,7 @@ class VobizProvider(TelephonyProvider):
                 return {"success": True, "ivr": resp.json()}
             return {"success": False, "error": resp.text}
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/voice/status/{call_id}",
@@ -180,7 +180,7 @@ class VobizProvider(TelephonyProvider):
             )
             return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{self.base_url}/voice/hangup/{call_id}",
@@ -188,11 +188,11 @@ class VobizProvider(TelephonyProvider):
             )
             return {"success": resp.status_code == 200}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         call = await self.get_call(call_id)
         return call.get("recording_url")
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/numbers", headers=self._headers()
@@ -212,13 +212,13 @@ class VobizProvider(TelephonyProvider):
             ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         raise NotImplementedError(
             "Vobiz numbers are provisioned via dashboard: https://panel.vobiz.in"
         )
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         status_map = {
             "ANSWER": CallStatus.IN_PROGRESS,
             "NOANSWER": CallStatus.NO_ANSWER,

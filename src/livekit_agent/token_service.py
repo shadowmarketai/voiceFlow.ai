@@ -2,14 +2,13 @@
 LiveKit Token Service — Generate access tokens for rooms.
 """
 
+import base64
+import hashlib
+import hmac
+import json
 import logging
 import os
 import time
-import json
-import hmac
-import hashlib
-import base64
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ def _b64url_encode(data: bytes) -> str:
 def create_token(
     identity: str,
     room: str,
-    name: Optional[str] = None,
+    name: str | None = None,
     can_publish: bool = True,
     can_subscribe: bool = True,
     ttl: int = 3600,

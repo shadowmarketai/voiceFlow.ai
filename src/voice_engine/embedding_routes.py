@@ -8,16 +8,58 @@ Register in main.py: app.include_router(voice_router)
 
 import logging
 import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from whitelabel.whitelabel_service import get_current_tenant
+
 from .embedding_store import EmbeddingStore, VoiceNotFoundError
 
 logger = logging.getLogger(__name__)
 voice_router = APIRouter(prefix="/api/v1/voice-clone", tags=["voice-clone"])
+
+
+def _tenant_id_from(tenant) -> str:
+    """Extract string tenant_id from the Tenant object returned by get_current_tenant."""
+    if isinstance(tenant, str):
+        return tenant
+    if hasattr(tenant, "id"):
+        return str(tenant.id)
+    return str(tenant)
+
+
+async def _db_insert_voice(tenant_id: str, voice_id: str, voice_name: str) -> None:
+    """Persist voice clone registration to the database. No-op if not configured."""
+    try:
+        from api.database import async_session  # noqa: PLC0415
+        from api.models.voice import VoiceClone  # noqa: PLC0415
+        async with async_session() as session:
+            clone = VoiceClone(tenant_id=tenant_id, voice_id=voice_id, voice_name=voice_name)
+            session.add(clone)
+            await session.commit()
+    except Exception as exc:
+        logger.debug("[EmbeddingRoutes] DB insert voice skipped: %s", exc)
+
+
+async def _db_delete_voice(tenant_id: str, voice_id: str) -> None:
+    """Remove voice clone registration from the database. No-op if not configured."""
+    try:
+        from sqlalchemy import delete  # noqa: PLC0415
+
+        from api.database import async_session  # noqa: PLC0415
+        from api.models.voice import VoiceClone  # noqa: PLC0415
+        async with async_session() as session:
+            await session.execute(
+                delete(VoiceClone).where(
+                    VoiceClone.tenant_id == tenant_id,
+                    VoiceClone.voice_id == voice_id,
+                )
+            )
+            await session.commit()
+    except Exception as exc:
+        logger.debug("[EmbeddingRoutes] DB delete voice skipped: %s", exc)
 
 
 # ─── DEPENDENCY: get store instance ──────────────────────────────────────────
@@ -47,14 +89,18 @@ class VoiceSynthRequest(BaseModel):
 async def register_voice(
     voice_name: str,
     audio_file: UploadFile = File(...),
-    tenant_id: str = Depends(get_current_tenant),  # your existing auth dep
+    tenant=Depends(get_current_tenant),
     store: EmbeddingStore = Depends(get_store),
 ):
     """
     Upload audio sample → extract embedding → persist to all storage layers.
     Audio is preprocessed (noise reduction, SNR check) before extraction.
     """
-    import uuid, soundfile as sf, numpy as np, io as _io
+    tenant_id = _tenant_id_from(tenant)
+    import io as _io
+    import uuid
+
+    import soundfile as sf
 
     voice_id = str(uuid.uuid4())[:8]
     audio_bytes = await audio_file.read()
@@ -102,7 +148,7 @@ async def register_voice(
     )
 
     # ── Persist voice_id to DB (so DPDP erasure can find it)
-    await db_insert_voice(tenant_id, voice_id, voice_name)
+    await _db_insert_voice(tenant_id, voice_id, voice_name)
 
     return VoiceRegisterResponse(
         voice_id=voice_id,
@@ -115,13 +161,14 @@ async def register_voice(
 @voice_router.post("/synthesize")
 async def synthesize(
     req: VoiceSynthRequest,
-    tenant_id: str = Depends(get_current_tenant),
+    tenant=Depends(get_current_tenant),
     store: EmbeddingStore = Depends(get_store),
 ):
     """
     Generate speech using a registered voice clone.
     Loads embedding from cache (L1 → L2 → L3 automatically).
     """
+    tenant_id = _tenant_id_from(tenant)
     try:
         gpt_cond_latent, speaker_embedding = await store.load(tenant_id, req.voice_id)
     except VoiceNotFoundError:
@@ -149,12 +196,13 @@ async def synthesize(
 @voice_router.delete("/{voice_id}")
 async def delete_voice(
     voice_id: str,
-    tenant_id: str = Depends(get_current_tenant),
+    tenant=Depends(get_current_tenant),
     store: EmbeddingStore = Depends(get_store),
 ):
     """Delete a voice clone from all storage layers."""
+    tenant_id = _tenant_id_from(tenant)
     result = await store.delete(tenant_id, voice_id)
-    await db_delete_voice(tenant_id, voice_id)
+    await _db_delete_voice(tenant_id, voice_id)
 
     return {
         "deleted": True,

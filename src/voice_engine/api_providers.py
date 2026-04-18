@@ -19,7 +19,8 @@ import logging
 import os
 import tempfile
 import time
-from typing import Any, AsyncGenerator, Dict, Optional
+from collections.abc import AsyncGenerator
+from typing import Any
 
 import httpx
 
@@ -32,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 async def transcribe_audio_api(
     audio_bytes: bytes,
-    language: Optional[str] = None,
+    language: str | None = None,
     provider: str = "auto",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Transcribe audio. Chain: Deepgram → Sarvam → Groq Whisper → OpenAI Whisper."""
 
     providers = [
@@ -66,8 +67,8 @@ _INDIC_LANG_CODES = {"hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or",
 
 async def transcribe_ensemble(
     audio_bytes: bytes,
-    language: Optional[str] = None,
-) -> Dict[str, Any]:
+    language: str | None = None,
+) -> dict[str, Any]:
     """Ensemble STT — race Deepgram + Sarvam, pick the higher-confidence result.
 
     Rationale (Phase 1 W2.1): Deepgram nails English (~4% WER) but weaker on
@@ -80,7 +81,6 @@ async def transcribe_ensemble(
     ("premium plan" instead of "प्रीमियम प्लान") which causes 40%+ WER. When
     Sarvam is unavailable, route Indic to Groq Whisper (handles native script).
     """
-    import asyncio
 
     dg_key = os.environ.get("DEEPGRAM_API_KEY", "")
     sv_key = os.environ.get("SARVAM_API_KEY", "")
@@ -121,7 +121,8 @@ async def transcribe_ensemble(
 
     # Sarvam failed → try Bhashini (AI4Bharat, FREE, better Tamil dialect accuracy)
     try:
-        from voice_engine.providers.bhashini_stt import bhashini_stt, is_configured as bhashini_ok
+        from voice_engine.providers.bhashini_stt import bhashini_stt
+        from voice_engine.providers.bhashini_stt import is_configured as bhashini_ok
         if bhashini_ok():
             result = await bhashini_stt(audio_bytes, language or "ta")
             if result.get("text"):
@@ -142,9 +143,9 @@ async def transcribe_ensemble(
 async def _deepgram_stt(
     audio_bytes: bytes,
     api_key: str,
-    language: Optional[str],
+    language: str | None,
     diarize: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Deepgram Nova-2 — fastest, real-time streaming capable.
 
     diarize=True → returns per-word speaker tags (0, 1, 2…) and a
@@ -190,7 +191,7 @@ async def _deepgram_stt(
     ch = data.get("results", {}).get("channels", [{}])
     alt = ch[0].get("alternatives", [{}])[0] if ch else {}
 
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "text": alt.get("transcript", ""),
         "language": ch[0].get("detected_language", language or "en") if ch else language or "en",
         "provider": "deepgram",
@@ -199,8 +200,8 @@ async def _deepgram_stt(
 
     if diarize:
         # Fold consecutive same-speaker words into one segment.
-        segments: list[Dict[str, Any]] = []
-        cur: Dict[str, Any] | None = None
+        segments: list[dict[str, Any]] = []
+        cur: dict[str, Any] | None = None
         for w in alt.get("words", []):
             sp = w.get("speaker", 0)
             if cur is None or cur["speaker"] != sp:
@@ -219,7 +220,7 @@ async def _deepgram_stt(
     return result
 
 
-async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
+async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: str | None) -> dict[str, Any]:
     """Sarvam AI — built for Indian languages (Tamil, Hindi, Telugu, etc.)."""
     # Sarvam confirmed supports these 11 Indic locales as of 2026.
     # Others (as/ur/ne/kok/mni/sd/sa) route to OpenAI Whisper via
@@ -266,7 +267,7 @@ async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: Optional[str])
     }
 
 
-async def _groq_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
+async def _groq_stt(audio_bytes: bytes, api_key: str, language: str | None) -> dict[str, Any]:
     """Groq Whisper Large v3 — fast + free tier."""
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
@@ -290,7 +291,7 @@ async def _groq_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -
             "provider": "groq_whisper", "confidence": 0.95}
 
 
-async def _openai_stt(audio_bytes: bytes, api_key: str, language: Optional[str]) -> Dict[str, Any]:
+async def _openai_stt(audio_bytes: bytes, api_key: str, language: str | None) -> dict[str, Any]:
     """OpenAI Whisper-1 — highest accuracy."""
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
@@ -323,7 +324,7 @@ async def call_llm_api(
     user_message: str,
     provider: str = "auto",
     model: str = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Call LLM. Chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub."""
 
     providers_list = [
@@ -386,36 +387,35 @@ async def call_llm_stream(
         if not api_key:
             continue
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                async with client.stream(
-                    "POST", url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": chosen_model,
-                        "messages": [
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_message},
-                        ],
-                        "max_tokens": 200,
-                        "temperature": 0.7,
-                        "stream": True,
-                    },
-                ) as resp:
-                    if resp.status_code != 200:
-                        raise RuntimeError(f"{name} stream HTTP {resp.status_code}")
-                    async for raw_line in resp.aiter_lines():
-                        if not raw_line or not raw_line.startswith("data:"):
-                            continue
-                        payload = raw_line[5:].strip()
-                        if payload == "[DONE]":
-                            return
-                        try:
-                            obj = json.loads(payload)
-                            delta = obj["choices"][0].get("delta", {}).get("content")
-                            if delta:
-                                yield delta
-                        except (KeyError, IndexError, json.JSONDecodeError):
-                            continue
+            async with httpx.AsyncClient(timeout=30) as client, client.stream(
+                "POST", url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": chosen_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_message},
+                    ],
+                    "max_tokens": 200,
+                    "temperature": 0.7,
+                    "stream": True,
+                },
+            ) as resp:
+                if resp.status_code != 200:
+                    raise RuntimeError(f"{name} stream HTTP {resp.status_code}")
+                async for raw_line in resp.aiter_lines():
+                    if not raw_line or not raw_line.startswith("data:"):
+                        continue
+                    payload = raw_line[5:].strip()
+                    if payload == "[DONE]":
+                        return
+                    try:
+                        obj = json.loads(payload)
+                        delta = obj["choices"][0].get("delta", {}).get("content")
+                        if delta:
+                            yield delta
+                    except (KeyError, IndexError, json.JSONDecodeError):
+                        continue
             return
         except Exception as e:
             logger.warning("%s stream failed, trying next: %s", name, e)
@@ -506,10 +506,10 @@ async def _deepseek_llm(system_prompt: str, user_message: str, api_key: str, mod
 async def synthesize_speech_api(
     text: str,
     language: str = "en",
-    voice_id: Optional[str] = None,
+    voice_id: str | None = None,
     provider: str = "auto",
     speed: float = 1.0,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Synthesize speech. Chain: ElevenLabs → Sarvam → OpenAI → Deepgram Aura → Google Cloud → Edge TTS."""
     t_start = time.time()
 
@@ -545,7 +545,7 @@ async def synthesize_speech_api(
             "error": "No TTS provider available"}
 
 
-async def _elevenlabs_tts(text: str, api_key: str, voice_id: Optional[str], speed: float) -> Dict[str, Any]:
+async def _elevenlabs_tts(text: str, api_key: str, voice_id: str | None, speed: float) -> dict[str, Any]:
     """ElevenLabs — highest quality, voice cloning, 29+ languages."""
     vid = voice_id or "21m00Tcm4TlvDq8ikWAM"  # Rachel
     async with httpx.AsyncClient(timeout=30) as client:
@@ -560,7 +560,7 @@ async def _elevenlabs_tts(text: str, api_key: str, voice_id: Optional[str], spee
             "provider": "elevenlabs", "sample_rate": 44100}
 
 
-async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> Dict[str, Any]:
+async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> dict[str, Any]:
     """Sarvam AI — native Indian language TTS (Tamil, Hindi, Telugu, etc.)."""
     lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
                 "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
@@ -596,7 +596,7 @@ async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> D
     return {"audio_base64": audio_b64, "format": "wav", "provider": "sarvam", "sample_rate": 22050}
 
 
-async def _openai_tts(text: str, api_key: str, voice_id: Optional[str], speed: float) -> Dict[str, Any]:
+async def _openai_tts(text: str, api_key: str, voice_id: str | None, speed: float) -> dict[str, Any]:
     """OpenAI TTS-1 — 6 voices (alloy, echo, fable, onyx, nova, shimmer)."""
     voice = voice_id or "nova"
     async with httpx.AsyncClient(timeout=30) as client:
@@ -611,7 +611,7 @@ async def _openai_tts(text: str, api_key: str, voice_id: Optional[str], speed: f
             "provider": "openai_tts", "sample_rate": 24000}
 
 
-async def _deepgram_tts(text: str, api_key: str, voice_id: Optional[str]) -> Dict[str, Any]:
+async def _deepgram_tts(text: str, api_key: str, voice_id: str | None) -> dict[str, Any]:
     """Deepgram Aura — lowest latency TTS."""
     voice = voice_id or "aura-asteria-en"
     async with httpx.AsyncClient(timeout=30) as client:
@@ -625,7 +625,7 @@ async def _deepgram_tts(text: str, api_key: str, voice_id: Optional[str]) -> Dic
             "provider": "deepgram_aura", "sample_rate": 24000}
 
 
-async def _google_tts(text: str, api_key: str, language: str, voice_id: Optional[str]) -> Dict[str, Any]:
+async def _google_tts(text: str, api_key: str, language: str, voice_id: str | None) -> dict[str, Any]:
     """Google Cloud TTS — WaveNet voices, wide language support."""
     lang_map = {"ta": "ta-IN", "hi": "hi-IN", "te": "te-IN", "kn": "kn-IN",
                 "ml": "ml-IN", "bn": "bn-IN", "mr": "mr-IN", "gu": "gu-IN",
@@ -649,7 +649,7 @@ async def _google_tts(text: str, api_key: str, language: str, voice_id: Optional
             "provider": "google_cloud_tts", "sample_rate": 24000}
 
 
-async def _edge_tts(text: str, language: str, speed: float) -> Dict[str, Any]:
+async def _edge_tts(text: str, language: str, speed: float) -> dict[str, Any]:
     """Microsoft Edge TTS — FREE, no API key, 9+ Indian language voices."""
     import edge_tts
 

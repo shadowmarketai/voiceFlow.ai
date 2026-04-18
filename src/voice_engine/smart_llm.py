@@ -14,7 +14,6 @@ Usage:
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 # Providers in priority order when we need a smarter model. Each tuple is
 # (provider_name, env_var, model_id). The first provider with an API key set
@@ -39,7 +38,7 @@ _COMPLEX_KEYWORDS = re.compile(
 )
 
 
-def _first_configured(candidates) -> Optional[tuple[str, str, str]]:
+def _first_configured(candidates) -> tuple[str, str, str] | None:
     import os
     for provider, env_var, model in candidates:
         if os.environ.get(env_var):

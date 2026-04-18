@@ -9,14 +9,13 @@ import base64
 import logging
 import os
 from datetime import datetime
-from typing import Optional
 
 import aiohttp
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.voice_agent import CallRecording
 from api.config import settings
+from api.models.voice_agent import CallRecording
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ async def analyze_recording(
     return recording
 
 
-async def get_recording(db: AsyncSession, recording_id: int) -> Optional[CallRecording]:
+async def get_recording(db: AsyncSession, recording_id: int) -> CallRecording | None:
     """Get a recording by ID."""
     return await db.get(CallRecording, recording_id)
 

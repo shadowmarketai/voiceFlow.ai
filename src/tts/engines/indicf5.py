@@ -7,12 +7,13 @@ License: Open Source
 
 import asyncio
 import io
+import json
+import logging
 import os
 import time
 import uuid
-import json
-from typing import Optional, AsyncGenerator, Dict, Any
-import logging
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from tts.engines.base import BaseTTSEngine
 
@@ -39,7 +40,7 @@ class IndicF5Engine(BaseTTSEngine):
         "or": "Odia", "as": "Assamese"
     }
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.model_id = "ai4bharat/IndicF5"
         self._fallback_mode = False
@@ -54,8 +55,8 @@ class IndicF5Engine(BaseTTSEngine):
             logger.info("Loading IndicF5 model: %s", self.model_id)
 
             try:
-                from f5_tts.api import F5TTS
                 import torch
+                from f5_tts.api import F5TTS
 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -106,8 +107,8 @@ class IndicF5Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs
@@ -137,7 +138,7 @@ class IndicF5Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        voice_id: Optional[str],
+        voice_id: str | None,
         pace: float
     ) -> bytes:
         """Synthesize using IndicF5 model"""
@@ -222,8 +223,8 @@ class IndicF5Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs

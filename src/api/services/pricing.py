@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 COST_CATALOG: dict[str, dict[str, dict[str, Any]]] = {
     "stt": {
         "deepgram_nova2":  {"label": "Deepgram Nova-2",    "cost": 0.36, "badge": "Fastest"},

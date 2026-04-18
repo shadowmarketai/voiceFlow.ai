@@ -12,8 +12,9 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.permissions import require_permission
 from api.models.tenant import Tenant
+from api.permissions import require_permission
+from api.schemas.common import PaginatedResponse
 from api.schemas.tenant import (
     FeatureFlagsUpdate,
     TenantCreate,
@@ -21,7 +22,6 @@ from api.schemas.tenant import (
     TenantStatsResponse,
     TenantUpdate,
 )
-from api.schemas.common import PaginatedResponse
 
 logger = logging.getLogger(__name__)
 

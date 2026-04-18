@@ -3,12 +3,11 @@ Startup utilities: environment validation, structured logging, Sentry integratio
 Called during FastAPI app initialization.
 """
 
-import os
-import sys
 import json
 import logging
-from datetime import datetime, timezone
-
+import os
+import sys
+from datetime import UTC, datetime
 
 # ============================================
 # Environment Validation
@@ -85,7 +84,7 @@ class JSONFormatter(logging.Formatter):
 
     def format(self, record):
         log_data = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

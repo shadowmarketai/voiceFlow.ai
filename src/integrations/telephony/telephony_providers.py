@@ -14,17 +14,15 @@ Cost comparison:
 - Exotel: ~₹1.5-2/min
 """
 
+import json
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
-import os
+from typing import Any
+
 import httpx
-import json
-import base64
-import hmac
-import hashlib
 
 
 class CallStatus(Enum):
@@ -52,10 +50,10 @@ class PhoneNumber:
     number: str                     # E.164 format
     provider: str                   # telecmi, exotel, twilio
     friendly_name: str
-    capabilities: List[str]         # voice, sms
+    capabilities: list[str]         # voice, sms
     monthly_cost: float
     is_active: bool = True
-    assigned_to: Optional[str] = None  # Assistant ID
+    assigned_to: str | None = None  # Assistant ID
     created_at: datetime = None
 
 
@@ -65,36 +63,36 @@ class CallRecord:
     id: str
     provider: str
     provider_call_id: str
-    
+
     direction: CallDirection
     status: CallStatus
-    
+
     from_number: str
     to_number: str
-    
+
     # Timing
     initiated_at: datetime
-    answered_at: Optional[datetime] = None
-    ended_at: Optional[datetime] = None
+    answered_at: datetime | None = None
+    ended_at: datetime | None = None
     duration_seconds: int = 0
-    
+
     # Recording
-    recording_url: Optional[str] = None
+    recording_url: str | None = None
     recording_duration: int = 0
-    
+
     # Cost
     cost: float = 0.0
     currency: str = "INR"
-    
+
     # Metadata
-    tenant_id: Optional[str] = None
-    assistant_id: Optional[str] = None
-    lead_id: Optional[str] = None
+    tenant_id: str | None = None
+    assistant_id: str | None = None
+    lead_id: str | None = None
 
 
 class TelephonyProvider(ABC):
     """Abstract base class for telephony providers"""
-    
+
     @abstractmethod
     async def make_call(
         self,
@@ -102,41 +100,41 @@ class TelephonyProvider(ABC):
         to_number: str,
         webhook_url: str,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate outbound call"""
         pass
-    
+
     @abstractmethod
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         """Get call details"""
         pass
-    
+
     @abstractmethod
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """End active call"""
         pass
-    
+
     @abstractmethod
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         """Get call recording URL"""
         pass
-    
+
     @abstractmethod
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         """List available phone numbers"""
         pass
-    
+
     @abstractmethod
     async def buy_phone_number(
         self,
         country: str = "IN",
-        capabilities: List[str] = None
+        capabilities: list[str] = None
     ) -> PhoneNumber:
         """Purchase new phone number"""
         pass
-    
+
     @abstractmethod
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse webhook payload into CallRecord"""
         pass
 
@@ -154,27 +152,27 @@ class TeleCMIProvider(TelephonyProvider):
     - Outbound: ~₹1.2/min
     - Inbound: ~₹0.8/min
     """
-    
+
     def __init__(self):
         self.api_key = os.getenv("TELECMI_API_KEY")
         self.api_secret = os.getenv("TELECMI_API_SECRET")
         self.account_id = os.getenv("TELECMI_ACCOUNT_ID")
         self.base_url = "https://rest.telecmi.com/v2"
-    
-    def _get_headers(self) -> Dict[str, str]:
+
+    def _get_headers(self) -> dict[str, str]:
         """Get API headers"""
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
         }
-    
+
     async def make_call(
         self,
         from_number: str,
         to_number: str,
         webhook_url: str,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Initiate outbound call via TeleCMI
         """
@@ -192,7 +190,7 @@ class TeleCMIProvider(TelephonyProvider):
                     "custom_data": kwargs.get("metadata", {})
                 }
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return {
@@ -209,20 +207,20 @@ class TeleCMIProvider(TelephonyProvider):
                     "provider": "telecmi",
                     "error": response.text
                 }
-    
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         """Get call details"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/call/{call_id}",
                 headers=self._get_headers()
             )
-            
+
             if response.status_code == 200:
                 return response.json()
             return {"error": response.text}
-    
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """End active call"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -230,20 +228,20 @@ class TeleCMIProvider(TelephonyProvider):
                 headers=self._get_headers()
             )
             return {"success": response.status_code == 200}
-    
-    async def get_recording(self, call_id: str) -> Optional[str]:
+
+    async def get_recording(self, call_id: str) -> str | None:
         """Get call recording URL"""
         call = await self.get_call(call_id)
         return call.get("recording_url")
-    
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         """List available phone numbers"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/numbers",
                 headers=self._get_headers()
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return [
@@ -259,11 +257,11 @@ class TeleCMIProvider(TelephonyProvider):
                     for num in data.get("numbers", [])
                 ]
             return []
-    
+
     async def buy_phone_number(
         self,
         country: str = "IN",
-        capabilities: List[str] = None
+        capabilities: list[str] = None
     ) -> PhoneNumber:
         """Purchase new phone number"""
         async with httpx.AsyncClient() as client:
@@ -276,7 +274,7 @@ class TeleCMIProvider(TelephonyProvider):
                     "capabilities": capabilities or ["voice"]
                 }
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return PhoneNumber(
@@ -288,8 +286,8 @@ class TeleCMIProvider(TelephonyProvider):
                     monthly_cost=data.get("monthly_cost", 500)
                 )
             raise Exception(f"Failed to buy number: {response.text}")
-    
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse TeleCMI webhook payload"""
         # Map TeleCMI status to our status
         status_map = {
@@ -301,7 +299,7 @@ class TeleCMIProvider(TelephonyProvider):
             "busy": CallStatus.BUSY,
             "no-answer": CallStatus.NO_ANSWER
         }
-        
+
         return CallRecord(
             id=f"telecmi_{payload.get('call_id')}",
             provider="telecmi",
@@ -318,13 +316,13 @@ class TeleCMIProvider(TelephonyProvider):
             cost=float(payload.get("cost", 0)),
             currency="INR"
         )
-    
+
     async def send_sms(
         self,
         from_number: str,
         to_number: str,
         message: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Send SMS via TeleCMI"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -336,7 +334,7 @@ class TeleCMIProvider(TelephonyProvider):
                     "message": message
                 }
             )
-            
+
             return {
                 "success": response.status_code == 200,
                 "provider": "telecmi",
@@ -358,30 +356,30 @@ class ExotelProvider(TelephonyProvider):
     - Outbound: ~₹1.5-2/min
     - IVR: Custom pricing
     """
-    
+
     def __init__(self):
         self.api_key = os.getenv("EXOTEL_API_KEY")
         self.api_token = os.getenv("EXOTEL_API_TOKEN")
         self.sid = os.getenv("EXOTEL_SID")
         self.subdomain = os.getenv("EXOTEL_SUBDOMAIN", "api.exotel.com")
         self.base_url = f"https://{self.subdomain}/v1/Accounts/{self.sid}"
-    
+
     def _get_auth(self):
         """Get basic auth tuple"""
         return (self.api_key, self.api_token)
-    
+
     async def make_call(
         self,
         from_number: str,
         to_number: str,
         webhook_url: str,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Initiate outbound call via Exotel
         """
         caller_id = kwargs.get("caller_id", from_number)
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{self.base_url}/Calls/connect",
@@ -396,7 +394,7 @@ class ExotelProvider(TelephonyProvider):
                     "CustomField": json.dumps(kwargs.get("metadata", {}))
                 }
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 call_data = data.get("Call", {})
@@ -414,20 +412,20 @@ class ExotelProvider(TelephonyProvider):
                     "provider": "exotel",
                     "error": response.text
                 }
-    
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         """Get call details"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/Calls/{call_id}",
                 auth=self._get_auth()
             )
-            
+
             if response.status_code == 200:
                 return response.json()
             return {"error": response.text}
-    
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """End active call"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -436,20 +434,20 @@ class ExotelProvider(TelephonyProvider):
                 data={"Status": "completed"}
             )
             return {"success": response.status_code == 200}
-    
-    async def get_recording(self, call_id: str) -> Optional[str]:
+
+    async def get_recording(self, call_id: str) -> str | None:
         """Get call recording URL"""
         call = await self.get_call(call_id)
         return call.get("Call", {}).get("RecordingUrl")
-    
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         """List ExoPhones (virtual numbers)"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/IncomingPhoneNumbers",
                 auth=self._get_auth()
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return [
@@ -465,11 +463,11 @@ class ExotelProvider(TelephonyProvider):
                     for num in data.get("IncomingPhoneNumbers", [])
                 ]
             return []
-    
+
     async def buy_phone_number(
         self,
         country: str = "IN",
-        capabilities: List[str] = None
+        capabilities: list[str] = None
     ) -> PhoneNumber:
         """
         Request new ExoPhone
@@ -478,8 +476,8 @@ class ExotelProvider(TelephonyProvider):
         # Exotel doesn't have direct API for buying numbers
         # This would typically be done through their dashboard
         raise NotImplementedError("Contact Exotel support to provision new numbers")
-    
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse Exotel webhook payload"""
         status_map = {
             "initiated": CallStatus.INITIATED,
@@ -490,7 +488,7 @@ class ExotelProvider(TelephonyProvider):
             "busy": CallStatus.BUSY,
             "no-answer": CallStatus.NO_ANSWER
         }
-        
+
         return CallRecord(
             id=f"exotel_{payload.get('CallSid')}",
             provider="exotel",
@@ -507,7 +505,7 @@ class ExotelProvider(TelephonyProvider):
             cost=float(payload.get("Price", 0)),
             currency="INR"
         )
-    
+
     def generate_exoml(
         self,
         action: str,
@@ -521,19 +519,19 @@ class ExotelProvider(TelephonyProvider):
 <Response>
     <Say language="{params.get('language', 'en-IN')}">{params.get('text', '')}</Say>
 </Response>"""
-        
+
         elif action == "play":
             return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Play>{params.get('audio_url', '')}</Play>
 </Response>"""
-        
+
         elif action == "record":
             return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Record maxLength="{params.get('max_length', 60)}" action="{params.get('callback_url', '')}"/>
 </Response>"""
-        
+
         elif action == "gather":
             return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -541,7 +539,7 @@ class ExotelProvider(TelephonyProvider):
         <Say>{params.get('prompt', 'Please enter your choice')}</Say>
     </Gather>
 </Response>"""
-        
+
         elif action == "dial":
             return f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -549,13 +547,13 @@ class ExotelProvider(TelephonyProvider):
         <Number>{params.get('number', '')}</Number>
     </Dial>
 </Response>"""
-        
+
         elif action == "hangup":
             return """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Hangup/>
 </Response>"""
-        
+
         else:
             return """<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -576,22 +574,22 @@ class TwilioProvider(TelephonyProvider):
     - India outbound: ~₹4-5/min
     - International: Varies by country
     """
-    
+
     def __init__(self):
         self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
         self.base_url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}"
-    
+
     def _get_auth(self):
         return (self.account_sid, self.auth_token)
-    
+
     async def make_call(
         self,
         from_number: str,
         to_number: str,
         webhook_url: str,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate outbound call via Twilio"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -606,7 +604,7 @@ class TwilioProvider(TelephonyProvider):
                     "StatusCallback": kwargs.get("status_callback", webhook_url)
                 }
             )
-            
+
             if response.status_code == 201:
                 data = response.json()
                 return {
@@ -623,20 +621,20 @@ class TwilioProvider(TelephonyProvider):
                     "provider": "twilio",
                     "error": response.text
                 }
-    
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         """Get call details"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/Calls/{call_id}.json",
                 auth=self._get_auth()
             )
-            
+
             if response.status_code == 200:
                 return response.json()
             return {"error": response.text}
-    
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         """End active call"""
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -645,29 +643,29 @@ class TwilioProvider(TelephonyProvider):
                 data={"Status": "completed"}
             )
             return {"success": response.status_code == 200}
-    
-    async def get_recording(self, call_id: str) -> Optional[str]:
+
+    async def get_recording(self, call_id: str) -> str | None:
         """Get call recording URL"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/Calls/{call_id}/Recordings.json",
                 auth=self._get_auth()
             )
-            
+
             if response.status_code == 200:
                 recordings = response.json().get("recordings", [])
                 if recordings:
                     return recordings[0].get("media_url")
         return None
-    
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         """List Twilio phone numbers"""
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 f"{self.base_url}/IncomingPhoneNumbers.json",
                 auth=self._get_auth()
             )
-            
+
             if response.status_code == 200:
                 data = response.json()
                 return [
@@ -683,11 +681,11 @@ class TwilioProvider(TelephonyProvider):
                     for num in data.get("incoming_phone_numbers", [])
                 ]
             return []
-    
+
     async def buy_phone_number(
         self,
         country: str = "IN",
-        capabilities: List[str] = None
+        capabilities: list[str] = None
     ) -> PhoneNumber:
         """Purchase Twilio phone number"""
         # First, search for available numbers
@@ -696,23 +694,23 @@ class TwilioProvider(TelephonyProvider):
                 f"{self.base_url}/AvailablePhoneNumbers/{country}/Local.json",
                 auth=self._get_auth()
             )
-            
+
             if search_response.status_code != 200:
                 raise Exception("No numbers available")
-            
+
             available = search_response.json().get("available_phone_numbers", [])
             if not available:
                 raise Exception("No numbers available")
-            
+
             number = available[0]["phone_number"]
-            
+
             # Purchase the number
             buy_response = await client.post(
                 f"{self.base_url}/IncomingPhoneNumbers.json",
                 auth=self._get_auth(),
                 data={"PhoneNumber": number}
             )
-            
+
             if buy_response.status_code == 201:
                 data = buy_response.json()
                 return PhoneNumber(
@@ -724,8 +722,8 @@ class TwilioProvider(TelephonyProvider):
                     monthly_cost=data.get("monthly_price", 1.0) * 85
                 )
             raise Exception(f"Failed to buy number: {buy_response.text}")
-    
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+
+    def parse_webhook(self, payload: dict) -> CallRecord:
         """Parse Twilio webhook payload"""
         status_map = {
             "queued": CallStatus.INITIATED,
@@ -737,7 +735,7 @@ class TwilioProvider(TelephonyProvider):
             "no-answer": CallStatus.NO_ANSWER,
             "canceled": CallStatus.CANCELLED
         }
-        
+
         return CallRecord(
             id=f"twilio_{payload.get('CallSid')}",
             provider="twilio",
@@ -750,8 +748,8 @@ class TwilioProvider(TelephonyProvider):
             duration_seconds=int(payload.get("CallDuration", 0)),
             recording_url=payload.get("RecordingUrl")
         )
-    
-    def _parse_capabilities(self, caps: Dict) -> List[str]:
+
+    def _parse_capabilities(self, caps: dict) -> list[str]:
         """Parse Twilio capabilities"""
         result = []
         if caps.get("voice"):
@@ -772,33 +770,33 @@ class TelephonyManager:
     - Failover between providers
     - Unified API across providers
     """
-    
+
     def __init__(self):
-        self.providers: Dict[str, TelephonyProvider] = {
+        self.providers: dict[str, TelephonyProvider] = {
             "telecmi": TeleCMIProvider(),
             "exotel": ExotelProvider(),
             "twilio": TwilioProvider()
         }
-        
+
         # Cost per minute by provider (INR)
         self.cost_per_minute = {
             "telecmi": 1.2,
             "exotel": 1.5,
             "twilio": 4.5
         }
-        
+
         # Provider priority for India
         self.india_priority = ["telecmi", "exotel", "twilio"]
-        
+
         # Provider priority for international
         self.international_priority = ["twilio"]
-    
+
     def get_provider(self, provider_name: str) -> TelephonyProvider:
         """Get specific provider"""
         if provider_name not in self.providers:
             raise ValueError(f"Unknown provider: {provider_name}")
         return self.providers[provider_name]
-    
+
     def select_provider(
         self,
         to_number: str,
@@ -809,14 +807,14 @@ class TelephonyManager:
         """
         if preferred_provider and preferred_provider in self.providers:
             return preferred_provider
-        
+
         # Check if Indian number
         if to_number.startswith("+91") or to_number.startswith("91"):
             return self.india_priority[0]
-        
+
         # International
         return self.international_priority[0]
-    
+
     async def make_call(
         self,
         from_number: str,
@@ -824,25 +822,25 @@ class TelephonyManager:
         webhook_url: str,
         preferred_provider: str = None,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Make call with automatic provider selection and failover
         """
         provider_name = self.select_provider(to_number, preferred_provider)
-        
+
         # Try primary provider
         provider = self.providers[provider_name]
         result = await provider.make_call(from_number, to_number, webhook_url, **kwargs)
-        
+
         if result.get("success"):
             return result
-        
+
         # Failover to other providers
         priority_list = (
             self.india_priority if to_number.startswith("+91")
             else self.international_priority
         )
-        
+
         for fallback_name in priority_list:
             if fallback_name != provider_name:
                 fallback_provider = self.providers[fallback_name]
@@ -853,37 +851,37 @@ class TelephonyManager:
                     result["failover"] = True
                     result["original_provider"] = provider_name
                     return result
-        
+
         return result
-    
-    async def list_all_numbers(self) -> List[PhoneNumber]:
+
+    async def list_all_numbers(self) -> list[PhoneNumber]:
         """List phone numbers from all providers"""
         all_numbers = []
-        
+
         for provider_name, provider in self.providers.items():
             try:
                 numbers = await provider.list_phone_numbers()
                 all_numbers.extend(numbers)
             except Exception as e:
                 print(f"Error listing numbers from {provider_name}: {e}")
-        
+
         return all_numbers
-    
+
     def estimate_cost(
         self,
         to_number: str,
         duration_minutes: float,
         provider: str = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Estimate call cost
         """
         if not provider:
             provider = self.select_provider(to_number)
-        
+
         cost_per_min = self.cost_per_minute.get(provider, 2.0)
         total_cost = cost_per_min * duration_minutes
-        
+
         return {
             "provider": provider,
             "duration_minutes": duration_minutes,
@@ -899,11 +897,11 @@ class TelephonyManager:
                 for name, cpm in self.cost_per_minute.items()
             }
         }
-    
+
     def parse_webhook(
         self,
         provider: str,
-        payload: Dict
+        payload: dict
     ) -> CallRecord:
         """Parse webhook from any provider"""
         return self.providers[provider].parse_webhook(payload)
@@ -946,10 +944,10 @@ async def make_call(request: MakeCallRequest):
         preferred_provider=request.provider,
         record=request.record
     )
-    
+
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error"))
-    
+
     return result
 
 
@@ -984,7 +982,7 @@ async def estimate_cost(request: CostEstimateRequest):
 
 
 @telephony_router.post("/webhooks/{provider}")
-async def telephony_webhook(provider: str, request: Request, payload: Dict):
+async def telephony_webhook(provider: str, request: Request, payload: dict):
     """Handle telephony webhooks — parse call record and trigger voice analysis."""
     if provider not in ["telecmi", "exotel", "twilio"]:
         raise HTTPException(status_code=400, detail="Unknown provider")
@@ -998,8 +996,8 @@ async def telephony_webhook(provider: str, request: Request, payload: Dict):
         and call_record.duration_seconds > 2
     ):
         try:
-            from api.services.call_processing_service import process_call_recording
             from api.database import get_session_factory
+            from api.services.call_processing_service import process_call_recording
 
             voice_engine = getattr(request.app.state, "voice_engine", None)
             db = get_session_factory()()

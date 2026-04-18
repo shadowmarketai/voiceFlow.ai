@@ -24,14 +24,13 @@ import asyncio
 import datetime
 import json
 import logging
-from typing import Optional
 
 import jwt
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from api.config import settings
-from api.database import db, USE_POSTGRES
+from api.database import USE_POSTGRES, db
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +149,7 @@ manager = ConnectionManager()
 # ── Auth: decode JWT from query param (browsers can't set headers on WS) ──
 
 
-def _authenticate(token: str) -> Optional[dict]:
+def _authenticate(token: str) -> dict | None:
     """Decode the JWT and load the user from DB. Returns None on failure."""
     if not token:
         return None

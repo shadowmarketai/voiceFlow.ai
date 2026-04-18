@@ -16,15 +16,14 @@ import os
 import tempfile
 import time
 import uuid
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.database import get_db
+from api.models.voice import DialectType, EmotionType, IntentType, VoiceAnalysis
 from api.permissions import require_permission
-from api.models.voice import VoiceAnalysis, EmotionType, IntentType, DialectType
 from api.schemas.common import PaginatedResponse
 from api.schemas.voice import (
     VoiceAnalysisResponse,
@@ -40,7 +39,7 @@ router = APIRouter(prefix="/api/v1/voice", tags=["Voice AI"])
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _get_user_id(current_user: dict) -> Optional[int]:
+def _get_user_id(current_user: dict) -> int | None:
     """Extract integer user_id from the current user dict."""
     raw = current_user.get("id", "")
     if isinstance(raw, int):
@@ -70,7 +69,7 @@ def _get_voice_engine(request: Request):
     return engine
 
 
-def _serialize_enum(val) -> Optional[str]:
+def _serialize_enum(val) -> str | None:
     if val is None:
         return None
     if hasattr(val, "value"):
@@ -78,7 +77,7 @@ def _serialize_enum(val) -> Optional[str]:
     return str(val)
 
 
-def _serialize_datetime(dt) -> Optional[str]:
+def _serialize_datetime(dt) -> str | None:
     if dt is None:
         return None
     return dt.isoformat()
@@ -116,10 +115,10 @@ def _persist_analysis(
     db: Session,
     result_dict: dict,
     request_id: str,
-    user_id: Optional[int],
+    user_id: int | None,
     source: str = "api",
-    phone_number: Optional[str] = None,
-    audio_duration_s: Optional[float] = None,
+    phone_number: str | None = None,
+    audio_duration_s: float | None = None,
 ) -> VoiceAnalysis:
     """Persist a voice analysis result to the database."""
     # Map emotion string to enum
@@ -189,7 +188,7 @@ def _persist_analysis(
 async def process_audio(
     request: Request,
     file: UploadFile = File(..., description="Audio file (WAV, MP3, OGG)"),
-    language: Optional[str] = None,
+    language: str | None = None,
     enable_emotion: bool = True,
     enable_intent: bool = True,
     current_user: dict = Depends(require_permission("voiceAI", "create")),
@@ -410,11 +409,11 @@ async def process_audio_url(
 async def voice_respond(
     request: Request,
     file: UploadFile = File(..., description="Audio file from customer"),
-    language: Optional[str] = None,
+    language: str | None = None,
     system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
     llm_provider: str = "groq",
     tts_language: str = "en",
-    voice_id: Optional[str] = None,
+    voice_id: str | None = None,
     current_user: dict = Depends(require_permission("voiceAI", "create")),
     db: Session = Depends(get_db),
 ):
@@ -434,7 +433,7 @@ async def voice_respond(
         )
 
     try:
-        from voice_engine.voice_ai_service import get_voice_ai_service, VoiceTurnRequest
+        from voice_engine.voice_ai_service import VoiceTurnRequest, get_voice_ai_service
 
         req = VoiceTurnRequest(
             audio_bytes=audio_bytes,
@@ -493,7 +492,7 @@ async def analyze_and_speak(
     file: UploadFile = File(..., description="Audio file from customer"),
     response_text: str = "Thank you for your message.",
     tts_language: str = "en",
-    voice_id: Optional[str] = None,
+    voice_id: str | None = None,
     current_user: dict = Depends(require_permission("voiceAI", "create")),
     db: Session = Depends(get_db),
 ):
@@ -566,11 +565,11 @@ async def analyze_and_speak(
 async def list_analyses(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
-    emotion: Optional[str] = Query(None, description="Filter by emotion type"),
-    intent: Optional[str] = Query(None, description="Filter by intent type"),
-    dialect: Optional[str] = Query(None, description="Filter by dialect type"),
-    source: Optional[str] = Query(None, description="Filter by source (upload, url, whatsapp, ivr)"),
-    lead_id: Optional[int] = Query(None, description="Filter by lead ID"),
+    emotion: str | None = Query(None, description="Filter by emotion type"),
+    intent: str | None = Query(None, description="Filter by intent type"),
+    dialect: str | None = Query(None, description="Filter by dialect type"),
+    source: str | None = Query(None, description="Filter by source (upload, url, whatsapp, ivr)"),
+    lead_id: int | None = Query(None, description="Filter by lead ID"),
     current_user: dict = Depends(require_permission("voiceAI", "read")),
     db: Session = Depends(get_db),
 ):
@@ -809,8 +808,9 @@ async def synthesize_speech(
 
     # Fallback: edge-tts
     try:
-        import edge_tts
         import base64
+
+        import edge_tts
 
         voice_map = {
             "ta": "ta-IN-PallaviNeural",
@@ -858,7 +858,7 @@ async def synthesize_speech(
     summary="List available TTS voices",
 )
 async def list_tts_voices(
-    language: Optional[str] = Query(None, description="Filter by language"),
+    language: str | None = Query(None, description="Filter by language"),
     current_user: dict = Depends(require_permission("voiceAI", "read")),
 ):
     """List built-in and cloned voices available for TTS."""
@@ -883,7 +883,7 @@ async def list_tts_voices(
 @router.post("/stt/diarize", summary="Transcribe audio with speaker separation")
 async def stt_diarize(
     file: UploadFile = File(...),
-    language: Optional[str] = Query(None, description="Optional language hint (e.g. 'en', 'hi', 'ta')"),
+    language: str | None = Query(None, description="Optional language hint (e.g. 'en', 'hi', 'ta')"),
     current_user: dict = Depends(require_permission("voiceAI", "read")),
 ):
     """
@@ -947,6 +947,7 @@ async def get_corpus_stats(
 
     try:
         import aioboto3
+
         from voice_engine.fine_tune_scheduler import CorpusStats
         session = aioboto3.Session()
         stats   = CorpusStats(session)
@@ -999,8 +1000,9 @@ async def trigger_finetune(
         }
 
     try:
-        from voice_engine.fine_tune_scheduler import GpuJobClient, CorpusStats
         import aioboto3
+
+        from voice_engine.fine_tune_scheduler import CorpusStats, GpuJobClient
 
         # Record trigger timestamp in MinIO
         session = aioboto3.Session()

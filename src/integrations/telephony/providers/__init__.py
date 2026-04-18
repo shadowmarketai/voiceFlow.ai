@@ -19,19 +19,19 @@ Direct Connect:
 """
 
 from integrations.telephony.providers.base import (
-    TelephonyProvider,
-    CallStatus,
     CallDirection,
     CallRecord,
+    CallStatus,
     PhoneNumber,
+    TelephonyProvider,
 )
-from integrations.telephony.providers.telecmi import TeleCMIProvider
 from integrations.telephony.providers.bolna import BolnaProvider
-from integrations.telephony.providers.vobiz import VobizProvider
 from integrations.telephony.providers.exotel import ExotelProvider
-from integrations.telephony.providers.twilio_provider import TwilioProvider
-from integrations.telephony.providers.vonage_provider import VonageProvider
 from integrations.telephony.providers.sip_provider import SIPProvider
+from integrations.telephony.providers.telecmi import TeleCMIProvider
+from integrations.telephony.providers.twilio_provider import TwilioProvider
+from integrations.telephony.providers.vobiz import VobizProvider
+from integrations.telephony.providers.vonage_provider import VonageProvider
 from integrations.telephony.providers.webrtc_provider import WebRTCProvider
 
 __all__ = [

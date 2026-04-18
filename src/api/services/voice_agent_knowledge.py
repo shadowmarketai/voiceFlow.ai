@@ -7,14 +7,13 @@ Manages training data, chunking, embedding, and semantic search.
 
 import logging
 import re
-from typing import Optional
 
 import aiohttp
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.voice_agent import KnowledgeDocument, EMBEDDING_DIM
 from api.config import settings
+from api.models.voice_agent import KnowledgeDocument
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +225,7 @@ async def update_document(
     db: AsyncSession,
     doc_id: int,
     **updates,
-) -> Optional[KnowledgeDocument]:
+) -> KnowledgeDocument | None:
     """Update a knowledge document. Re-embeds if content changes."""
     doc = await db.get(KnowledgeDocument, doc_id)
     if doc is None:

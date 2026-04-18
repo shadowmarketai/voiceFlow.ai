@@ -11,8 +11,7 @@ Providers:
 
 import logging
 import os
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class SpeakerEncoder:
             pass
         return "basic"
 
-    def extract_embedding(self, audio_path: str) -> Dict[str, Any]:
+    def extract_embedding(self, audio_path: str) -> dict[str, Any]:
         """Extract speaker embedding from audio file.
 
         Returns dict with embedding data + metadata.
@@ -58,9 +57,8 @@ class SpeakerEncoder:
             return self._extract_resemblyzer(audio_path)
         return self._extract_basic(audio_path)
 
-    def _extract_xtts(self, audio_path: str) -> Dict[str, Any]:
+    def _extract_xtts(self, audio_path: str) -> dict[str, Any]:
         """Extract using XTTS v2 (highest quality)."""
-        import torch
         from TTS.api import TTS
 
         if self._xtts_model is None:
@@ -75,9 +73,8 @@ class SpeakerEncoder:
             "model": "tts_models/multilingual/multi-dataset/xtts_v2",
         }
 
-    def _extract_resemblyzer(self, audio_path: str) -> Dict[str, Any]:
+    def _extract_resemblyzer(self, audio_path: str) -> dict[str, Any]:
         """Extract using Resemblyzer (lightweight CPU)."""
-        import numpy as np
         from resemblyzer import VoiceEncoder, preprocess_wav
 
         encoder = VoiceEncoder()
@@ -90,7 +87,7 @@ class SpeakerEncoder:
             "embedding_dim": len(embedding),
         }
 
-    def _extract_basic(self, audio_path: str) -> Dict[str, Any]:
+    def _extract_basic(self, audio_path: str) -> dict[str, Any]:
         """Basic feature extraction (no ML, always works)."""
         import librosa
         import numpy as np
@@ -115,7 +112,7 @@ class SpeakerEncoder:
             "pitch_std": pitch_std,
         }
 
-    def save_embedding(self, voice_id: str, embedding_data: Dict) -> str:
+    def save_embedding(self, voice_id: str, embedding_data: dict) -> str:
         """Save embedding to disk for reuse."""
         import json
         path = os.path.join(EMBEDDINGS_DIR, f"{voice_id}.json")
@@ -124,7 +121,7 @@ class SpeakerEncoder:
         logger.info("Embedding saved: %s", path)
         return path
 
-    def load_embedding(self, voice_id: str) -> Optional[Dict]:
+    def load_embedding(self, voice_id: str) -> dict | None:
         """Load pre-computed embedding."""
         import json
         path = os.path.join(EMBEDDINGS_DIR, f"{voice_id}.json")

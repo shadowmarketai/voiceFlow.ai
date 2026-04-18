@@ -6,7 +6,7 @@ Everything is stored in PAISE (₹1 = 100 paise) to avoid float rounding.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String, BigInteger, Boolean, JSON, Index
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base

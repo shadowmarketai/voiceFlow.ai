@@ -8,10 +8,9 @@ own customers). Platform tickets are raised by tenant admins to the
 platform team (super admin) for billing/bug/feature/access issues.
 """
 
-from typing import Optional, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ── Categories / status / priority enums ────────────────────────────
 
@@ -36,9 +35,9 @@ class PlatformTicketCreate(BaseModel):
 
 class PlatformTicketUpdate(BaseModel):
     """Super admin updates ticket status, priority, or assignment."""
-    status: Optional[PlatformTicketStatus] = None
-    priority: Optional[PlatformTicketPriority] = None
-    assigned_to: Optional[str] = None  # super admin user id
+    status: PlatformTicketStatus | None = None
+    priority: PlatformTicketPriority | None = None
+    assigned_to: str | None = None  # super admin user id
 
 
 # ── Replies (both sides) ────────────────────────────────────────────
@@ -53,11 +52,11 @@ class PlatformTicketReplyOut(BaseModel):
     id: str
     ticket_id: str
     author_id: str
-    author_name: Optional[str] = None
-    author_email: Optional[str] = None
+    author_name: str | None = None
+    author_email: str | None = None
     is_super_admin: bool = False
     body: str
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,20 +67,20 @@ class PlatformTicketReplyOut(BaseModel):
 class PlatformTicketOut(BaseModel):
     id: str
     tenant_id: str
-    tenant_name: Optional[str] = None
+    tenant_name: str | None = None
     raised_by: str
-    raised_by_name: Optional[str] = None
-    raised_by_email: Optional[str] = None
+    raised_by_name: str | None = None
+    raised_by_email: str | None = None
     subject: str
     body: str
     category: str
     priority: str
     status: str
-    assigned_to: Optional[str] = None
-    assigned_to_name: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-    resolved_at: Optional[str] = None
+    assigned_to: str | None = None
+    assigned_to_name: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    resolved_at: str | None = None
     reply_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)

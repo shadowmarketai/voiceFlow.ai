@@ -20,10 +20,7 @@ Combined confidence score → language decision.
 """
 
 import re
-import unicodedata
 from dataclasses import dataclass
-from typing import Optional
-
 
 # ─── SIGNAL 1: TAMIL-SPECIFIC PHONEME PATTERNS ───────────────────────────────
 # These consonant clusters and vowel patterns appear in Tamil romanization
@@ -95,7 +92,6 @@ TAMIL_FUNCTION_WORDS = {
 
     # Demonstratives
     "antha":   3.5,   # that
-    "antha":   3.5,
     "inga":    2.5,   # here (can clash)
     "ange":    3.5,   # there
     "inge":    3.5,   # here
@@ -286,7 +282,7 @@ class RomanizedTamilDetector:
     THRESHOLD_LOW    = 1.5
     UNICODE_BOOST    = 20.0   # Unicode Tamil chars are definitive
 
-    def __init__(self, channel_hint: Optional[str] = None):
+    def __init__(self, channel_hint: str | None = None):
         """
         channel_hint: tenant-level language hint ("ta", "hi", "en", etc.)
         When set, biases detection toward that language on ambiguous inputs.
@@ -397,8 +393,8 @@ class RomanizedTamilDetector:
 
 def pick_tts_language(
     transcript: str,
-    stt_detected_lang: Optional[str] = None,
-    channel_hint: Optional[str] = None,
+    stt_detected_lang: str | None = None,
+    channel_hint: str | None = None,
 ) -> str:
     """
     Fuses three signals to decide TTS language:

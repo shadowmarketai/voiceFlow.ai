@@ -5,7 +5,7 @@ Shared response models used across multiple endpoints.
 Uses Pydantic v2 with model_config = ConfigDict (KB-014).
 """
 
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,7 +27,7 @@ class ErrorResponse(BaseModel):
     error: bool = True
     detail: str
     status_code: int
-    errors: Optional[list[dict[str, Any]]] = None
+    errors: list[dict[str, Any]] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

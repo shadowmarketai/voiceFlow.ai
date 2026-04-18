@@ -7,9 +7,8 @@ All endpoints require admin role via require_permission("userManagement", ...).
 
 import logging
 import secrets
-from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.database import db
 from api.permissions import require_permission
@@ -36,9 +35,9 @@ router = APIRouter(prefix="/api/v1/users", tags=["User Management"])
 async def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    role: Optional[str] = Query(None, pattern="^(admin|manager|agent|user|viewer)$"),
-    status_filter: Optional[str] = Query(None, alias="status", pattern="^(active|inactive)$"),
-    search: Optional[str] = Query(None, max_length=200),
+    role: str | None = Query(None, pattern="^(admin|manager|agent|user|viewer)$"),
+    status_filter: str | None = Query(None, alias="status", pattern="^(active|inactive)$"),
+    search: str | None = Query(None, max_length=200),
     current_user: dict = Depends(require_permission("userManagement", "read")),
 ) -> UserListResponse:
     """List users with optional filtering by role, status, and search."""

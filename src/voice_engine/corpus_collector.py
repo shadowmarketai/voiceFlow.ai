@@ -27,16 +27,13 @@ Environment variables:
 
 from __future__ import annotations
 
-import asyncio
-import io
 import json
 import logging
 import math
 import os
 import struct
-import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -83,9 +80,10 @@ async def _has_corpus_consent(user_id: str | None, tenant_id: str | None) -> boo
     if not user_id:
         return False
     try:
+        from sqlalchemy import and_, select
+
         from api.database import get_async_session
         from api.models.dpdp import ConsentRecord
-        from sqlalchemy import select, and_
 
         async for session in get_async_session():
             stmt = (
@@ -221,7 +219,7 @@ def _build_training_pair(
     return {
         "schema_version": "1.0",
         "call_id": call_id,
-        "collected_at": datetime.now(timezone.utc).isoformat(),
+        "collected_at": datetime.now(UTC).isoformat(),
         "language": language,
         "domain": domain,
         "user_turn": {

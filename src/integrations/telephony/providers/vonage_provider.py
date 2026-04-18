@@ -10,7 +10,7 @@ import base64
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -53,7 +53,7 @@ class VonageProvider(TelephonyProvider):
         ).decode()
         return f"Basic {creds}"
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": self._basic_auth(),
             "Content-Type": "application/json",
@@ -61,7 +61,7 @@ class VonageProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate call via Vonage NCCO (Nexmo Call Control Object)."""
         ncco = kwargs.get("ncco") or [
             {
@@ -120,14 +120,14 @@ class VonageProvider(TelephonyProvider):
                 }
             return {"success": False, "provider": self.name, "error": resp.text}
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.voice_url}/{call_id}", headers=self._headers()
             )
             return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.put(
                 f"{self.voice_url}/{call_id}",
@@ -136,11 +136,11 @@ class VonageProvider(TelephonyProvider):
             )
             return {"success": resp.status_code in (200, 204)}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         call = await self.get_call(call_id)
         return call.get("recording_url")
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/account/numbers",
@@ -163,7 +163,7 @@ class VonageProvider(TelephonyProvider):
             ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         async with httpx.AsyncClient(timeout=15) as client:
             search = await client.get(
@@ -203,7 +203,7 @@ class VonageProvider(TelephonyProvider):
                 )
             raise RuntimeError(f"Vonage buy failed: {buy.text}")
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         status_map = {
             "started": CallStatus.INITIATED,
             "ringing": CallStatus.RINGING,

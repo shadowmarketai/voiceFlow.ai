@@ -12,7 +12,6 @@ from sqlalchemy import Integer, func, select
 from api.database import get_session_factory
 from api.models.quality_metrics import CallMetric, CsatRating, ProviderProbe, UptimeProbe
 
-
 # ── Writers ────────────────────────────────────────────────────────────
 
 def record_provider_probe(category: str, provider: str, latency_ms: int | None,

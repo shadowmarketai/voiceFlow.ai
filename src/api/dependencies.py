@@ -8,7 +8,6 @@ Uses PyJWT (KB-004) exclusively. Never python-jose.
 """
 
 import logging
-from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -118,7 +117,7 @@ def _get_admin_user() -> dict:
 
 
 async def get_current_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> dict:
     """Extract and validate the current user from the JWT bearer token.
 

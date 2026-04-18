@@ -15,12 +15,11 @@ here we expose the API shape and aggregation endpoints.
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 
 from api.database import get_session_factory
 from api.dependencies import get_current_active_user
@@ -33,7 +32,7 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["analytics-ai"])
 @router.get("/sentiment-trend")
 async def sentiment_trend(
     days: int = 30,
-    agent_id: Optional[str] = None,
+    agent_id: str | None = None,
     user: dict = Depends(get_current_active_user),
 ):
     """Daily average CSAT as a sentiment proxy over the last N days.

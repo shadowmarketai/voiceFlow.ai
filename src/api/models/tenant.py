@@ -6,12 +6,12 @@ Each tenant represents a separate organization with its own branding and config.
 """
 
 from datetime import datetime
-from typing import Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
-from sqlalchemy import String, Integer, Boolean, DateTime, JSON, Text, Float, Index
+from sqlalchemy import JSON, Boolean, DateTime, Float, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .base import Base, TimestampMixin, SoftDeleteMixin
+from .base import Base, SoftDeleteMixin, TimestampMixin
 
 if TYPE_CHECKING:
     from .user import User
@@ -29,19 +29,19 @@ class Tenant(TimestampMixin, SoftDeleteMixin, Base):
     # Identity
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     slug: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
-    domain: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    domain: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
 
     # Branding
-    logo_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    favicon_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    primary_color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)  # hex e.g. #FF5733
-    secondary_color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True)
-    custom_css: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    favicon_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    primary_color: Mapped[str | None] = mapped_column(String(7), nullable=True)  # hex e.g. #FF5733
+    secondary_color: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    custom_css: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Contact
-    contact_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    contact_phone: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Billing plan
     plan: Mapped[str] = mapped_column(String(50), default="starter", server_default="starter")
@@ -50,29 +50,29 @@ class Tenant(TimestampMixin, SoftDeleteMixin, Base):
     max_leads: Mapped[int] = mapped_column(Integer, default=500, server_default="500")
 
     # Feature flags (overrides global feature config per tenant)
-    feature_flags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    feature_flags: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Configuration
-    settings: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     default_language: Mapped[str] = mapped_column(String(10), default="en", server_default="en")
     default_currency: Mapped[str] = mapped_column(String(3), default="INR", server_default="INR")
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata", server_default="Asia/Kolkata")
 
     # Industry vertical
-    industry: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    industry: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
-    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    suspended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    suspension_reason: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    trial_ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspension_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Usage tracking
     current_voice_minutes_used: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
     current_lead_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # Relationships
-    users: Mapped[List["User"]] = relationship("User", back_populates="tenant", lazy="selectin")
+    users: Mapped[list["User"]] = relationship("User", back_populates="tenant", lazy="selectin")
 
     __table_args__ = (
         Index("idx_tenant_plan", "plan"),

@@ -6,10 +6,19 @@ dialect identification, and marketing intelligence.
 """
 
 import enum
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
-    String, Integer, Float, Boolean, JSON, Text, ForeignKey, Index,
+    JSON,
+    Boolean,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy import (
     Enum as SQLEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -17,8 +26,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, TimestampMixin
 
 if TYPE_CHECKING:
-    from .user import User
     from .crm import Lead
+    from .user import User
 
 
 class EmotionType(enum.Enum):
@@ -79,78 +88,78 @@ class VoiceAnalysis(TimestampMixin, Base):
     request_id: Mapped[str] = mapped_column(String(36), unique=True, nullable=False, index=True)
 
     # Audio metadata
-    audio_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    audio_duration_seconds: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    sample_rate: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    audio_format: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # "wav", "mp3", "ogg"
-    file_size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sample_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    audio_format: Mapped[str | None] = mapped_column(String(20), nullable=True)  # "wav", "mp3", "ogg"
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Transcription
-    transcription: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
-    dialect: Mapped[Optional[DialectType]] = mapped_column(
+    transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
+    language: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    dialect: Mapped[DialectType | None] = mapped_column(
         SQLEnum(DialectType, name="dialect_type", create_constraint=True),
         default=DialectType.UNKNOWN,
         nullable=True,
     )
-    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    word_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    speaking_rate_wpm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)  # words per minute
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    word_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    speaking_rate_wpm: Mapped[float | None] = mapped_column(Float, nullable=True)  # words per minute
 
     # Emotion analysis
-    emotion: Mapped[Optional[EmotionType]] = mapped_column(
+    emotion: Mapped[EmotionType | None] = mapped_column(
         SQLEnum(EmotionType, name="emotion_type", create_constraint=True),
         default=EmotionType.NEUTRAL,
         nullable=True,
     )
-    emotion_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    emotion_scores: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # {"happy": 0.8, "sad": 0.1, ...}
+    emotion_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    emotion_scores: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {"happy": 0.8, "sad": 0.1, ...}
 
     # Gen Z analysis
     gen_z_score: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
-    slang_detected: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # [{"word": "lit", "meaning": "..."}]
+    slang_detected: Mapped[list | None] = mapped_column(JSON, nullable=True)  # [{"word": "lit", "meaning": "..."}]
 
     # Code-mixing detection
     is_code_mixed: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    languages_detected: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # {"english": 0.6, "tamil": 0.4}
+    languages_detected: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {"english": 0.6, "tamil": 0.4}
 
     # Marketing intelligence
-    intent: Mapped[Optional[IntentType]] = mapped_column(
+    intent: Mapped[IntentType | None] = mapped_column(
         SQLEnum(IntentType, name="intent_type", create_constraint=True),
         default=IntentType.INQUIRY,
         nullable=True,
     )
-    intent_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    intent_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     lead_score: Mapped[float] = mapped_column(Float, default=0.0, server_default="0", index=True)
     sentiment: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")  # -1 to 1
     engagement_score: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")  # 0 to 1
 
     # Keywords and entities
-    keywords: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # ["product", "price", ...]
-    entities: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # {"products": [], "numbers": []}
-    topics: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # ["pricing", "support"]
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ["product", "price", ...]
+    entities: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {"products": [], "numbers": []}
+    topics: Mapped[list | None] = mapped_column(JSON, nullable=True)  # ["pricing", "support"]
 
     # AI response (if conversational)
-    ai_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    ai_response_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    ai_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_response_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Processing metadata
-    processing_time_ms: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    model_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    whisper_model: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)  # "base", "small", "medium"
-    pipeline_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    processing_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    model_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    whisper_model: Mapped[str | None] = mapped_column(String(50), nullable=True)  # "base", "small", "medium"
+    pipeline_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Source tracking
-    source: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)  # "whatsapp", "ivr", "web", "api"
-    phone_number: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
-    session_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
-    call_direction: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)  # "inbound", "outbound"
+    source: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)  # "whatsapp", "ivr", "web", "api"
+    phone_number: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    call_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "inbound", "outbound"
 
     # Foreign keys
-    lead_id: Mapped[Optional[int]] = mapped_column(
+    lead_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("crm_leads.id", ondelete="SET NULL"), nullable=True, index=True,
     )
-    user_id: Mapped[Optional[int]] = mapped_column(
+    user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True,
     )
 

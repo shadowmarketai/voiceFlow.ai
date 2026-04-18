@@ -6,10 +6,9 @@ Uses Pydantic v2 ConfigDict (KB-014).
 """
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-
 
 # ── Request Schemas ─────────────────────────────────────────────
 
@@ -18,22 +17,22 @@ class TicketCreate(BaseModel):
     """Create a new support ticket."""
 
     subject: str = Field(..., min_length=1, max_length=300)
-    description: Optional[str] = None
+    description: str | None = None
     priority: str = Field(default="medium", pattern="^(low|medium|high|urgent|critical)$")
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         pattern="^(billing|technical|sales|general|feature_request|bug_report|voice_ai|crm|integration|other)$",
     )
-    channel: Optional[str] = Field(default=None, max_length=50)
-    customer_name: Optional[str] = Field(default=None, max_length=200)
-    customer_email: Optional[str] = Field(default=None, max_length=255)
-    customer_phone: Optional[str] = Field(default=None, max_length=20)
-    assigned_to: Optional[str] = None
-    lead_id: Optional[int] = None
-    contact_id: Optional[int] = None
-    tags: Optional[list[str]] = None
-    custom_fields: Optional[dict[str, Any]] = None
-    attachments: Optional[list[dict[str, str]]] = None
+    channel: str | None = Field(default=None, max_length=50)
+    customer_name: str | None = Field(default=None, max_length=200)
+    customer_email: str | None = Field(default=None, max_length=255)
+    customer_phone: str | None = Field(default=None, max_length=20)
+    assigned_to: str | None = None
+    lead_id: int | None = None
+    contact_id: int | None = None
+    tags: list[str] | None = None
+    custom_fields: dict[str, Any] | None = None
+    attachments: list[dict[str, str]] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,25 +40,25 @@ class TicketCreate(BaseModel):
 class TicketUpdate(BaseModel):
     """Update an existing ticket."""
 
-    subject: Optional[str] = Field(default=None, min_length=1, max_length=300)
-    description: Optional[str] = None
-    status: Optional[str] = Field(
+    subject: str | None = Field(default=None, min_length=1, max_length=300)
+    description: str | None = None
+    status: str | None = Field(
         default=None,
         pattern="^(open|in_progress|waiting_on_customer|waiting_on_third_party|resolved|closed|reopened)$",
     )
-    priority: Optional[str] = Field(
+    priority: str | None = Field(
         default=None,
         pattern="^(low|medium|high|urgent|critical)$",
     )
-    category: Optional[str] = Field(
+    category: str | None = Field(
         default=None,
         pattern="^(billing|technical|sales|general|feature_request|bug_report|voice_ai|crm|integration|other)$",
     )
-    assigned_to: Optional[str] = None
-    tags: Optional[list[str]] = None
-    custom_fields: Optional[dict[str, Any]] = None
-    internal_notes: Optional[str] = None
-    resolution_notes: Optional[str] = None
+    assigned_to: str | None = None
+    tags: list[str] | None = None
+    custom_fields: dict[str, Any] | None = None
+    internal_notes: str | None = None
+    resolution_notes: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -70,9 +69,9 @@ class TicketReplyCreate(BaseModel):
     body: str = Field(..., min_length=1)
     is_internal: bool = False
     sender_type: str = Field(default="agent", pattern="^(agent|customer|system|ai)$")
-    sender_name: Optional[str] = Field(default=None, max_length=200)
-    sender_email: Optional[str] = Field(default=None, max_length=255)
-    attachments: Optional[list[dict[str, str]]] = None
+    sender_name: str | None = Field(default=None, max_length=200)
+    sender_email: str | None = Field(default=None, max_length=255)
+    attachments: list[dict[str, str]] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -87,14 +86,14 @@ class TicketReplyResponse(BaseModel):
     body: str
     is_internal: bool = False
     sender_type: str
-    sender_name: Optional[str] = None
-    sender_email: Optional[str] = None
-    attachments: Optional[list[dict[str, str]]] = None
+    sender_name: str | None = None
+    sender_email: str | None = None
+    attachments: list[dict[str, str]] | None = None
     is_ai_generated: bool = False
-    ai_confidence: Optional[float] = None
+    ai_confidence: float | None = None
     ticket_id: int
-    user_id: Optional[str] = None
-    created_at: Optional[datetime] = None
+    user_id: str | None = None
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -105,37 +104,37 @@ class TicketResponse(BaseModel):
     id: int
     ticket_number: str
     subject: str
-    description: Optional[str] = None
+    description: str | None = None
     status: str
     priority: str
-    category: Optional[str] = None
-    channel: Optional[str] = None
-    source_reference: Optional[str] = None
-    customer_name: Optional[str] = None
-    customer_email: Optional[str] = None
-    customer_phone: Optional[str] = None
-    sla_due_at: Optional[datetime] = None
-    first_response_at: Optional[datetime] = None
-    first_response_sla_met: Optional[bool] = None
-    resolution_sla_met: Optional[bool] = None
-    resolved_at: Optional[datetime] = None
-    closed_at: Optional[datetime] = None
-    resolution_notes: Optional[str] = None
-    satisfaction_rating: Optional[int] = None
-    detected_sentiment: Optional[float] = None
-    detected_emotion: Optional[str] = None
+    category: str | None = None
+    channel: str | None = None
+    source_reference: str | None = None
+    customer_name: str | None = None
+    customer_email: str | None = None
+    customer_phone: str | None = None
+    sla_due_at: datetime | None = None
+    first_response_at: datetime | None = None
+    first_response_sla_met: bool | None = None
+    resolution_sla_met: bool | None = None
+    resolved_at: datetime | None = None
+    closed_at: datetime | None = None
+    resolution_notes: str | None = None
+    satisfaction_rating: int | None = None
+    detected_sentiment: float | None = None
+    detected_emotion: str | None = None
     auto_categorized: bool = False
-    tags: Optional[list[str]] = None
-    custom_fields: Optional[dict[str, Any]] = None
-    internal_notes: Optional[str] = None
-    attachments: Optional[list[dict[str, str]]] = None
-    lead_id: Optional[int] = None
-    contact_id: Optional[int] = None
-    assigned_to: Optional[str] = None
+    tags: list[str] | None = None
+    custom_fields: dict[str, Any] | None = None
+    internal_notes: str | None = None
+    attachments: list[dict[str, str]] | None = None
+    lead_id: int | None = None
+    contact_id: int | None = None
+    assigned_to: str | None = None
     user_id: str
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    replies: Optional[list[TicketReplyResponse]] = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    replies: list[TicketReplyResponse] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -150,10 +149,10 @@ class TicketDashboardResponse(BaseModel):
     resolved_tickets: int = 0
     closed_tickets: int = 0
     reopened_tickets: int = 0
-    avg_resolution_time_hours: Optional[float] = None
+    avg_resolution_time_hours: float | None = None
     tickets_by_priority: dict[str, int] = Field(default_factory=dict)
     tickets_by_category: dict[str, int] = Field(default_factory=dict)
-    sla_met_percentage: Optional[float] = None
-    avg_satisfaction_rating: Optional[float] = None
+    sla_met_percentage: float | None = None
+    avg_satisfaction_rating: float | None = None
 
     model_config = ConfigDict(from_attributes=True)

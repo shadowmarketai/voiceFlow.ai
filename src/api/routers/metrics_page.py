@@ -12,7 +12,6 @@ benchmarks shouldn't be a fact-of-record on an unauthenticated endpoint.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Any
 

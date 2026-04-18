@@ -16,14 +16,14 @@ Set DATABASE_URL env var for PostgreSQL:
 Defaults to SQLite (voiceflow.db) when DATABASE_URL is not set.
 """
 
-import os
 import logging
+import os
 import threading
+from collections.abc import AsyncGenerator, Generator
 from contextlib import contextmanager
-from typing import Generator, AsyncGenerator
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
 
 logger = logging.getLogger(__name__)
@@ -274,7 +274,7 @@ def init_models():
 
 def _migrate_knowledge_schema(engine):
     """Add campaign_id + scope columns to knowledge_documents if missing."""
-    from sqlalchemy import inspect as sa_inspect, text
+    from sqlalchemy import inspect as sa_inspect
 
     inspector = sa_inspect(engine)
     if "knowledge_documents" not in inspector.get_table_names():
@@ -292,7 +292,7 @@ def _migrate_knowledge_schema(engine):
 
 def _migrate_quality_schema(engine):
     """Add W1.4 TTFA + pipeline_mode columns to quality_call_metrics if missing."""
-    from sqlalchemy import inspect as sa_inspect, text
+    from sqlalchemy import inspect as sa_inspect
 
     inspector = sa_inspect(engine)
     if "quality_call_metrics" not in inspector.get_table_names():
@@ -321,7 +321,7 @@ def _migrate_quality_schema(engine):
 
 def _migrate_users_schema(engine):
     """Add OAuth and verification columns to users table if missing."""
-    from sqlalchemy import inspect as sa_inspect, text
+    from sqlalchemy import inspect as sa_inspect
 
     inspector = sa_inspect(engine)
     if "users" not in inspector.get_table_names():
@@ -356,7 +356,7 @@ def _migrate_users_schema(engine):
 
 def _migrate_quotations_schema(engine):
     """Add forward-compat columns to quotations table if missing."""
-    from sqlalchemy import inspect as sa_inspect, text
+    from sqlalchemy import inspect as sa_inspect
 
     inspector = sa_inspect(engine)
     if "quotations" not in inspector.get_table_names():
@@ -617,9 +617,10 @@ if not USE_POSTGRES:
 
 else:
     import re as _re
+
     import psycopg2
-    import psycopg2.pool
     import psycopg2.extras
+    import psycopg2.pool
 
     # psycopg2 only understands "postgresql://" — strip any SQLAlchemy driver
     # prefix like "+asyncpg" or "+psycopg2" that may come from docker-compose.
@@ -923,7 +924,8 @@ def _seed_defaults():
         # ── Step 6: Demo calls ──
         call_count = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
         if call_count == 0:
-            import random, datetime
+            import datetime
+            import random
             now = datetime.datetime.utcnow()
             statuses = ["completed", "completed", "completed", "no_answer", "busy", "failed"]
             sentiments = ["positive", "neutral", "negative", "positive", "positive", "neutral"]
@@ -1047,7 +1049,7 @@ def _seed_saas_control_layer():
 
         # Tenant and super admin already created in _seed_defaults()
         # Just assign any orphan users to the swetha tenant
-        conn.execute(f"""
+        conn.execute("""
             UPDATE users SET tenant_id='tenant-swetha'
             WHERE tenant_id IS NULL AND (is_super_admin=0 OR is_super_admin IS NULL)
         """)
@@ -1094,7 +1096,7 @@ def _seed_platform_tickets(conn, _ph):
     These tickets are raised by tenant admins to the platform team (super admin).
     Distinct from helpdesk tickets which are for tenants' own end-customers.
     """
-    import datetime, uuid as _uuid
+    import datetime
 
     if USE_POSTGRES:
         conn.cursor().execute("""

@@ -5,13 +5,13 @@ Unified API across 7 telephony providers + WebRTC.
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from .manager import TelephonyManager
-from .providers.base import CallStatus, CallDirection
+from .providers.base import CallDirection, CallStatus
 
 logger = logging.getLogger(__name__)
 
@@ -25,19 +25,19 @@ class MakeCallRequest(BaseModel):
     from_number: str
     to_number: str
     webhook_url: str
-    provider: Optional[str] = None
+    provider: str | None = None
     call_type: str = "standard"  # standard | ai_agent | bulk | webrtc | sip
     record: bool = True
-    agent_id: Optional[str] = None
-    metadata: Optional[Dict[str, Any]] = None
+    agent_id: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class BulkCallRequest(BaseModel):
-    phone_numbers: List[str]
+    phone_numbers: list[str]
     from_number: str
     webhook_url: str
-    audio_url: Optional[str] = None
-    tts_text: Optional[str] = None
+    audio_url: str | None = None
+    tts_text: str | None = None
     tts_language: str = "hi"
     campaign_name: str = ""
     provider: str = "vobiz"
@@ -46,13 +46,13 @@ class BulkCallRequest(BaseModel):
 class CostEstimateRequest(BaseModel):
     to_number: str
     duration_minutes: float
-    provider: Optional[str] = None
+    provider: str | None = None
 
 
 class WebRTCSessionRequest(BaseModel):
     agent_id: str = ""
     tenant_id: str = ""
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: dict[str, Any] | None = None
 
 
 class WebRTCOfferRequest(BaseModel):
@@ -60,7 +60,7 @@ class WebRTCOfferRequest(BaseModel):
 
 
 class WebRTCCandidateRequest(BaseModel):
-    candidate: Dict[str, Any]
+    candidate: dict[str, Any]
 
 
 # ── Standard Call Endpoints ─────────────────────────────────────
@@ -68,7 +68,7 @@ class WebRTCCandidateRequest(BaseModel):
 @telephony_router.post("/call")
 async def make_call(request: MakeCallRequest):
     """Make outbound call with automatic provider selection."""
-    kwargs: Dict[str, Any] = {"record": request.record}
+    kwargs: dict[str, Any] = {"record": request.record}
     if request.agent_id:
         kwargs["agent_id"] = request.agent_id
     if request.metadata:
@@ -199,8 +199,8 @@ async def telephony_webhook(provider: str, request: Request):
         and call_record.duration_seconds > 2
     ):
         try:
-            from api.services.call_processing_service import process_call_recording
             from api.database import get_session_factory
+            from api.services.call_processing_service import process_call_recording
 
             voice_engine = getattr(request.app.state, "voice_engine", None)
             db = get_session_factory()()

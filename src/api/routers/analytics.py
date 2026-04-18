@@ -9,21 +9,21 @@ and CSV export.
 import csv
 import io
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, case, extract, cast, Date
+from sqlalchemy import Date, case, cast, extract, func
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.permissions import require_permission
 from api.models.analytics import AnalyticsEvent
+from api.models.campaign import Campaign
+from api.models.campaign import CampaignStatus as ModelCampaignStatus
+from api.models.crm import Deal, DealStage, Lead, LeadStatus
 from api.models.voice import VoiceAnalysis
-from api.models.campaign import Campaign, CampaignStatus as ModelCampaignStatus
-from api.models.crm import Lead, LeadStatus, Deal, DealStage
+from api.permissions import require_permission
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class CampaignAnalytics(BaseModel):
     campaign_id: int
     name: str
     status: str
-    platform: Optional[str] = None
+    platform: str | None = None
     budget: float = 0.0
     spent: float = 0.0
     impressions: int = 0
@@ -110,11 +110,11 @@ class TrendDataPoint(BaseModel):
 class CustomQueryRequest(BaseModel):
     """Flexible analytics query."""
 
-    event_type: Optional[str] = Field(default=None, description="Filter by event type")
-    event_category: Optional[str] = Field(default=None, description="Filter by category: voice, crm, marketing, billing")
-    date_from: Optional[str] = Field(default=None, description="Start date (ISO 8601)")
-    date_to: Optional[str] = Field(default=None, description="End date (ISO 8601)")
-    group_by: Optional[str] = Field(
+    event_type: str | None = Field(default=None, description="Filter by event type")
+    event_category: str | None = Field(default=None, description="Filter by category: voice, crm, marketing, billing")
+    date_from: str | None = Field(default=None, description="Start date (ISO 8601)")
+    date_to: str | None = Field(default=None, description="End date (ISO 8601)")
+    group_by: str | None = Field(
         default=None,
         description="Group by: event_type, event_category, day, week, month",
     )
@@ -137,12 +137,12 @@ def _get_user_id(current_user: dict) -> int:
 
 
 def _parse_date_range(
-    date_from: Optional[str],
-    date_to: Optional[str],
+    date_from: str | None,
+    date_to: str | None,
     default_days: int = 30,
 ) -> tuple[datetime, datetime]:
     """Parse date range from query parameters, defaulting to last N days."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if date_to:
         try:
             end = datetime.fromisoformat(date_to)
@@ -171,8 +171,8 @@ def _parse_date_range(
     summary="Overview metrics",
 )
 async def get_summary(
-    date_from: Optional[str] = Query(None, description="Start date (ISO 8601)"),
-    date_to: Optional[str] = Query(None, description="End date (ISO 8601)"),
+    date_from: str | None = Query(None, description="Start date (ISO 8601)"),
+    date_to: str | None = Query(None, description="End date (ISO 8601)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> SummaryResponse:
@@ -273,8 +273,8 @@ async def get_summary(
     summary="Emotion distribution",
 )
 async def get_emotion_distribution(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> list[EmotionDataPoint]:
@@ -318,8 +318,8 @@ async def get_emotion_distribution(
     summary="Intent classification breakdown",
 )
 async def get_intent_breakdown(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> list[IntentDataPoint]:
@@ -363,8 +363,8 @@ async def get_intent_breakdown(
     summary="Dialect usage statistics",
 )
 async def get_dialect_stats(
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> list[DialectDataPoint]:
@@ -409,7 +409,7 @@ async def get_dialect_stats(
 )
 async def get_campaign_analytics(
     limit: int = Query(20, ge=1, le=100),
-    status_filter: Optional[str] = Query(None, alias="status"),
+    status_filter: str | None = Query(None, alias="status"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> list[CampaignAnalytics]:
@@ -536,8 +536,8 @@ async def get_lead_funnel(
 )
 async def get_trends(
     period: str = Query("daily", description="daily, weekly, or monthly"),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> list[TrendDataPoint]:
@@ -905,8 +905,8 @@ async def custom_analytics_query(
 )
 async def export_analytics(
     export_type: str = Query("summary", description="summary, emotions, intents, campaigns, leads"),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_permission("analytics", "read")),
 ) -> StreamingResponse:
@@ -1045,7 +1045,7 @@ async def export_analytics(
         writer.writerow(["Date Range", f"{start.date()} to {end.date()}"])
 
     output.seek(0)
-    filename = f"analytics_{export_type}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    filename = f"analytics_{export_type}_{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}.csv"
 
     return StreamingResponse(
         iter([output.getvalue()]),

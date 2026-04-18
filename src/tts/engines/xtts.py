@@ -7,12 +7,13 @@ License: Coqui Public License
 
 import asyncio
 import io
+import json
+import logging
 import os
 import time
 import uuid
-import json
-from typing import Optional, AsyncGenerator, Dict, Any
-import logging
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from tts.engines.base import BaseTTSEngine
 
@@ -37,7 +38,7 @@ class XTTSv2Engine(BaseTTSEngine):
         "nl", "cs", "ar", "zh", "ja", "hu", "ko", "hi"
     ]
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: dict[str, Any]):
         super().__init__(config)
         self.model_id = "coqui/XTTS-v2"
         self.tts = None
@@ -52,8 +53,8 @@ class XTTSv2Engine(BaseTTSEngine):
             logger.info("Loading XTTS-v2 model")
 
             try:
-                from TTS.api import TTS as CoquiTTS
                 import torch
+                from TTS.api import TTS as CoquiTTS
 
                 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -96,8 +97,8 @@ class XTTSv2Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs
@@ -130,7 +131,7 @@ class XTTSv2Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        voice_id: Optional[str],
+        voice_id: str | None,
         pace: float
     ) -> bytes:
         """Synthesize using XTTS-v2 model"""
@@ -205,8 +206,8 @@ class XTTSv2Engine(BaseTTSEngine):
         self,
         text: str,
         language: str,
-        emotion: Optional[str] = None,
-        voice_id: Optional[str] = None,
+        emotion: str | None = None,
+        voice_id: str | None = None,
         pace: float = 1.0,
         pitch: float = 1.0,
         **kwargs

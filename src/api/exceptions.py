@@ -5,9 +5,10 @@ Provides structured error responses across the entire API.
 """
 
 import logging
+
 from fastapi import FastAPI, Request, status
-from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import ValidationError as PydanticValidationError
 
 logger = logging.getLogger(__name__)

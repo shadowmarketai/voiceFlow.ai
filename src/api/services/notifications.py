@@ -13,11 +13,9 @@ from __future__ import annotations
 import logging
 import os
 import smtplib
+from collections.abc import Iterable
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Iterable
-
-import httpx
 
 logger = logging.getLogger(__name__)
 

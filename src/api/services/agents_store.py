@@ -14,7 +14,6 @@ from sqlalchemy import select
 from api.database import get_engine
 from api.models.voice_agent_db import CallLog, ChannelConfig, VoiceAgent
 
-
 _TABLES_ENSURED = False
 
 

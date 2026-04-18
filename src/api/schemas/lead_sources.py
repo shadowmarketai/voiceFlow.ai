@@ -6,7 +6,6 @@ Uses Pydantic v2 ConfigDict (KB-014).
 """
 
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -20,30 +19,30 @@ class LeadSourceProviderEnum(str, Enum):
 class LeadSourceConfigCreate(BaseModel):
     """Create or update a lead source configuration."""
     provider: LeadSourceProviderEnum
-    api_key: Optional[str] = Field(default=None, max_length=500)
-    api_secret: Optional[str] = Field(default=None, max_length=500)
-    app_secret: Optional[str] = Field(default=None, max_length=500)
-    page_id: Optional[str] = Field(default=None, max_length=255)
+    api_key: str | None = Field(default=None, max_length=500)
+    api_secret: str | None = Field(default=None, max_length=500)
+    app_secret: str | None = Field(default=None, max_length=500)
+    page_id: str | None = Field(default=None, max_length=255)
     polling_interval_minutes: int = Field(default=5, ge=1, le=60)
     is_active: bool = True
     auto_assign: bool = False
-    assign_to_user_id: Optional[int] = None
-    default_tags: Optional[list[str]] = None
+    assign_to_user_id: int | None = None
+    default_tags: list[str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class LeadSourceConfigUpdate(BaseModel):
     """Partial update for a lead source configuration."""
-    api_key: Optional[str] = Field(default=None, max_length=500)
-    api_secret: Optional[str] = Field(default=None, max_length=500)
-    app_secret: Optional[str] = Field(default=None, max_length=500)
-    page_id: Optional[str] = Field(default=None, max_length=255)
-    polling_interval_minutes: Optional[int] = Field(default=None, ge=1, le=60)
-    is_active: Optional[bool] = None
-    auto_assign: Optional[bool] = None
-    assign_to_user_id: Optional[int] = None
-    default_tags: Optional[list[str]] = None
+    api_key: str | None = Field(default=None, max_length=500)
+    api_secret: str | None = Field(default=None, max_length=500)
+    app_secret: str | None = Field(default=None, max_length=500)
+    page_id: str | None = Field(default=None, max_length=255)
+    polling_interval_minutes: int | None = Field(default=None, ge=1, le=60)
+    is_active: bool | None = None
+    auto_assign: bool | None = None
+    assign_to_user_id: int | None = None
+    default_tags: list[str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -52,19 +51,19 @@ class LeadSourceConfigResponse(BaseModel):
     """Lead source config response — API keys are masked."""
     id: int
     provider: str
-    api_key_masked: Optional[str] = None
-    page_id: Optional[str] = None
+    api_key_masked: str | None = None
+    page_id: str | None = None
     polling_interval_minutes: int = 5
     is_active: bool = True
     auto_assign: bool = False
-    assign_to_user_id: Optional[int] = None
-    default_tags: Optional[list[str]] = None
+    assign_to_user_id: int | None = None
+    default_tags: list[str] | None = None
     total_ingested: int = 0
     total_duplicates: int = 0
     total_errors: int = 0
-    last_sync_at: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    last_sync_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

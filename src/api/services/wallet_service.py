@@ -11,10 +11,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, select, text
-from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy import select, text
 
-from api.database import get_engine, get_session_factory
+from api.database import get_engine
 from api.models.billing_wallet import RatePlan, Wallet, WalletTransaction
 
 
@@ -54,7 +53,6 @@ def _ensure_tables() -> None:
     except Exception:
         pass
     # Opportunistic ALTER for the white-label columns (safe no-op if already present).
-    from sqlalchemy import text
     with engine.begin() as conn:
         for col_name, col_ddl in _TENANT_COLUMNS_SQL:
             try:

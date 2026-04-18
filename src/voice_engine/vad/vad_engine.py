@@ -6,10 +6,8 @@ to STT (saves latency + cost) and to support turn-taking.
 """
 
 import logging
-import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -26,7 +24,7 @@ class VADResult:
     """Result from VAD processing."""
     is_speech: bool
     confidence: float  # 0.0 to 1.0
-    speech_segments: List[Tuple[float, float]] = field(default_factory=list)  # (start_s, end_s)
+    speech_segments: list[tuple[float, float]] = field(default_factory=list)  # (start_s, end_s)
     total_speech_duration: float = 0.0
     total_silence_duration: float = 0.0
     speech_ratio: float = 0.0  # speech / total duration
@@ -114,7 +112,7 @@ class VADEngine:
 
         # Process in 512-sample windows (32ms at 16kHz)
         window_size = 512
-        speech_segments: List[Tuple[float, float]] = []
+        speech_segments: list[tuple[float, float]] = []
         is_speech = False
         speech_start = 0.0
         total_speech = 0.0
@@ -162,7 +160,7 @@ class VADEngine:
         frame_length = int(0.03 * sample_rate)  # 30ms frames
         hop_length = int(0.01 * sample_rate)    # 10ms hop
 
-        speech_segments: List[Tuple[float, float]] = []
+        speech_segments: list[tuple[float, float]] = []
         is_speech = False
         speech_start = 0.0
         total_speech = 0.0
@@ -220,7 +218,7 @@ class VADEngine:
         audio: np.ndarray,
         sample_rate: int = 16000,
         padding_ms: int = 200,
-    ) -> Optional[np.ndarray]:
+    ) -> np.ndarray | None:
         """Extract only speech portions from audio.
 
         Returns concatenated speech segments (removes silence).

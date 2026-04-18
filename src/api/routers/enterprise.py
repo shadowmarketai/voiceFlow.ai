@@ -7,8 +7,6 @@ All endpoints behind super-admin or tenant-owner auth.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -37,10 +35,10 @@ def _require_owner_or_super(user: dict):
 
 @router.get("/audit-log")
 async def get_audit_log(
-    tenant_id: Optional[str] = None,
-    actor_id: Optional[str] = None,
-    action: Optional[str] = None,
-    resource_type: Optional[str] = None,
+    tenant_id: str | None = None,
+    actor_id: str | None = None,
+    action: str | None = None,
+    resource_type: str | None = None,
     limit: int = 100,
     offset: int = 0,
     user: dict = Depends(get_current_active_user),
@@ -83,7 +81,7 @@ async def list_roles(user: dict = Depends(get_current_active_user)):
 @router.get("/rbac/my-permissions")
 async def my_permissions(user: dict = Depends(get_current_active_user)):
     """Return the permissions for the caller's own role."""
-    from api.permissions import get_role_permissions, get_accessible_modules
+    from api.permissions import get_accessible_modules, get_role_permissions
     role = user.get("role", "user")
     return {
         "role": role,
@@ -145,7 +143,7 @@ async def record_consent(
 
 class DeletionPayload(BaseModel):
     user_id: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 @router.post("/dpdp/deletion-request")
@@ -190,12 +188,13 @@ async def request_deletion(
 
 @router.get("/dpdp/deletion-requests")
 async def list_deletion_requests(
-    status_filter: Optional[str] = None,
+    status_filter: str | None = None,
     user: dict = Depends(get_current_active_user),
 ):
     """List pending/completed deletion requests. Owner or super admin."""
     _require_owner_or_super(user)
     from sqlalchemy import desc, select
+
     from api.database import get_session_factory
     from api.models.dpdp import DataDeletionRequest
 

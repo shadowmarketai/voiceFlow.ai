@@ -8,9 +8,8 @@ KB-002: Uses mapped_column() with Mapped[] type hints (NOT Column())
 """
 
 from datetime import datetime
-from typing import Optional
 
-from sqlalchemy import DateTime, Boolean, Integer
+from sqlalchemy import Boolean, DateTime, Integer
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -33,7 +32,7 @@ class TimestampMixin:
         server_default=func.now(),
         nullable=False,
     )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         onupdate=func.now(),
         server_default=func.now(),
@@ -53,11 +52,11 @@ class SoftDeleteMixin:
         nullable=False,
         index=True,
     )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    deleted_by: Mapped[Optional[int]] = mapped_column(
+    deleted_by: Mapped[int | None] = mapped_column(
         Integer,
         nullable=True,
     )

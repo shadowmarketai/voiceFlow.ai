@@ -14,7 +14,7 @@ import os
 import platform
 import shutil
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -34,7 +34,7 @@ async def health_liveness() -> dict:
     """Fast liveness check for load balancers and Docker HEALTHCHECK."""
     return {
         "status": "healthy",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -97,7 +97,7 @@ async def health_detailed() -> JSONResponse:
         status_code=status_code,
         content={
             "status": overall,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "checks": checks,
         },
     )
@@ -341,5 +341,5 @@ async def launch_checklist() -> dict:
         "total": total,
         "ready": score >= 75,
         "items": items,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }

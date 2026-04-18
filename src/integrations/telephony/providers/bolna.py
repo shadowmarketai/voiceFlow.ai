@@ -10,7 +10,7 @@ Cost: Usage-based, competitive with TeleCMI for AI agent use cases.
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -43,7 +43,7 @@ class BolnaProvider(TelephonyProvider):
     def supports_streaming(self) -> bool:
         return True  # Bolna supports real-time audio streaming
 
-    def _headers(self) -> Dict[str, str]:
+    def _headers(self) -> dict[str, str]:
         return {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -56,9 +56,9 @@ class BolnaProvider(TelephonyProvider):
         language: str = "hi",
         llm_provider: str = "groq",
         llm_model: str = "llama3-8b-8192",
-        voice_id: Optional[str] = None,
+        voice_id: str | None = None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create a Bolna voice agent.
 
         This is Bolna-specific: agents are first-class objects that handle
@@ -112,7 +112,7 @@ class BolnaProvider(TelephonyProvider):
 
     async def make_call(
         self, from_number: str, to_number: str, webhook_url: str, **kwargs
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Initiate outbound call via Bolna.
 
         Requires an agent_id — Bolna routes calls through voice agents.
@@ -151,10 +151,10 @@ class BolnaProvider(TelephonyProvider):
     async def make_batch_calls(
         self,
         agent_id: str,
-        phone_numbers: List[str],
+        phone_numbers: list[str],
         from_number: str,
         webhook_url: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Bolna batch calling for outbound campaigns."""
         payload = {
             "agent_id": agent_id,
@@ -172,25 +172,25 @@ class BolnaProvider(TelephonyProvider):
                 return {"success": True, "batch": resp.json()}
             return {"success": False, "error": resp.text}
 
-    async def get_call(self, call_id: str) -> Dict[str, Any]:
+    async def get_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/call/{call_id}", headers=self._headers()
             )
             return resp.json() if resp.status_code == 200 else {"error": resp.text}
 
-    async def end_call(self, call_id: str) -> Dict[str, Any]:
+    async def end_call(self, call_id: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 f"{self.base_url}/call/{call_id}/end", headers=self._headers()
             )
             return {"success": resp.status_code == 200}
 
-    async def get_recording(self, call_id: str) -> Optional[str]:
+    async def get_recording(self, call_id: str) -> str | None:
         call = await self.get_call(call_id)
         return call.get("recording_url")
 
-    async def get_transcript(self, call_id: str) -> Optional[Dict[str, Any]]:
+    async def get_transcript(self, call_id: str) -> dict[str, Any] | None:
         """Get call transcript (Bolna-specific — returns full conversation)."""
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
@@ -199,7 +199,7 @@ class BolnaProvider(TelephonyProvider):
             )
             return resp.json() if resp.status_code == 200 else None
 
-    async def list_phone_numbers(self) -> List[PhoneNumber]:
+    async def list_phone_numbers(self) -> list[PhoneNumber]:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
                 f"{self.base_url}/phone-numbers", headers=self._headers()
@@ -219,13 +219,13 @@ class BolnaProvider(TelephonyProvider):
             ]
 
     async def buy_phone_number(
-        self, country: str = "IN", capabilities: Optional[List[str]] = None
+        self, country: str = "IN", capabilities: list[str] | None = None
     ) -> PhoneNumber:
         raise NotImplementedError(
             "Bolna phone numbers are provisioned via dashboard: https://app.bolna.dev"
         )
 
-    def parse_webhook(self, payload: Dict) -> CallRecord:
+    def parse_webhook(self, payload: dict) -> CallRecord:
         status_map = {
             "initiated": CallStatus.INITIATED,
             "ringing": CallStatus.RINGING,

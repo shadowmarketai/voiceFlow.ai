@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
 import logging
 import os
 import time
@@ -93,19 +92,18 @@ async def _submit_batch_job(audio_b64: str, content_type: str = "audio/wav") -> 
         }
     ]
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                _HUME_BATCH_URL,
-                headers=headers,
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=10),
-            ) as resp:
-                if resp.status not in (200, 201):
-                    body = await resp.text()
-                    logger.debug("emotion_engine: Hume submit %d — %s", resp.status, body[:200])
-                    return None
-                data = await resp.json()
-                return data.get("job_id")
+        async with aiohttp.ClientSession() as session, session.post(
+            _HUME_BATCH_URL,
+            headers=headers,
+            json=payload,
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status not in (200, 201):
+                body = await resp.text()
+                logger.debug("emotion_engine: Hume submit %d — %s", resp.status, body[:200])
+                return None
+            data = await resp.json()
+            return data.get("job_id")
     except Exception:
         logger.debug("emotion_engine: Hume submit failed", exc_info=True)
         return None
