@@ -104,14 +104,28 @@ async def run_voice_agent(room_name: str, agent_id: str = "") -> None:
       User audio → Deepgram STT → RAG enrichment → LLM → OpenAI TTS → audio back
     """
     try:
-        from livekit import agents, rtc
-        from livekit.agents import llm as agents_llm, stt, tts, voice_assistant
+        from livekit import rtc
+        from livekit.agents import llm as agents_llm, voice_assistant
         from livekit.plugins import deepgram as dg_plugin
         from livekit.plugins import openai as oai_plugin
-        from livekit.plugins import silero
     except ImportError as exc:
         logger.error("LiveKit agents SDK not installed: %s", exc)
         return
+
+    # Silero VAD requires torch (~2GB) — excluded from prod requirements.
+    # Fall back to built-in WebRTC VAD if silero is not available.
+    try:
+        from livekit.plugins import silero
+        vad_plugin = silero.VAD.load()
+        logger.info("Using Silero VAD")
+    except ImportError:
+        try:
+            from livekit.agents.vad import WebRTCVAD
+            vad_plugin = WebRTCVAD()
+            logger.info("Using WebRTC VAD (silero not installed)")
+        except Exception:
+            vad_plugin = None
+            logger.warning("No VAD available — voice turn detection will be basic")
 
     config = await _load_agent_config(agent_id)
     lang_code = LANG_TO_DEEPGRAM.get(config["language"], "en")
@@ -146,8 +160,7 @@ async def run_voice_agent(room_name: str, agent_id: str = "") -> None:
         api_key=OPENAI_API_KEY,
     )
 
-    # VAD: Silero (detects when user stops speaking)
-    vad_instance = silero.VAD.load()
+    # VAD: resolved above (silero if installed, WebRTC fallback, or None)
 
     # ── Build system prompt with RAG ─────────────────────────────
 
@@ -191,13 +204,10 @@ async def run_voice_agent(room_name: str, agent_id: str = "") -> None:
                 )
             return user_text
 
-    assistant = voice_assistant.VoiceAssistant(
-        vad=vad_instance,
-        stt=stt_instance,
-        llm=llm_instance,
-        tts=tts_instance,
-        chat_ctx=initial_ctx,
-    )
+    va_kwargs = dict(stt=stt_instance, llm=llm_instance, tts=tts_instance, chat_ctx=initial_ctx)
+    if vad_plugin is not None:
+        va_kwargs["vad"] = vad_plugin
+    assistant = voice_assistant.VoiceAssistant(**va_kwargs)
 
     # Hook into user speech to inject RAG context
     @assistant.on("user_speech_committed")

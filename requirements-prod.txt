@@ -49,11 +49,11 @@ deepgram-sdk>=2.11.0
 edge-tts>=6.1.0
 
 # LiveKit Agents (production voice pipeline: STT → LLM → TTS in real-time)
+# NOTE: livekit-plugins-silero intentionally excluded — pulls PyTorch (~2GB), build timeout
 livekit>=1.0.0
 livekit-agents>=1.0.0
 livekit-plugins-deepgram>=1.0.0
 livekit-plugins-openai>=1.0.0
-livekit-plugins-silero>=0.7.0
 
 # Payments (India)
 razorpay>=1.4.0
