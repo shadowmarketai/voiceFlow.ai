@@ -503,6 +503,19 @@ async def _deepseek_llm(system_prompt: str, user_message: str, api_key: str, mod
 # TTS (Text-to-Speech) — 6 providers
 # ═════════════════════════════════════════════════════════════════
 
+_OPENAI_VOICES = {"nova", "alloy", "echo", "fable", "onyx", "shimmer"}
+_ELEVENLABS_VOICE_MAP = {
+    "rachel": "21m00Tcm4TlvDq8ikWAM",
+    "domi": "AZnzlk1XvdvUeBnXmlld",
+    "bella": "EXAVITQu4vr4xnSDxMaL",
+    "elli": "MF3mGyEYCl7XYWbV9V6O",
+    "josh": "TxGEqnHWrfWFTfGW9XjX",
+    "arnold": "VR6AewLTigWG4xSOukaG",
+    "adam": "pNInz6obpgDQGcFmaJgB",
+    "sam": "yoZ06aMxZJJ28mfd3POQ",
+}
+
+
 async def synthesize_speech_api(
     text: str,
     language: str = "en",
@@ -513,13 +526,24 @@ async def synthesize_speech_api(
     """Synthesize speech. Chain: ElevenLabs → Sarvam → OpenAI → Deepgram Aura → Google Cloud → Edge TTS."""
     t_start = time.time()
 
+    # Resolve voice: if it's an OpenAI voice name, skip ElevenLabs (it won't recognise it)
+    resolved_voice = voice_id
+    is_openai_voice = voice_id and voice_id.lower() in _OPENAI_VOICES
+    if voice_id and voice_id.lower() in _ELEVENLABS_VOICE_MAP:
+        resolved_voice = _ELEVENLABS_VOICE_MAP[voice_id.lower()]
+
     providers_list = [
-        ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], voice_id, speed)),
+        ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], resolved_voice, speed)),
         ("sarvam", "SARVAM_API_KEY", lambda: _sarvam_tts(text, os.environ["SARVAM_API_KEY"], language, speed)),
         ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
         ("deepgram", "DEEPGRAM_API_KEY", lambda: _deepgram_tts(text, os.environ["DEEPGRAM_API_KEY"], voice_id)),
         ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
     ]
+
+    # If the voice is an OpenAI voice name, put OpenAI first
+    if is_openai_voice and provider == "auto":
+        providers_list = [p for p in providers_list if p[0] == "openai"] + \
+                         [p for p in providers_list if p[0] != "openai"]
 
     for name, env_key, func in providers_list:
         if provider not in ("auto", name):
