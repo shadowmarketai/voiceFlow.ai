@@ -204,12 +204,29 @@ export default function AgentsListPage() {
     toast.success(`Loading "${agent.name}" in test console…`);
   };
 
-  const handleUseTemplate = (agent) => {
-    const copy = { ...agent, id: `custom-${Date.now()}`, name: `${agent.name} (${agent.subtitle})`, isDemo: false };
-    setCustomAgents(prev => [copy, ...prev]);
-    localStorage.setItem('vf_editing_agent', JSON.stringify(copy));
-    navigate(`/voice/agent-builder/${copy.id}`);
-    toast.success('Template copied — customize it now!');
+  const handleUseTemplate = async (agent) => {
+    const copy = {
+      ...agent,
+      id: `agent-${Date.now()}`,
+      name: `${agent.name} (${agent.subtitle})`,
+      isDemo: false,
+      status: 'draft',
+    };
+    // Save to API immediately so the agent exists in DB before AgentBuilder loads
+    try {
+      const { data } = await agentsAPI.create(copy);
+      const saved = data?.id ? data : copy;
+      setCustomAgents(prev => [saved, ...prev]);
+      localStorage.setItem('vf_editing_agent', JSON.stringify(saved));
+      navigate(`/voice/agent-builder/${saved.id}`);
+      toast.success('Template copied — customize it now!');
+    } catch {
+      // Fallback: navigate anyway, AgentBuilder will save on first submit
+      setCustomAgents(prev => [copy, ...prev]);
+      localStorage.setItem('vf_editing_agent', JSON.stringify(copy));
+      navigate(`/voice/agent-builder/${copy.id}`);
+      toast.success('Template copied — customize it now!');
+    }
   };
 
   const handleEdit = (agent) => {
