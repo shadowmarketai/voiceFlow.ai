@@ -18,7 +18,6 @@ Track A (parallel pipeline) is always the last fallback — it never goes down.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import AsyncIterator
@@ -27,6 +26,17 @@ from dataclasses import dataclass, field
 from voice_engine.pipeline_router import Track, get_router
 
 logger = logging.getLogger(__name__)
+
+# ── Active S2S session counter ────────────────────────────────────────────
+# Incremented when a non-Track-A call starts, decremented when it ends.
+# Queried by /api/v1/voice/calls/active-s2s-count for the GPU watchdog.
+
+_active_s2s: int = 0
+
+
+def active_s2s_count() -> int:
+    """Return the number of currently active S2S (non-Track-A) sessions."""
+    return _active_s2s
 
 
 @dataclass
@@ -100,6 +110,12 @@ class S2SOrchestrator:
         t0 = time.time()
         first_chunk = True
 
+        # Track active non-Track-A sessions for GPU watchdog
+        global _active_s2s  # noqa: PLW0603
+        is_s2s = chosen != Track.A
+        if is_s2s:
+            _active_s2s += 1
+
         try:
             async for chunk in self._dispatch(chosen, audio_iterator, on_transcript):
                 if first_chunk:
@@ -114,6 +130,9 @@ class S2SOrchestrator:
                 meta.track_fallback = Track.A.value
                 async for chunk in self._dispatch(Track.A, audio_iterator, on_transcript):
                     yield chunk
+        finally:
+            if is_s2s:
+                _active_s2s = max(0, _active_s2s - 1)
 
     async def _dispatch(
         self,

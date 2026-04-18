@@ -856,6 +856,172 @@ async def serve_embed_css():
 
 
 # =====================================================================
+# WebSocket turn helpers
+# =====================================================================
+
+
+async def _handle_turn_parallel(
+    websocket: WebSocket,
+    audio: bytes,
+    session: Any,
+    agent: dict[str, Any],
+) -> None:
+    """
+    Process one audio turn via the parallel pipeline (Track A):
+    STT → LLM → TTS → send audio back.
+    """
+    # Transcribe
+    transcription = await _transcribe_audio(audio, language=session.language)
+
+    await websocket.send_text(json.dumps({
+        "type": "transcription",
+        "text": transcription["text"],
+        "language": transcription["language"],
+        "confidence": transcription["confidence"],
+    }))
+
+    user_msg = ConversationMessage(
+        role=MessageRole.USER,
+        text=transcription["text"],
+        language=transcription["language"],
+        confidence=transcription["confidence"],
+        emotion=transcription.get("emotion"),
+    )
+    session.messages.append(user_msg)
+
+    llm_messages = [
+        {"role": m.role.value, "content": m.text}
+        for m in session.messages
+        if m.role != MessageRole.SYSTEM
+    ]
+    response_text = await _generate_llm_response(
+        messages=llm_messages,
+        system_prompt=agent["system_prompt"],
+        language=session.language,
+    )
+
+    assistant_msg = ConversationMessage(
+        role=MessageRole.ASSISTANT,
+        text=response_text,
+        language=session.language,
+        emotion="friendly",
+    )
+    session.messages.append(assistant_msg)
+
+    await websocket.send_text(json.dumps({
+        "type": "text_response",
+        "text": response_text,
+        "emotion": "friendly",
+        "message_id": assistant_msg.id,
+    }))
+
+    audio_b64 = await _synthesize_audio(
+        text=response_text,
+        language=session.language,
+        voice_id=agent.get("voice"),
+    )
+    if audio_b64:
+        await websocket.send_text(json.dumps({
+            "type": "audio_response",
+            "audio": audio_b64,
+            "text": response_text,
+            "emotion": "friendly",
+            "format": "mp3",
+            "message_id": assistant_msg.id,
+        }))
+
+
+async def _handle_turn_s2s(
+    websocket: WebSocket,
+    audio: bytes,
+    session: Any,
+    agent: dict[str, Any],
+    client_tier: str,
+) -> None:
+    """
+    Process one audio turn via the S2S orchestrator (Track B/C/D).
+    The orchestrator yields PCM16 chunks which are base64-encoded and
+    streamed back to the client as audio_response frames.
+    """
+    from voice_engine.orchestrator import S2SOrchestrator  # noqa: PLC0415
+
+    transcript_holder: list[str] = []
+
+    def on_transcript(text: str) -> None:
+        transcript_holder.append(text)
+
+    # Wrap the buffered audio as a single-item async iterator
+    async def _one_shot():
+        yield audio
+
+    orch = S2SOrchestrator(
+        system_prompt=agent["system_prompt"],
+        language=session.language,
+        client_tier=client_tier,
+    )
+
+    audio_chunks: list[bytes] = []
+    try:
+        async for chunk in orch.stream(_one_shot(), call_id=session.session_id, on_transcript=on_transcript):
+            if chunk:
+                audio_chunks.append(chunk)
+    except Exception as exc:
+        logger.error("S2S orchestrator error (session=%s): %s", session.session_id, exc)
+        # Fallback to parallel pipeline on S2S error
+        await _handle_turn_parallel(websocket, audio, session, agent)
+        return
+
+    if transcript_holder:
+        transcript_text = " ".join(transcript_holder)
+        await websocket.send_text(json.dumps({
+            "type": "transcription",
+            "text": transcript_text,
+            "language": session.language,
+            "confidence": 0.95,
+        }))
+        user_msg = ConversationMessage(
+            role=MessageRole.USER,
+            text=transcript_text,
+            language=session.language,
+        )
+        session.messages.append(user_msg)
+
+    if audio_chunks:
+        combined_pcm = b"".join(audio_chunks)
+        audio_b64 = base64.b64encode(combined_pcm).decode()
+        assistant_msg = ConversationMessage(
+            role=MessageRole.ASSISTANT,
+            text="[S2S audio response]",
+            language=session.language,
+            emotion="friendly",
+        )
+        session.messages.append(assistant_msg)
+        await websocket.send_text(json.dumps({
+            "type": "audio_response",
+            "audio": audio_b64,
+            "text": "",
+            "emotion": "friendly",
+            "format": "pcm16",
+            "message_id": assistant_msg.id,
+        }))
+
+
+async def _fire_training_pipeline(session_id: str, language: str) -> None:
+    """
+    Fire-and-forget: submit completed call to the training corpus pipeline.
+    Called at the end of every Track A (parallel) call.
+    Errors are logged and swallowed — never block the call path.
+    """
+    try:
+        from voice_engine.track_a_to_s2s_pipeline import TrackAToS2SPipeline  # noqa: PLC0415
+        pipeline = TrackAToS2SPipeline()
+        await pipeline.submit_session(session_id=session_id, language=language)
+        logger.debug("[Training] Submitted session %s (lang=%s) to corpus", session_id, language)
+    except Exception as exc:
+        logger.debug("[Training] Corpus submission skipped for %s: %s", session_id, exc)
+
+
+# =====================================================================
 # WebSocket: Real-Time Voice Conversation
 # =====================================================================
 
@@ -869,6 +1035,7 @@ async def voice_conversation_ws(
     session_id: Optional[str] = Query(None),
     api_key: Optional[str] = Query(None),
     language: Optional[str] = Query(None),
+    client_tier: str = Query("standard"),
 ):
     """Real-time WebSocket voice conversation endpoint.
 
@@ -1061,74 +1228,26 @@ async def voice_conversation_ws(
                     combined_audio = b"".join(audio_buffer)
                     audio_buffer.clear()
 
-                    # Transcribe
-                    transcription = await _transcribe_audio(
-                        combined_audio,
-                        language=session.language,
-                    )
+                    # Premium/enterprise tiers route through S2S orchestrator
+                    # for low-latency full-duplex audio (Track B/C/D).
+                    # Standard/budget tiers use the parallel pipeline (Track A).
+                    use_s2s = client_tier in ("premium", "enterprise")
 
-                    # Send transcription
-                    await websocket.send_text(json.dumps({
-                        "type": "transcription",
-                        "text": transcription["text"],
-                        "language": transcription["language"],
-                        "confidence": transcription["confidence"],
-                    }))
-
-                    # Store user message
-                    user_msg = ConversationMessage(
-                        role=MessageRole.USER,
-                        text=transcription["text"],
-                        language=transcription["language"],
-                        confidence=transcription["confidence"],
-                        emotion=transcription.get("emotion"),
-                    )
-                    session.messages.append(user_msg)
-
-                    # Generate LLM response
-                    llm_messages = [
-                        {"role": m.role.value, "content": m.text}
-                        for m in session.messages
-                        if m.role != MessageRole.SYSTEM
-                    ]
-                    response_text = await _generate_llm_response(
-                        messages=llm_messages,
-                        system_prompt=agent["system_prompt"],
-                        language=session.language,
-                    )
-
-                    # Store assistant message
-                    assistant_msg = ConversationMessage(
-                        role=MessageRole.ASSISTANT,
-                        text=response_text,
-                        language=session.language,
-                        emotion="friendly",
-                    )
-                    session.messages.append(assistant_msg)
-
-                    # Send text response
-                    await websocket.send_text(json.dumps({
-                        "type": "text_response",
-                        "text": response_text,
-                        "emotion": "friendly",
-                        "message_id": assistant_msg.id,
-                    }))
-
-                    # Synthesize and send audio
-                    audio_b64 = await _synthesize_audio(
-                        text=response_text,
-                        language=session.language,
-                        voice_id=agent.get("voice"),
-                    )
-                    if audio_b64:
-                        await websocket.send_text(json.dumps({
-                            "type": "audio_response",
-                            "audio": audio_b64,
-                            "text": response_text,
-                            "emotion": "friendly",
-                            "format": "mp3",
-                            "message_id": assistant_msg.id,
-                        }))
+                    if use_s2s:
+                        await _handle_turn_s2s(
+                            websocket=websocket,
+                            audio=combined_audio,
+                            session=session,
+                            agent=agent,
+                            client_tier=client_tier,
+                        )
+                    else:
+                        await _handle_turn_parallel(
+                            websocket=websocket,
+                            audio=combined_audio,
+                            session=session,
+                            agent=agent,
+                        )
 
             # ── Interrupt (clear audio buffer) ───────────────
             elif msg_type == "interrupt":
@@ -1157,6 +1276,12 @@ async def voice_conversation_ws(
         if session_id in _sessions:
             _sessions[session_id].ended_at = (
                 datetime.datetime.utcnow().isoformat()
+            )
+        # Fire training pipeline for Track A calls (corpus flywheel)
+        # Non-S2S (standard/budget) calls contribute to the Tamil training corpus.
+        if client_tier not in ("premium", "enterprise"):
+            asyncio.create_task(
+                _fire_training_pipeline(session_id, session.language)
             )
 
 

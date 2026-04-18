@@ -315,6 +315,27 @@ class TrackAToS2SPipeline:
         )
         return result
 
+    async def submit_session(
+        self,
+        *,
+        session_id: str,
+        language: str,
+    ) -> None:
+        """
+        Lightweight fire-and-forget entry point called at WebSocket call end.
+
+        The WebSocket session does not carry raw audio recordings — those require
+        a call-recording middleware (to be added with Twilio / LiveKit recording).
+        This method is a registration hook: it logs the session for later batch
+        processing when recording infrastructure is in place, and can be extended
+        to submit pre-recorded audio directly once `corpus_collector.py` stores it.
+        """
+        logger.debug(
+            "[TrainingPipeline] Session %s (lang=%s) ended — "
+            "registered for corpus ingestion once call recording is enabled.",
+            session_id, language,
+        )
+
     async def _upload_pair(
         self,
         call_id: str,

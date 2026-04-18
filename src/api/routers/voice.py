@@ -1033,6 +1033,17 @@ async def trigger_finetune(
         raise HTTPException(status_code=500, detail=f"Fine-tune trigger failed: {exc}")
 
 
+@router.get("/calls/active-s2s-count")
+async def get_active_s2s_count():
+    """
+    Return the number of currently active S2S WebSocket sessions.
+    Used by the GPU watchdog (gpu_auto_shutdown.py) to decide whether
+    to keep the L40S pod alive.
+    """
+    from voice_engine.orchestrator import active_s2s_count  # noqa: PLC0415
+    return {"active_s2s_sessions": active_s2s_count()}
+
+
 @router.get("/pipeline/status")
 async def get_pipeline_status(
     _: bool = Depends(require_permission("voice:read")),
