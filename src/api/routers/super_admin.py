@@ -78,21 +78,70 @@ async def list_tenants(user: dict = Depends(_require_super_admin)):
 @router.post("/tenants")
 async def create_tenant(body: dict, user: dict = Depends(_require_super_admin)):
     tenant_id = f"tenant-{uuid.uuid4().hex[:8]}"
+    name = body.get("name", "New Tenant")
     with db() as conn:
         conn.execute(f"""
-            INSERT INTO platform_tenants (id,name,slug,plan_id,is_active,max_users,app_name,primary_color)
-            VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
+            INSERT INTO platform_tenants (
+                id, name, slug, plan_id, is_active, max_users, app_name, primary_color,
+                industry, company_type, gstin, pan_number, website_url,
+                owner_name, owner_email, owner_phone,
+                contact_email, contact_phone, address,
+                billing_email, billing_address,
+                contract_start_date, contract_end_date,
+                monthly_billing_amount, payment_terms,
+                onboarding_status, onboarding_notes, go_live_date,
+                tags, internal_notes, max_voice_minutes
+            ) VALUES (
+                {_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},
+                {_ph},{_ph},{_ph},{_ph},{_ph},
+                {_ph},{_ph},{_ph},
+                {_ph},{_ph},{_ph},
+                {_ph},{_ph},
+                {_ph},{_ph},
+                {_ph},{_ph},
+                {_ph},{_ph},{_ph},
+                {_ph},{_ph},{_ph}
+            )
         """, (
-            tenant_id,
-            body.get("name", "New Tenant"),
-            body.get("slug", f"tenant-{uuid.uuid4().hex[:6]}"),
-            body.get("plan_id", "starter"),
+            tenant_id, name,
+            body.get("slug") or name.lower().replace(" ", "-").replace("/", "-"),
+            body.get("plan_id") or body.get("plan", "starter"),
             1,
-            body.get("max_users", 5),
-            body.get("app_name", body.get("name", "New Tenant")),
-            body.get("primary_color", "#f59e0b"),
+            body.get("max_users", 0),
+            body.get("app_name", name),
+            body.get("primary_color", "#4f46e5"),
+            # business
+            body.get("industry"),
+            body.get("company_type"),
+            (body.get("gstin") or "").upper() or None,
+            (body.get("pan_number") or "").upper() or None,
+            body.get("website_url"),
+            # POC
+            body.get("owner_name"),
+            body.get("owner_email"),
+            body.get("owner_phone"),
+            # support contact
+            body.get("contact_email"),
+            body.get("contact_phone"),
+            body.get("address"),
+            # billing
+            body.get("billing_email"),
+            body.get("billing_address"),
+            body.get("contract_start_date") or None,
+            body.get("contract_end_date") or None,
+            body.get("monthly_billing_amount") or None,
+            body.get("payment_terms", "prepaid"),
+            # onboarding
+            body.get("onboarding_status", "not_started"),
+            body.get("onboarding_notes"),
+            body.get("go_live_date") or None,
+            # crm
+            str(body.get("tags")) if body.get("tags") else None,
+            body.get("internal_notes"),
+            body.get("max_voice_minutes", 1000),
         ))
         row = conn.execute(f"SELECT * FROM platform_tenants WHERE id={_ph}", (tenant_id,)).fetchone()
+    logger.info("Tenant created: %s (id=%s, industry=%s)", name, tenant_id, body.get("industry"))
     return dict(row)
 
 
@@ -112,11 +161,25 @@ async def get_tenant(tenant_id: str, user: dict = Depends(_require_super_admin))
 
 @router.put("/tenants/{tenant_id}")
 async def update_tenant(tenant_id: str, body: dict, user: dict = Depends(_require_super_admin)):
-    allowed = ["name", "slug", "domain", "plan_id", "is_active", "max_users",
-               "app_name", "logo_url", "favicon_url", "primary_color",
-               "secondary_color", "accent_color", "font_family", "custom_css",
-               "tagline", "support_email", "support_phone", "website", "address",
-               "login_bg_color", "sidebar_style"]
+    allowed = [
+        "name", "slug", "domain", "plan_id", "is_active", "max_users", "max_voice_minutes",
+        "app_name", "logo_url", "favicon_url", "primary_color",
+        "secondary_color", "accent_color", "font_family", "custom_css",
+        "tagline", "support_email", "support_phone", "website", "address",
+        "login_bg_color", "sidebar_style",
+        # Business identity
+        "industry", "company_type", "gstin", "pan_number", "website_url",
+        # POC
+        "owner_name", "owner_email", "owner_phone",
+        "contact_email", "contact_phone",
+        # Billing / Contract
+        "billing_email", "billing_address",
+        "contract_start_date", "contract_end_date",
+        "monthly_billing_amount", "payment_terms",
+        # Onboarding / CRM
+        "onboarding_status", "onboarding_notes", "go_live_date",
+        "tags", "internal_notes",
+    ]
     updates = {k: v for k, v in body.items() if k in allowed and v is not None}
     if not updates:
         raise HTTPException(400, "No valid fields to update")

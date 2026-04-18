@@ -1131,15 +1131,41 @@ def _seed_saas_control_layer():
 
 
 def _migrate_tenant_branding(conn):
-    """Add new optional branding columns to platform_tenants if missing."""
+    """Add new optional branding + business profile columns to platform_tenants if missing."""
     new_cols = [
-        ("tagline", "TEXT"),
-        ("support_email", "TEXT"),
-        ("support_phone", "TEXT"),
-        ("website", "TEXT"),
-        ("address", "TEXT"),
-        ("login_bg_color", "TEXT"),
-        ("sidebar_style", "TEXT DEFAULT 'light'"),
+        ("tagline",                "TEXT"),
+        ("support_email",          "TEXT"),
+        ("support_phone",          "TEXT"),
+        ("website",                "TEXT"),
+        ("address",                "TEXT"),
+        ("login_bg_color",         "TEXT"),
+        ("sidebar_style",          "TEXT DEFAULT 'light'"),
+        # Business identity
+        ("industry",               "TEXT"),
+        ("company_type",           "TEXT"),
+        ("gstin",                  "TEXT"),
+        ("pan_number",             "TEXT"),
+        ("website_url",            "TEXT"),
+        # Primary POC
+        ("owner_name",             "TEXT"),
+        ("owner_email",            "TEXT"),
+        ("owner_phone",            "TEXT"),
+        ("contact_email",          "TEXT"),
+        ("contact_phone",          "TEXT"),
+        # Billing / Contract
+        ("billing_email",          "TEXT"),
+        ("billing_address",        "TEXT"),
+        ("contract_start_date",    "TEXT"),
+        ("contract_end_date",      "TEXT"),
+        ("monthly_billing_amount", "REAL"),
+        ("payment_terms",          "TEXT DEFAULT 'prepaid'"),
+        # Onboarding / CRM
+        ("onboarding_status",      "TEXT DEFAULT 'not_started'"),
+        ("onboarding_notes",       "TEXT"),
+        ("go_live_date",           "TEXT"),
+        ("tags",                   "TEXT"),
+        ("internal_notes",         "TEXT"),
+        ("max_voice_minutes",      "INTEGER DEFAULT 1000"),
     ]
     try:
         if USE_POSTGRES:
