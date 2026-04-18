@@ -170,9 +170,10 @@ export default function Testing() {
   const displayPartial = liveCallActive ? liveTranscript.partial : partial
   const displayFinals = liveCallActive ? liveTranscript.finals : finals
 
-  /* ── Auto-send STT finals to LLM ─────────────────────────────── */
+  /* ── Auto-send STT finals to LLM (mic recording mode) ────────── */
   const lastSentRef = useRef(-1)
   useEffect(() => {
+    if (liveCallActive) return  // handled by liveSentRef below
     if (!finals.length || !currentAgent) return
     const idx = finals.length - 1
     if (lastSentRef.current === idx) return
@@ -181,7 +182,28 @@ export default function Testing() {
     lastSentRef.current = idx
     sendToLLM(last.text, last.confidence || 0.9)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finals, currentAgent])
+  }, [finals, currentAgent, liveCallActive])
+
+  /* ── Auto-send LiveKit STT finals to LLM (voice call mode) ──── */
+  const liveSentRef = useRef(-1)
+  useEffect(() => {
+    if (!liveCallActive || !currentAgent) return
+    const lf = liveTranscript.finals
+    if (!lf.length) return
+    const idx = lf.length - 1
+    if (liveSentRef.current === idx) return
+    const last = lf[idx]
+    if (!last?.text) return
+    liveSentRef.current = idx
+    sendToLLM(last.text, last.confidence || 0.9)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveTranscript.finals, currentAgent, liveCallActive])
+
+  // Reset refs when call state changes
+  useEffect(() => {
+    if (liveCallActive) liveSentRef.current = -1
+    else lastSentRef.current = -1
+  }, [liveCallActive])
 
   /* ── Core LLM call ──────────────────────────────────────────── */
   const sendToLLM = async (text, confidence = 0.95) => {

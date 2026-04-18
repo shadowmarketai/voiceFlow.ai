@@ -193,6 +193,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
   const [livekitUrl, setLivekitUrl] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [connected, setConnected] = useState(false);
+  const [agentJoined, setAgentJoined] = useState(false);
   const [error, setError] = useState(null);
 
   const startCall = useCallback(async () => {
@@ -206,6 +207,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
       });
       setToken(data.token);
       setLivekitUrl(data.livekit_url);
+      setAgentJoined(data.agent_joined || false);
       setConnected(true);
       onCallStateChange?.(true);
     } catch (err) {
@@ -246,7 +248,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
             <><Phone className="w-5 h-5" /> Start Voice Call</>
           )}
         </button>
-        <p className="text-[10px] text-gray-400">Powered by LiveKit WebRTC — zero telephony cost</p>
+        <p className="text-[10px] text-gray-400">Powered by LiveKit WebRTC — AI agent joins automatically</p>
       </div>
     );
   }
