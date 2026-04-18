@@ -4,10 +4,16 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Building2, Plus, Search, Users, ChevronRight, X, AlertCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Building2, Plus, Search, Users, ChevronRight, X, Globe, Phone, Mail, FileText, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { superAdminAPI } from '../../services/api'
+
+const COMPANY_TYPES = ['Pvt Ltd', 'LLP', 'OPC', 'Partnership', 'Proprietorship', 'Public Ltd', 'NGO', 'Other']
+const INDUSTRIES = ['Real Estate', 'Healthcare', 'Education', 'Finance / BFSI', 'Retail / E-Commerce', 'Logistics', 'Hospitality', 'IT / SaaS', 'Manufacturing', 'Legal', 'Government', 'Other']
+const PLANS = ['starter', 'growth', 'pro', 'enterprise']
+const PAYMENT_TERMS = ['prepaid', 'NET15', 'NET30', 'NET60']
+const ONBOARDING_STATUSES = ['not_started', 'in_progress', 'completed', 'churned']
 
 // ── Design tokens (shared via className conventions) ─────────────────
 // Accent:   indigo-600 / indigo-700
@@ -340,49 +346,72 @@ function EmptyState({ hasQuery }) {
 
 // ── Create Tenant Modal ───────────────────────────────────────────────
 
+const TABS = [
+  { id: 'basic',    label: 'Basic',    icon: Building2 },
+  { id: 'contact',  label: 'Contact',  icon: Phone },
+  { id: 'business', label: 'Business', icon: FileText },
+  { id: 'contract', label: 'Contract', icon: Tag },
+]
+
 function CreateTenantModal({ onClose, onCreated }) {
+  const [tab, setTab] = useState('basic')
   const [form, setForm] = useState({
-    name: '', slug: '', max_users: 0, primary_color: '#4f46e5',
+    // Basic
+    name: '', slug: '', plan: 'starter', industry: '', max_users: 0,
+    max_voice_minutes: 1000, onboarding_status: 'not_started',
+    // Contact
+    owner_name: '', owner_email: '', owner_phone: '',
+    contact_email: '', contact_phone: '',
+    // Business
+    company_type: '', gstin: '', pan_number: '', website_url: '',
+    address: '', tags: '',
+    // Contract
+    billing_email: '', billing_address: '',
+    contract_start_date: '', contract_end_date: '',
+    monthly_billing_amount: '', payment_terms: 'prepaid',
+    internal_notes: '',
   })
   const [submitting, setSubmitting] = useState(false)
   const firstInputRef = useRef(null)
   const modalRef = useRef(null)
 
-  // Focus trap + Escape key
+  const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+
   useEffect(() => {
     firstInputRef.current?.focus()
-
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose()
-
-      // Focus trap
       if (e.key === 'Tab' && modalRef.current) {
         const focusable = modalRef.current.querySelectorAll(
           'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
         )
-        const first = focusable[0]
-        const last = focusable[focusable.length - 1]
-        if (e.shiftKey) {
-          if (document.activeElement === first) { e.preventDefault(); last.focus() }
-        } else {
-          if (document.activeElement === last) { e.preventDefault(); first.focus() }
-        }
+        const first = focusable[0]; const last = focusable[focusable.length - 1]
+        if (e.shiftKey) { if (document.activeElement === first) { e.preventDefault(); last.focus() } }
+        else { if (document.activeElement === last) { e.preventDefault(); first.focus() } }
       }
     }
-
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
   const submit = async (e) => {
     e.preventDefault()
-    if (!form.name.trim()) return toast.error('Name is required')
+    if (!form.name.trim()) { setTab('basic'); return toast.error('Tenant name is required') }
     setSubmitting(true)
     try {
-      await superAdminAPI.createTenant({
+      const payload = {
         ...form,
-        slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-      })
+        slug: form.slug || form.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+        max_users: parseInt(form.max_users) || 0,
+        max_voice_minutes: parseInt(form.max_voice_minutes) || 1000,
+        monthly_billing_amount: form.monthly_billing_amount ? parseFloat(form.monthly_billing_amount) : null,
+        contract_start_date: form.contract_start_date || null,
+        contract_end_date: form.contract_end_date || null,
+        tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : null,
+        gstin: form.gstin.toUpperCase() || null,
+        pan_number: form.pan_number.toUpperCase() || null,
+      }
+      await superAdminAPI.createTenant(payload)
       toast.success(`Tenant "${form.name}" created`)
       onCreated()
     } catch (err) {
@@ -396,99 +425,238 @@ function CreateTenantModal({ onClose, onCreated }) {
     <div
       className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-      aria-hidden="false"
     >
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-tenant-title"
-        className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl ring-1 ring-slate-200/70 overflow-hidden"
+        className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl ring-1 ring-slate-200/70 flex flex-col max-h-[90vh]"
       >
-        {/* Modal header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 flex-shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-indigo-50 ring-1 ring-indigo-200/60 flex items-center justify-center">
-              <Building2 className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+              <Building2 className="w-4 h-4 text-indigo-600" />
             </div>
-            <h2 id="create-tenant-title" className="text-base font-semibold text-slate-900 tracking-tight">
-              New Tenant
-            </h2>
+            <h2 id="create-tenant-title" className="text-base font-semibold text-slate-900 tracking-tight">New Tenant</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-            aria-label="Close dialog"
-          >
-            <X className="w-4 h-4" aria-hidden="true" />
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Close">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={submit} className="px-6 py-5 space-y-4">
-          <FormField id="ct-name" label="Tenant Name" required>
-            <input
-              id="ct-name"
-              ref={firstInputRef}
-              type="text"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className={INPUT_CLS}
-              placeholder="Acme Corporation"
-              autoComplete="organization"
-              required
-            />
-          </FormField>
-
-          <FormField id="ct-slug" label="Slug" hint="URL-safe identifier (auto-generated from name if left blank)">
-            <input
-              id="ct-slug"
-              type="text"
-              value={form.slug}
-              onChange={(e) => setForm({ ...form, slug: e.target.value })}
-              className={INPUT_CLS}
-              placeholder="acme"
-            />
-          </FormField>
-
-          <FormField id="ct-maxusers" label="Max Users" hint="Leave 0 for unlimited. Agencies usually stay on 0.">
-            <input
-              id="ct-maxusers"
-              type="number"
-              min="0"
-              value={form.max_users}
-              onChange={(e) => setForm({ ...form, max_users: parseInt(e.target.value) || 0 })}
-              className={INPUT_CLS}
-              placeholder="0 = unlimited"
-            />
-          </FormField>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 mt-2">
+        {/* Tab bar */}
+        <div className="flex border-b border-slate-100 flex-shrink-0 px-2">
+          {TABS.map(({ id, label, icon: Icon }) => (
             <button
+              key={id}
               type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+              onClick={() => setTab(id)}
+              className={`flex items-center gap-1.5 px-3 py-3 text-xs font-semibold border-b-2 transition-colors -mb-px focus-visible:outline-none ${
+                tab === id
+                  ? 'border-indigo-600 text-indigo-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
             >
-              Cancel
+              <Icon className="w-3.5 h-3.5" />
+              {label}
             </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
-            >
-              {submitting ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" aria-hidden="true" />
-                  Creating…
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" aria-hidden="true" />
-                  Create Tenant
-                </>
-              )}
-            </button>
+          ))}
+        </div>
+
+        {/* Scrollable form body */}
+        <form onSubmit={submit} className="flex flex-col flex-1 min-h-0">
+          <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+
+            {/* ── Basic tab ── */}
+            {tab === 'basic' && (
+              <>
+                <FormField id="ct-name" label="Tenant / Company Name" required>
+                  <input id="ct-name" ref={firstInputRef} type="text" value={form.name}
+                    onChange={e => set('name', e.target.value)} className={INPUT_CLS}
+                    placeholder="Acme Corporation" autoComplete="organization" required />
+                </FormField>
+                <FormField id="ct-slug" label="Slug" hint="URL-safe identifier — auto-generated from name if left blank">
+                  <input id="ct-slug" type="text" value={form.slug}
+                    onChange={e => set('slug', e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                    className={INPUT_CLS} placeholder="acme-corporation" />
+                </FormField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-plan" label="Plan">
+                    <select id="ct-plan" value={form.plan} onChange={e => set('plan', e.target.value)} className={INPUT_CLS}>
+                      {PLANS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                    </select>
+                  </FormField>
+                  <FormField id="ct-industry" label="Industry">
+                    <select id="ct-industry" value={form.industry} onChange={e => set('industry', e.target.value)} className={INPUT_CLS}>
+                      <option value="">— Select —</option>
+                      {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+                    </select>
+                  </FormField>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-maxusers" label="Max Users" hint="0 = unlimited">
+                    <input id="ct-maxusers" type="number" min="0" value={form.max_users}
+                      onChange={e => set('max_users', e.target.value)} className={INPUT_CLS} />
+                  </FormField>
+                  <FormField id="ct-maxmins" label="Max Voice Minutes">
+                    <input id="ct-maxmins" type="number" min="0" value={form.max_voice_minutes}
+                      onChange={e => set('max_voice_minutes', e.target.value)} className={INPUT_CLS} />
+                  </FormField>
+                </div>
+                <FormField id="ct-onboarding" label="Onboarding Status">
+                  <select id="ct-onboarding" value={form.onboarding_status} onChange={e => set('onboarding_status', e.target.value)} className={INPUT_CLS}>
+                    {ONBOARDING_STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                  </select>
+                </FormField>
+              </>
+            )}
+
+            {/* ── Contact tab ── */}
+            {tab === 'contact' && (
+              <>
+                <p className="text-xs text-slate-500 -mt-1">Primary point of contact at the client's organization.</p>
+                <FormField id="ct-ownername" label="Owner / POC Name">
+                  <input id="ct-ownername" type="text" value={form.owner_name}
+                    onChange={e => set('owner_name', e.target.value)} className={INPUT_CLS} placeholder="Rajesh Kumar" />
+                </FormField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-owneremail" label="Owner Email">
+                    <input id="ct-owneremail" type="email" value={form.owner_email}
+                      onChange={e => set('owner_email', e.target.value)} className={INPUT_CLS} placeholder="rajesh@acme.in" />
+                  </FormField>
+                  <FormField id="ct-ownerphone" label="Owner Phone">
+                    <input id="ct-ownerphone" type="tel" value={form.owner_phone}
+                      onChange={e => set('owner_phone', e.target.value)} className={INPUT_CLS} placeholder="+91 98765 43210" />
+                  </FormField>
+                </div>
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="text-xs text-slate-500 mb-3">Support / general contact (can be different from owner).</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField id="ct-cemail" label="Support Email">
+                      <input id="ct-cemail" type="email" value={form.contact_email}
+                        onChange={e => set('contact_email', e.target.value)} className={INPUT_CLS} placeholder="support@acme.in" />
+                    </FormField>
+                    <FormField id="ct-cphone" label="Support Phone">
+                      <input id="ct-cphone" type="tel" value={form.contact_phone}
+                        onChange={e => set('contact_phone', e.target.value)} className={INPUT_CLS} placeholder="+91 80 1234 5678" />
+                    </FormField>
+                  </div>
+                  <FormField id="ct-address" label="Office Address">
+                    <textarea id="ct-address" rows={2} value={form.address}
+                      onChange={e => set('address', e.target.value)}
+                      className={INPUT_CLS + ' resize-none'} placeholder="123 MG Road, Bengaluru, Karnataka 560001" />
+                  </FormField>
+                </div>
+              </>
+            )}
+
+            {/* ── Business tab ── */}
+            {tab === 'business' && (
+              <>
+                <FormField id="ct-ctype" label="Company Type">
+                  <select id="ct-ctype" value={form.company_type} onChange={e => set('company_type', e.target.value)} className={INPUT_CLS}>
+                    <option value="">— Select —</option>
+                    {COMPANY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </FormField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-gstin" label="GSTIN" hint="15-char GST number">
+                    <input id="ct-gstin" type="text" value={form.gstin} maxLength={15}
+                      onChange={e => set('gstin', e.target.value.toUpperCase())} className={INPUT_CLS}
+                      placeholder="29AABCT1332L1ZT" />
+                  </FormField>
+                  <FormField id="ct-pan" label="PAN Number" hint="10-char PAN">
+                    <input id="ct-pan" type="text" value={form.pan_number} maxLength={10}
+                      onChange={e => set('pan_number', e.target.value.toUpperCase())} className={INPUT_CLS}
+                      placeholder="AABCT1332L" />
+                  </FormField>
+                </div>
+                <FormField id="ct-website" label="Website URL">
+                  <div className="relative">
+                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                    <input id="ct-website" type="url" value={form.website_url}
+                      onChange={e => set('website_url', e.target.value)}
+                      className={INPUT_CLS + ' pl-8'} placeholder="https://acme.in" />
+                  </div>
+                </FormField>
+                <FormField id="ct-tags" label="CRM Tags" hint="Comma-separated: vip, pilot, upsell">
+                  <input id="ct-tags" type="text" value={form.tags}
+                    onChange={e => set('tags', e.target.value)} className={INPUT_CLS}
+                    placeholder="vip, q2-2026, real-estate" />
+                </FormField>
+              </>
+            )}
+
+            {/* ── Contract tab ── */}
+            {tab === 'contract' && (
+              <>
+                <FormField id="ct-billemail" label="Billing Email" hint="Who receives invoices">
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                    <input id="ct-billemail" type="email" value={form.billing_email}
+                      onChange={e => set('billing_email', e.target.value)}
+                      className={INPUT_CLS + ' pl-8'} placeholder="accounts@acme.in" />
+                  </div>
+                </FormField>
+                <FormField id="ct-billaddr" label="Billing Address" hint="Leave blank to use office address">
+                  <textarea id="ct-billaddr" rows={2} value={form.billing_address}
+                    onChange={e => set('billing_address', e.target.value)}
+                    className={INPUT_CLS + ' resize-none'} placeholder="Same as office / GST registered address" />
+                </FormField>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-cstart" label="Contract Start">
+                    <input id="ct-cstart" type="date" value={form.contract_start_date}
+                      onChange={e => set('contract_start_date', e.target.value)} className={INPUT_CLS} />
+                  </FormField>
+                  <FormField id="ct-cend" label="Contract End">
+                    <input id="ct-cend" type="date" value={form.contract_end_date}
+                      onChange={e => set('contract_end_date', e.target.value)} className={INPUT_CLS} />
+                  </FormField>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormField id="ct-mrr" label="Monthly Amount (₹)" hint="Contracted MRR">
+                    <input id="ct-mrr" type="number" min="0" step="0.01" value={form.monthly_billing_amount}
+                      onChange={e => set('monthly_billing_amount', e.target.value)} className={INPUT_CLS} placeholder="9999" />
+                  </FormField>
+                  <FormField id="ct-pterms" label="Payment Terms">
+                    <select id="ct-pterms" value={form.payment_terms} onChange={e => set('payment_terms', e.target.value)} className={INPUT_CLS}>
+                      {PAYMENT_TERMS.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </FormField>
+                </div>
+                <FormField id="ct-notes" label="Internal Notes" hint="Not visible to the tenant">
+                  <textarea id="ct-notes" rows={3} value={form.internal_notes}
+                    onChange={e => set('internal_notes', e.target.value)}
+                    className={INPUT_CLS + ' resize-none'} placeholder="Referred by XYZ. Special pricing agreed." />
+                </FormField>
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-between gap-2 px-6 py-4 border-t border-slate-100 flex-shrink-0 bg-slate-50/50">
+            <p className="text-[11px] text-slate-400">
+              {tab !== 'contract' ? 'Fill remaining tabs or ' : ''}
+              <button type="button" onClick={() => setTab(TABS[TABS.findIndex(t => t.id === tab) + 1]?.id || 'basic')}
+                className={`text-indigo-500 underline underline-offset-2 hover:text-indigo-700 ${tab === 'contract' ? 'hidden' : ''}`}>
+                continue →
+              </button>
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+                Cancel
+              </button>
+              <button type="submit" disabled={submitting}
+                className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+                {submitting
+                  ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />Creating…</>
+                  : <><Plus className="w-4 h-4" />Create Tenant</>
+                }
+              </button>
+            </div>
           </div>
         </form>
       </div>

@@ -14,6 +14,7 @@ for _mod in (
     "analytics", "campaign", "crm", "tenant", "user", "voice",
     "voice_agent", "webhook", "quality_metrics", "billing_wallet",
     "voice_agent_db",
+    # tenant.py also defines TenantContact — no extra import needed
 ):
     try:
         __import__(f"api.models.{_mod}")
