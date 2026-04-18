@@ -148,7 +148,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             # CSP: allow external resources needed by the frontend + Swagger UI CDN
             response.headers["Content-Security-Policy"] = (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+                "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: "
                 "https://checkout.razorpay.com https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' "
                 "https://fonts.googleapis.com https://cdn.jsdelivr.net; "
@@ -156,6 +156,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "img-src 'self' data: blob: https:; "
                 "connect-src 'self' https: wss:; "
                 "worker-src 'self' blob:; "
+                "media-src 'self' blob: data:; "
                 "frame-src https://api.razorpay.com;"
             )
         return response
