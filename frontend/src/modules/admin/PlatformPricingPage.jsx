@@ -69,17 +69,17 @@ function displayVal(v) {
   return String(v)
 }
 
-/** Parse an input string back to number or null (empty or "0" → null = Unlimited) */
+/** Parse an input string back to number or null (empty string → null = Unlimited, "0" → 0 = None) */
 function parseNullable(str) {
   const trimmed = str.trim()
-  if (trimmed === '' || trimmed === '0') return null
+  if (trimmed === '') return null
   const n = Number(trimmed)
   return isNaN(n) ? null : n
 }
 
 /** Returns true when a nullable capacity field means "Unlimited" */
 function isUnlimited(v) {
-  return v === null || v === 0
+  return v === null || v === undefined
 }
 
 function parsePositive(str) {
@@ -103,6 +103,14 @@ function UnlimitedBadge() {
   return (
     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200">
       Unlimited
+    </span>
+  )
+}
+
+function NoneBadge() {
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-50 text-red-700 ring-1 ring-red-200">
+      None (0)
     </span>
   )
 }
@@ -262,13 +270,35 @@ export default function PlatformPricingPage() {
         const d = plansRes.value.data
         const dp = d?.direct_plans ?? d?.direct
         const ap = d?.agency_plans ?? d?.agency
+
+        const normalizePlan = (p) => ({
+          ...p,
+          agents:      p.agents      ?? p.agent_limit      ?? null,
+          calls_mo:    p.calls_mo    ?? p.calls_per_month  ?? null,
+          monthly_fee: p.monthly_fee ?? p.price            ?? 0,
+          call_rate:   p.call_rate   ?? 4.50,
+          voice_clones: p.voice_clones ?? null,
+          wallet_min:  p.wallet_min  ?? 0,
+        })
+
+        const normalizeAgency = (p) => ({
+          ...p,
+          monthly_fee:       p.monthly_fee       ?? p.price             ?? 0,
+          wholesale_rate:    p.wholesale_rate    ?? 3.00,
+          sub_clients:       p.sub_clients       ?? p.sub_client_limit  ?? null,
+          agents_per_client: p.agents_per_client ?? null,
+          voice_clones:      p.voice_clones      ?? null,
+        })
+
         if (Array.isArray(dp) && dp.length > 0) {
-          setDirectPlans(dp)
-          savedDirectRef.current = snapshot(dp)
+          const normalized = dp.map(normalizePlan)
+          setDirectPlans(normalized)
+          savedDirectRef.current = snapshot(normalized)
         }
         if (Array.isArray(ap) && ap.length > 0) {
-          setAgencyPlans(ap)
-          savedAgencyRef.current = snapshot(ap)
+          const normalized = ap.map(normalizeAgency)
+          setAgencyPlans(normalized)
+          savedAgencyRef.current = snapshot(normalized)
         }
       }
 
@@ -290,12 +320,32 @@ export default function PlatformPricingPage() {
 
   // ── Save handlers ────────────────────────────────────────────────────────
 
+  // Map frontend field names back to DB column names for PUT requests
+  function serializeDirect(p) {
+    return {
+      ...p,
+      plan_type:       'direct',
+      agent_limit:     p.agents,
+      calls_per_month: p.calls_mo,
+      price:           p.monthly_fee,
+    }
+  }
+
+  function serializeAgency(p) {
+    return {
+      ...p,
+      plan_type:       'agency',
+      price:           p.monthly_fee,
+      sub_client_limit: p.sub_clients,
+    }
+  }
+
   const savePlans = async () => {
     setSavingPlans(true)
     try {
       await api.put('/api/v1/admin/pricing/plans', {
-        direct_plans: directPlans.map((p) => ({ ...p, plan_type: 'direct' })),
-        agency_plans: agencyPlans.map((p) => ({ ...p, plan_type: 'agency' })),
+        direct_plans: directPlans.map(serializeDirect),
+        agency_plans: agencyPlans.map(serializeAgency),
       })
       savedDirectRef.current = snapshot(directPlans)
       toast.success('Direct client plans saved')
@@ -310,8 +360,8 @@ export default function PlatformPricingPage() {
     setSavingAgency(true)
     try {
       await api.put('/api/v1/admin/pricing/plans', {
-        direct_plans: directPlans.map((p) => ({ ...p, plan_type: 'direct' })),
-        agency_plans: agencyPlans.map((p) => ({ ...p, plan_type: 'agency' })),
+        direct_plans: directPlans.map(serializeDirect),
+        agency_plans: agencyPlans.map(serializeAgency),
       })
       savedAgencyRef.current = snapshot(agencyPlans)
       toast.success('Agency plans saved')
@@ -515,7 +565,7 @@ export default function PlatformPricingPage() {
                           </div>
                         </td>
 
-                        {/* Max agents (nullable = unlimited) */}
+                        {/* Max agents (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.agents) ? (
                             <div className="flex items-center gap-1.5">
@@ -525,6 +575,19 @@ export default function PlatformPricingPage() {
                                 onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'agents', 1) }}
                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                 aria-label="Set a limit for agents"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.agents === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'agents', 1) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set agents limit"
                                 title="Set limit"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -551,7 +614,7 @@ export default function PlatformPricingPage() {
                           )}
                         </td>
 
-                        {/* Calls/month (nullable) */}
+                        {/* Calls/month (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.calls_mo) ? (
                             <div className="flex items-center gap-1.5">
@@ -561,6 +624,19 @@ export default function PlatformPricingPage() {
                                 onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'calls_mo', 100) }}
                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                 aria-label="Set a calls per month limit"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.calls_mo === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'calls_mo', 100) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set calls per month limit"
                                 title="Set limit"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -587,7 +663,7 @@ export default function PlatformPricingPage() {
                           )}
                         </td>
 
-                        {/* Voice clones (nullable) */}
+                        {/* Voice clones (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.voice_clones) ? (
                             <div className="flex items-center gap-1.5">
@@ -597,6 +673,19 @@ export default function PlatformPricingPage() {
                                 onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'voice_clones', 1) }}
                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                 aria-label="Set a voice clones limit"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.voice_clones === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'voice_clones', 1) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set voice clones limit"
                                 title="Set limit"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -770,7 +859,7 @@ export default function PlatformPricingPage() {
                           </div>
                         </td>
 
-                        {/* Sub-clients (nullable) */}
+                        {/* Sub-clients (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.sub_clients) ? (
                             <div className="flex items-center gap-1.5">
@@ -780,6 +869,19 @@ export default function PlatformPricingPage() {
                                 onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'sub_clients', 10) }}
                                 className="text-slate-400 hover:text-slate-600 transition-colors"
                                 aria-label="Set a sub-clients limit"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.sub_clients === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'sub_clients', 10) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set sub-clients limit"
                                 title="Set limit"
                               >
                                 <Edit2 className="w-3.5 h-3.5" />
@@ -806,11 +908,24 @@ export default function PlatformPricingPage() {
                           )}
                         </td>
 
-                        {/* Agents per client (nullable) */}
+                        {/* Agents per client (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.agents_per_client) ? (
                             <div className="flex items-center gap-1.5">
                               <UnlimitedBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'agents_per_client', 2) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set agents per client limit"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.agents_per_client === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'agents_per_client', 2) }}
@@ -842,11 +957,24 @@ export default function PlatformPricingPage() {
                           )}
                         </td>
 
-                        {/* Voice clones (nullable) */}
+                        {/* Voice clones (null = unlimited, 0 = none, n = limit) */}
                         <td className="px-4 py-3">
                           {isUnlimited(plan.voice_clones) ? (
                             <div className="flex items-center gap-1.5">
                               <UnlimitedBadge />
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'voice_clones', 1) }}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                                aria-label="Set voice clones limit"
+                                title="Set limit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : plan.voice_clones === 0 ? (
+                            <div className="flex items-center gap-1.5">
+                              <NoneBadge />
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); updateAgency(idx, 'voice_clones', 1) }}

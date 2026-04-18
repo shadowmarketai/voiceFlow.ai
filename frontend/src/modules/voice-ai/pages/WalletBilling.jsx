@@ -16,7 +16,7 @@ import {
   AlertTriangle, TrendingDown, TrendingUp, RefreshCw, Check,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { billingAPI } from '../../../services/api'
+import api, { billingAPI } from '../../../services/api'
 
 const fadeUp = {
   hidden: { opacity: 0, y: 10 },
@@ -47,10 +47,24 @@ export default function WalletBilling() {
         billingAPI.presetsWithPrices('user'),
       ])
       setWallet(w.data)
-      setPacks(c.data.recharge_packs)
+      // Prefer catalog packs as the base
+      const catalogPacks = c.data.recharge_packs || []
+      setPacks(catalogPacks)
       setTxns(t.data.transactions || [])
       setPlan(p.data)
       setPricedPresets(pp.data.presets || [])
+
+      // Try to load admin-configured packs; only override if data is returned
+      api.get('/api/v1/admin/pricing/recharge-packs').then((res) => {
+        if (Array.isArray(res.data) && res.data.length > 0) {
+          setPacks(res.data.map((pk) => ({
+            amount:  pk.price,
+            bonus:   pk.bonus || 0,
+            label:   pk.name,
+            popular: pk.name === 'Popular',
+          })))
+        }
+      }).catch(() => {}) // silently fall back to catalog data
     } catch (e) {
       toast.error('Failed to load billing data')
     } finally {

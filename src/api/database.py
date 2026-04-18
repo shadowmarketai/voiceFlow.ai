@@ -413,73 +413,70 @@ def _migrate_pricing_schema(engine):
 
 
 def _seed_pricing_data(conn):
-    """Upsert default plan pricing + recharge packs from the VoiceFlow AI billing spec."""
-
+    """Upsert default plan pricing + recharge packs from the VoiceFlow AI billing spec.
+    Uses SQLAlchemy text() with :param binding — safe from injection.
+    """
+    # (id, name, slug, price, plan_type, call_rate, agent_limit, voice_clones, calls_per_month, wallet_min, sort_order)
     direct_plans = [
-        # (id, name, slug, price, plan_type, call_rate, agent_limit, voice_clones, calls_per_month, wallet_min, sort_order)
         ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 1,    0,    100,  500.0,  0),
         ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 1,    0,    None, 1000.0, 1),
         ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 3,    1,    None, 3000.0, 2),
         ("business",   "Business",    "business",   3000, "direct", 3.50, 10,   3,    None, 5000.0, 3),
         ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, None, None, None, 10000.0, 4),
     ]
+    # (id, name, slug, price, plan_type, wholesale_rate, sub_client_limit, agents_per_client, voice_clones, sort_order)
     agency_plans = [
-        # (id, name, slug, price, plan_type, wholesale_rate, sub_client_limit, agents_per_client, voice_clones, sort_order)
         ("agency_starter", "Agency Starter", "agency_starter", 5000,  "agency", 3.50, 10,   2,    1,    5),
         ("agency_growth",  "Agency Growth",  "agency_growth",  10000, "agency", 3.00, 50,   5,    3,    6),
         ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", 2.50, None, None, None, 7),
     ]
 
-    ph = "%s" if USE_POSTGRES else "?"
-
-    # Upsert direct plans
-    for row in direct_plans:
-        pid, name, slug, price, ptype, call_rate, agent_limit, vc, cpm, wmin, sord = row
-        exists = conn.execute(
-            text(f"SELECT id FROM plans WHERE id={ph}").bindparams() if False else
-            text(f"SELECT id FROM plans WHERE id='{pid}'")
-        ).fetchone()
+    for pid, name, slug, price, ptype, call_rate, agent_limit, vc, cpm, wmin, sord in direct_plans:
+        exists = conn.execute(text("SELECT id FROM plans WHERE id=:pid"), {"pid": pid}).fetchone()
         if not exists:
-            conn.execute(text(f"""
-                INSERT INTO plans (id,name,slug,price,currency,interval,max_users,description,is_active,sort_order,
-                                   plan_type,call_rate,agent_limit,voice_clones,calls_per_month,wallet_min)
-                VALUES ('{pid}','{name}','{slug}',{price},'INR','monthly',0,'',1,{sord},
-                        '{ptype}',{call_rate or 'NULL'},{agent_limit if agent_limit is not None else 'NULL'},
-                        {vc if vc is not None else 'NULL'},{cpm if cpm is not None else 'NULL'},
-                        {wmin if wmin is not None else 'NULL'})
-            """))
+            conn.execute(text("""
+                INSERT INTO plans
+                  (id,name,slug,price,currency,interval,max_users,description,
+                   is_active,sort_order,plan_type,call_rate,agent_limit,
+                   voice_clones,calls_per_month,wallet_min)
+                VALUES
+                  (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
+                   :ptype,:call_rate,:agent_limit,:vc,:cpm,:wmin)
+            """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
+                       ptype=ptype, call_rate=call_rate, agent_limit=agent_limit,
+                       vc=vc, cpm=cpm, wmin=wmin))
         else:
-            conn.execute(text(f"""
-                UPDATE plans SET plan_type='{ptype}', call_rate={call_rate or 'NULL'},
-                    agent_limit={agent_limit if agent_limit is not None else 'NULL'},
-                    voice_clones={vc if vc is not None else 'NULL'},
-                    calls_per_month={cpm if cpm is not None else 'NULL'},
-                    wallet_min={wmin if wmin is not None else 'NULL'},
-                    price={price}, sort_order={sord}
-                WHERE id='{pid}'
-            """))
+            conn.execute(text("""
+                UPDATE plans
+                SET plan_type=:ptype, call_rate=:call_rate, agent_limit=:agent_limit,
+                    voice_clones=:vc, calls_per_month=:cpm, wallet_min=:wmin,
+                    price=:price, sort_order=:sord
+                WHERE id=:pid
+            """), dict(ptype=ptype, call_rate=call_rate, agent_limit=agent_limit,
+                       vc=vc, cpm=cpm, wmin=wmin, price=price, sord=sord, pid=pid))
 
-    # Upsert agency plans
-    for row in agency_plans:
-        pid, name, slug, price, ptype, wrate, sub_limit, apc, vc, sord = row
-        exists = conn.execute(text(f"SELECT id FROM plans WHERE id='{pid}'")).fetchone()
+    for pid, name, slug, price, ptype, wrate, sub_limit, apc, vc, sord in agency_plans:
+        exists = conn.execute(text("SELECT id FROM plans WHERE id=:pid"), {"pid": pid}).fetchone()
         if not exists:
-            conn.execute(text(f"""
-                INSERT INTO plans (id,name,slug,price,currency,interval,max_users,description,is_active,sort_order,
-                                   plan_type,wholesale_rate,sub_client_limit,agents_per_client,voice_clones)
-                VALUES ('{pid}','{name}','{slug}',{price},'INR','monthly',0,'',1,{sord},
-                        '{ptype}',{wrate},{sub_limit if sub_limit is not None else 'NULL'},
-                        {apc if apc is not None else 'NULL'},{vc if vc is not None else 'NULL'})
-            """))
+            conn.execute(text("""
+                INSERT INTO plans
+                  (id,name,slug,price,currency,interval,max_users,description,
+                   is_active,sort_order,plan_type,wholesale_rate,
+                   sub_client_limit,agents_per_client,voice_clones)
+                VALUES
+                  (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
+                   :ptype,:wrate,:sub_limit,:apc,:vc)
+            """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
+                       ptype=ptype, wrate=wrate, sub_limit=sub_limit, apc=apc, vc=vc))
         else:
-            conn.execute(text(f"""
-                UPDATE plans SET plan_type='{ptype}', wholesale_rate={wrate},
-                    sub_client_limit={sub_limit if sub_limit is not None else 'NULL'},
-                    agents_per_client={apc if apc is not None else 'NULL'},
-                    voice_clones={vc if vc is not None else 'NULL'},
-                    price={price}, sort_order={sord}
-                WHERE id='{pid}'
-            """))
+            conn.execute(text("""
+                UPDATE plans
+                SET plan_type=:ptype, wholesale_rate=:wrate,
+                    sub_client_limit=:sub_limit, agents_per_client=:apc,
+                    voice_clones=:vc, price=:price, sort_order=:sord
+                WHERE id=:pid
+            """), dict(ptype=ptype, wrate=wrate, sub_limit=sub_limit, apc=apc,
+                       vc=vc, price=price, sord=sord, pid=pid))
 
     # Upsert recharge packs
     packs = [
@@ -490,12 +487,14 @@ def _seed_pricing_data(conn):
         ("pack_enterprise", "Enterprise", 25000.0, 3500.0, 1, 4),
     ]
     for pid, name, price, bonus, active, sord in packs:
-        exists = conn.execute(text(f"SELECT id FROM recharge_packs WHERE id='{pid}'")).fetchone()
+        exists = conn.execute(
+            text("SELECT id FROM recharge_packs WHERE id=:pid"), {"pid": pid}
+        ).fetchone()
         if not exists:
-            conn.execute(text(f"""
+            conn.execute(text("""
                 INSERT INTO recharge_packs (id, name, price, bonus, is_active, sort_order)
-                VALUES ('{pid}', '{name}', {price}, {bonus}, {active}, {sord})
-            """))
+                VALUES (:id, :name, :price, :bonus, :active, :sord)
+            """), dict(id=pid, name=name, price=price, bonus=bonus, active=active, sord=sord))
 
     logger.info("Pricing data seeded/updated")
 
@@ -1225,7 +1224,8 @@ def _seed_saas_control_layer():
             ("f-bl",       "billing",             "Billing & Wallet",  None,       "Billing",  "Subscription, prepaid wallet, recharge", "CreditCard", "/voice/billing",   1, 0, 200),
             ("f-bl-wa",    "billing.wallet",      "Wallet",            "billing",  "Billing",  "Prepaid balance + recharge",       "Wallet",       "/voice/wallet",           1, 0, 201),
             ("f-bl-tp",    "billing.tenant_pricing","My Pricing",      "billing",  "Billing",  "White-label markup (tenant only)", "TrendingUp",   "/voice/tenant-pricing",   1, 0, 202),
-            ("f-bl-sb",    "billing.subscription","Subscription",      "billing",  "Billing",  "Monthly subscription plans",       "CreditCard",   "/voice/billing",          1, 0, 203),
+            ("f-bl-sc",    "billing.sub_clients", "Sub-clients",       "billing",  "Billing",  "Manage agency sub-clients",        "Building2",    "/voice/sub-clients",       1, 0, 203),
+            ("f-bl-sb",    "billing.subscription","Subscription",      "billing",  "Billing",  "Monthly subscription plans",       "CreditCard",   "/voice/billing",          1, 0, 204),
         ]
 
         # Delete any legacy features (CRM, Quotation, Inbox, etc.) that exist
@@ -1309,6 +1309,10 @@ def _migrate_tenant_branding(conn):
         ("tags",                   "TEXT"),
         ("internal_notes",         "TEXT"),
         ("max_voice_minutes",      "INTEGER DEFAULT 1000"),
+        # Sub-client (agency) fields
+        ("parent_tenant_id",       "TEXT"),          # set for agency sub-clients
+        ("markup_rate",            "REAL"),           # ₹/min the agency charges this sub-client
+        ("agent_limit_override",   "INTEGER"),        # tenant-set override below plan max
     ]
     try:
         if USE_POSTGRES:

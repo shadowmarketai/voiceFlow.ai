@@ -7,11 +7,16 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Building2, Plus, Search, Users, ChevronRight, X, Globe, Phone, Mail, FileText, Tag } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { superAdminAPI } from '../../services/api'
+import api, { superAdminAPI } from '../../services/api'
 
 const COMPANY_TYPES = ['Pvt Ltd', 'LLP', 'OPC', 'Partnership', 'Proprietorship', 'Public Ltd', 'NGO', 'Other']
 const INDUSTRIES = ['Real Estate', 'Healthcare', 'Education', 'Finance / BFSI', 'Retail / E-Commerce', 'Logistics', 'Hospitality', 'IT / SaaS', 'Manufacturing', 'Legal', 'Government', 'Other']
-const PLANS = ['starter', 'growth', 'pro', 'enterprise']
+const FALLBACK_PLANS = [
+  { id: 'starter',    name: 'Starter',    plan_type: 'direct' },
+  { id: 'growth',     name: 'Growth',     plan_type: 'direct' },
+  { id: 'business',   name: 'Business',   plan_type: 'direct' },
+  { id: 'enterprise', name: 'Enterprise', plan_type: 'direct' },
+]
 const PAYMENT_TERMS = ['prepaid', 'NET15', 'NET30', 'NET60']
 const ONBOARDING_STATUSES = ['not_started', 'in_progress', 'completed', 'churned']
 
@@ -355,6 +360,7 @@ const TABS = [
 
 function CreateTenantModal({ onClose, onCreated }) {
   const [tab, setTab] = useState('basic')
+  const [planOptions, setPlanOptions] = useState([])
   const [form, setForm] = useState({
     // Basic
     name: '', slug: '', plan: 'starter', industry: '', max_users: 0,
@@ -376,6 +382,24 @@ function CreateTenantModal({ onClose, onCreated }) {
   const modalRef = useRef(null)
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }))
+
+  // Load plan options from API; fall back to hardcoded list on error
+  useEffect(() => {
+    api.get('/api/v1/admin/pricing/plans')
+      .then((res) => {
+        const direct = res.data?.direct_plans || []
+        const agency = res.data?.agency_plans || []
+        const all = [...direct, ...agency].filter((p) => p.is_active !== false)
+        if (all.length > 0) {
+          setPlanOptions(all)
+        } else {
+          setPlanOptions(FALLBACK_PLANS)
+        }
+      })
+      .catch(() => {
+        setPlanOptions(FALLBACK_PLANS)
+      })
+  }, [])
 
   useEffect(() => {
     firstInputRef.current?.focus()
@@ -485,7 +509,36 @@ function CreateTenantModal({ onClose, onCreated }) {
                 <div className="grid grid-cols-2 gap-3">
                   <FormField id="ct-plan" label="Plan">
                     <select id="ct-plan" value={form.plan} onChange={e => set('plan', e.target.value)} className={INPUT_CLS}>
-                      {PLANS.map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                      {planOptions.length === 0 ? (
+                        <option value="starter">Starter</option>
+                      ) : (
+                        <>
+                          {planOptions.filter(p => p.plan_type !== 'agency' && !p.id?.startsWith('agency')).length > 0 && (
+                            <optgroup label="Direct Client Plans">
+                              {planOptions
+                                .filter(p => p.plan_type !== 'agency' && !p.id?.startsWith('agency'))
+                                .map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name || (p.id.charAt(0).toUpperCase() + p.id.slice(1))}
+                                  </option>
+                                ))
+                              }
+                            </optgroup>
+                          )}
+                          {planOptions.filter(p => p.plan_type === 'agency' || p.id?.startsWith('agency')).length > 0 && (
+                            <optgroup label="Agency / White-label Plans">
+                              {planOptions
+                                .filter(p => p.plan_type === 'agency' || p.id?.startsWith('agency'))
+                                .map(p => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name || (p.id.charAt(0).toUpperCase() + p.id.slice(1))}
+                                  </option>
+                                ))
+                              }
+                            </optgroup>
+                          )}
+                        </>
+                      )}
                     </select>
                   </FormField>
                   <FormField id="ct-industry" label="Industry">

@@ -32,10 +32,26 @@ from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from api.database import USE_POSTGRES, db
 from api.services import pricing, wallet_service
 from api.services.pricing import COST_CATALOG, PRESETS, RECHARGE_PACKS
 
 logger = logging.getLogger(__name__)
+
+_bp = "%s" if USE_POSTGRES else "?"
+
+
+def _db_recharge_packs() -> list[dict]:
+    """Load recharge packs from DB; return empty list on any error."""
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT id,name,price,bonus,is_active,sort_order FROM recharge_packs "
+                "WHERE is_active=1 ORDER BY sort_order"
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
 
 router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 
@@ -59,8 +75,19 @@ def _require_admin(x_admin_token: str | None = Header(default=None)) -> bool:
 
 @router.get("/catalog")
 def get_catalog() -> dict[str, Any]:
-    """Full provider pricing table + presets — used by the cost calculator UI."""
-    return {"catalog": COST_CATALOG, "presets": PRESETS, "recharge_packs": RECHARGE_PACKS}
+    """Full provider pricing table + presets — used by the cost calculator UI.
+    Recharge packs are loaded from DB if available, else fallback to pricing.py constants.
+    """
+    db_packs = _db_recharge_packs()
+    if db_packs:
+        packs = [
+            {"amount": float(p["price"]), "bonus": float(p["bonus"]),
+             "label": p["name"], "popular": p["name"] == "Popular"}
+            for p in db_packs
+        ]
+    else:
+        packs = RECHARGE_PACKS
+    return {"catalog": COST_CATALOG, "presets": PRESETS, "recharge_packs": packs}
 
 
 @router.get("/presets")
@@ -514,3 +541,177 @@ def admin_credit(req: AdminCreditRequest) -> dict[str, Any]:
         reference_id=f"admin_credit_{int(time.time())}", description=req.note,
     )
     return {"success": True, "credited_inr": req.amount_inr}
+
+
+# ═══ TENANT PLAN INFO ═════════════════════════════════════════════════════════
+
+@router.get("/tenant/plan")
+def tenant_plan_info(tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
+    """
+    Return the agency platform plan for the current tenant.
+    Used by TenantSubclientsPage "My Plan" tab.
+    """
+    try:
+        with db() as conn:
+            tenant = conn.execute(
+                f"SELECT * FROM platform_tenants WHERE id={_bp}", (tenant_id,)
+            ).fetchone()
+            if not tenant:
+                raise HTTPException(404, "Tenant not found")
+            t = dict(tenant)
+            plan_id = t.get("plan_id") or "agency_starter"
+
+            plan_row = conn.execute(
+                f"SELECT * FROM plans WHERE id={_bp}", (plan_id,)
+            ).fetchone()
+            plan = dict(plan_row) if plan_row else {}
+
+            # Sub-client usage
+            sub_count = conn.execute(
+                f"SELECT COUNT(*) FROM platform_tenants WHERE parent_tenant_id={_bp}",
+                (tenant_id,)
+            ).fetchone()[0]
+
+        return {
+            "tenant_id": tenant_id,
+            "plan_id": plan_id,
+            "plan_name": plan.get("name") or plan_id,
+            "monthly_fee": float(plan.get("price") or 0),
+            "wholesale_rate": float(plan.get("wholesale_rate") or 3.50),
+            "sub_client_limit": plan.get("sub_client_limit"),        # None = unlimited
+            "sub_client_count": sub_count,
+            "agents_per_client": plan.get("agents_per_client"),      # None = unlimited
+            "voice_clones": plan.get("voice_clones"),                # None = unlimited
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("tenant_plan_info error: %s", exc)
+        raise HTTPException(500, "Could not load plan info")
+
+
+# ═══ SUB-CLIENT MANAGEMENT (tenant-facing) ════════════════════════════════════
+
+class SubClientCreate(BaseModel):
+    name: str
+    contact_email: str | None = None
+    plan_id: str = "starter"
+    agent_limit_override: int | None = None
+    markup_rate: float = 4.50
+
+
+class SubClientMarkupUpdate(BaseModel):
+    markup_rate: float
+    agent_limit_override: int | None = None
+
+
+@router.get("/tenant/sub-clients")
+def list_sub_clients(tenant_id: str = Depends(_current_tenant)) -> list[dict[str, Any]]:
+    """List all sub-clients belonging to this tenant (agency)."""
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM platform_tenants WHERE parent_tenant_id={_bp} ORDER BY created_at DESC",
+                (tenant_id,)
+            ).fetchall()
+            sub_clients = []
+            for row in rows:
+                sc = dict(row)
+                # Agent usage
+                agent_count = conn.execute(
+                    f"SELECT COUNT(*) FROM users WHERE tenant_id={_bp} AND (is_admin=0 OR is_admin IS NULL)",
+                    (sc["id"],)
+                ).fetchone()[0]
+                sc["agent_count"] = agent_count
+                sub_clients.append(sc)
+        return sub_clients
+    except Exception as exc:
+        logger.warning("list_sub_clients error: %s", exc)
+        return []
+
+
+@router.post("/tenant/sub-clients", status_code=201)
+def create_sub_client(
+    req: SubClientCreate,
+    tenant_id: str = Depends(_current_tenant),
+) -> dict[str, Any]:
+    """Create a new sub-client under this tenant."""
+    import uuid as _uuid
+    new_id = f"tenant-{_uuid.uuid4().hex[:8]}"
+    slug = req.name.lower().replace(" ", "-").replace("/", "-")
+
+    # Enforce sub-client limit from plan
+    try:
+        with db() as conn:
+            t = conn.execute(
+                f"SELECT plan_id FROM platform_tenants WHERE id={_bp}", (tenant_id,)
+            ).fetchone()
+            plan_id = dict(t).get("plan_id", "agency_starter") if t else "agency_starter"
+            plan_row = conn.execute(
+                f"SELECT sub_client_limit FROM plans WHERE id={_bp}", (plan_id,)
+            ).fetchone()
+            limit = dict(plan_row).get("sub_client_limit") if plan_row else None
+            if limit is not None:
+                count = conn.execute(
+                    f"SELECT COUNT(*) FROM platform_tenants WHERE parent_tenant_id={_bp}",
+                    (tenant_id,)
+                ).fetchone()[0]
+                if count >= limit:
+                    raise HTTPException(
+                        status_code=402,
+                        detail=f"Sub-client limit reached ({limit}). Upgrade your plan."
+                    )
+
+            conn.execute(f"""
+                INSERT INTO platform_tenants
+                  (id, name, slug, plan_id, is_active, parent_tenant_id,
+                   markup_rate, agent_limit_override, contact_email)
+                VALUES ({_bp},{_bp},{_bp},{_bp},1,{_bp},{_bp},{_bp},{_bp})
+            """, (new_id, req.name, slug, req.plan_id, tenant_id,
+                  req.markup_rate, req.agent_limit_override, req.contact_email))
+            row = conn.execute(
+                f"SELECT * FROM platform_tenants WHERE id={_bp}", (new_id,)
+            ).fetchone()
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("create_sub_client error: %s", exc)
+        raise HTTPException(500, "Could not create sub-client")
+
+
+@router.put("/tenant/sub-clients/{sub_client_id}")
+def update_sub_client(
+    sub_client_id: str,
+    req: SubClientMarkupUpdate,
+    tenant_id: str = Depends(_current_tenant),
+) -> dict[str, Any]:
+    """Update markup rate and/or agent limit override for a sub-client."""
+    try:
+        with db() as conn:
+            # Verify ownership
+            row = conn.execute(
+                f"SELECT id FROM platform_tenants WHERE id={_bp} AND parent_tenant_id={_bp}",
+                (sub_client_id, tenant_id)
+            ).fetchone()
+            if not row:
+                raise HTTPException(404, "Sub-client not found")
+
+            updates = {"markup_rate": req.markup_rate}
+            if req.agent_limit_override is not None:
+                updates["agent_limit_override"] = req.agent_limit_override
+
+            set_clause = ", ".join(f"{k}={_bp}" for k in updates)
+            vals = list(updates.values()) + [sub_client_id]
+            conn.execute(
+                f"UPDATE platform_tenants SET {set_clause} WHERE id={_bp}", vals
+            )
+            updated = conn.execute(
+                f"SELECT * FROM platform_tenants WHERE id={_bp}", (sub_client_id,)
+            ).fetchone()
+        return dict(updated)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("update_sub_client error: %s", exc)
+        raise HTTPException(500, "Could not update sub-client")

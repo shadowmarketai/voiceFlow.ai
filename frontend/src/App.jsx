@@ -38,6 +38,7 @@ const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDevelope
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
 const WalletBillingPage = lazy(() => import('./modules/voice-ai/pages/WalletBilling'))
 const TenantPricingPage = lazy(() => import('./modules/voice-ai/pages/TenantPricing'))
+const TenantSubclientsPage = lazy(() => import('./modules/voice-ai/pages/TenantSubclientsPage'))
 const TeamPage = lazy(() => import('./modules/voice-ai/pages/TeamPage'))
 const AgencyPricingPage = lazy(() => import('./modules/admin/AgencyPricingPage'))
 
@@ -147,6 +148,7 @@ function App() {
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />
           <Route path="voice/wallet" element={<S><WalletBillingPage /></S>} />
           <Route path="voice/tenant-pricing" element={<S><TenantPricingPage /></S>} />
+          <Route path="voice/sub-clients" element={<S><TenantSubclientsPage /></S>} />
           <Route path="voice/team" element={<S><TeamPage /></S>} />
 
           {/* Settings & Support */}
