@@ -276,6 +276,11 @@ def init_models():
     except Exception as e:
         logger.warning(f"Tenant business profile migration skipped: {e}")
 
+    try:
+        _migrate_pricing_schema(engine)
+    except Exception as e:
+        logger.warning(f"Pricing schema migration skipped: {e}")
+
 
 def _migrate_knowledge_schema(engine):
     """Add campaign_id + scope columns to knowledge_documents if missing."""
@@ -355,6 +360,144 @@ def _migrate_tenant_business_profile(engine):
             "CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role)"
         ))
         logger.info("tenant_contacts table ensured")
+
+
+def _migrate_pricing_schema(engine):
+    """
+    Add voice billing columns to plans table, create recharge_packs table,
+    and seed default VoiceFlow AI pricing from the billing spec.
+    Idempotent — safe to call on every startup.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    if "plans" not in inspector.get_table_names():
+        return
+
+    existing = {c["name"] for c in inspector.get_columns("plans")}
+
+    new_cols = [
+        ("plan_type",         "VARCHAR(20) DEFAULT 'direct'"),   # direct | agency
+        ("call_rate",         "NUMERIC(8,2)"),                   # ₹/min client pays
+        ("wholesale_rate",    "NUMERIC(8,2)"),                   # ₹/min agency pays (agency plans)
+        ("agent_limit",       "INTEGER"),                        # NULL = unlimited
+        ("agents_per_client", "INTEGER"),                        # agency: per sub-client
+        ("voice_clones",      "INTEGER"),                        # NULL = unlimited
+        ("calls_per_month",   "INTEGER"),                        # NULL = unlimited
+        ("wallet_min",        "NUMERIC(10,2)"),                  # minimum balance required
+        ("sub_client_limit",  "INTEGER"),                        # agency: max sub-clients
+    ]
+
+    with engine.begin() as conn:
+        for col, col_type in new_cols:
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE plans ADD COLUMN {col} {col_type}"))
+                logger.info("plans: added column %s", col)
+
+        # Create recharge_packs table
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS recharge_packs (
+                id          VARCHAR(60) PRIMARY KEY,
+                name        VARCHAR(100) NOT NULL,
+                price       NUMERIC(10,2) NOT NULL,
+                bonus       NUMERIC(10,2) NOT NULL DEFAULT 0,
+                is_active   INTEGER NOT NULL DEFAULT 1,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        logger.info("recharge_packs table ensured")
+
+        # ── Seed / upsert pricing data from billing spec ──
+        _seed_pricing_data(conn)
+
+
+def _seed_pricing_data(conn):
+    """Upsert default plan pricing + recharge packs from the VoiceFlow AI billing spec."""
+
+    direct_plans = [
+        # (id, name, slug, price, plan_type, call_rate, agent_limit, voice_clones, calls_per_month, wallet_min, sort_order)
+        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 1,    0,    100,  500.0,  0),
+        ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 1,    0,    None, 1000.0, 1),
+        ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 3,    1,    None, 3000.0, 2),
+        ("business",   "Business",    "business",   3000, "direct", 3.50, 10,   3,    None, 5000.0, 3),
+        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, None, None, None, 10000.0, 4),
+    ]
+    agency_plans = [
+        # (id, name, slug, price, plan_type, wholesale_rate, sub_client_limit, agents_per_client, voice_clones, sort_order)
+        ("agency_starter", "Agency Starter", "agency_starter", 5000,  "agency", 3.50, 10,   2,    1,    5),
+        ("agency_growth",  "Agency Growth",  "agency_growth",  10000, "agency", 3.00, 50,   5,    3,    6),
+        ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", 2.50, None, None, None, 7),
+    ]
+
+    ph = "%s" if USE_POSTGRES else "?"
+
+    # Upsert direct plans
+    for row in direct_plans:
+        pid, name, slug, price, ptype, call_rate, agent_limit, vc, cpm, wmin, sord = row
+        exists = conn.execute(
+            text(f"SELECT id FROM plans WHERE id={ph}").bindparams() if False else
+            text(f"SELECT id FROM plans WHERE id='{pid}'")
+        ).fetchone()
+        if not exists:
+            conn.execute(text(f"""
+                INSERT INTO plans (id,name,slug,price,currency,interval,max_users,description,is_active,sort_order,
+                                   plan_type,call_rate,agent_limit,voice_clones,calls_per_month,wallet_min)
+                VALUES ('{pid}','{name}','{slug}',{price},'INR','monthly',0,'',1,{sord},
+                        '{ptype}',{call_rate or 'NULL'},{agent_limit if agent_limit is not None else 'NULL'},
+                        {vc if vc is not None else 'NULL'},{cpm if cpm is not None else 'NULL'},
+                        {wmin if wmin is not None else 'NULL'})
+            """))
+        else:
+            conn.execute(text(f"""
+                UPDATE plans SET plan_type='{ptype}', call_rate={call_rate or 'NULL'},
+                    agent_limit={agent_limit if agent_limit is not None else 'NULL'},
+                    voice_clones={vc if vc is not None else 'NULL'},
+                    calls_per_month={cpm if cpm is not None else 'NULL'},
+                    wallet_min={wmin if wmin is not None else 'NULL'},
+                    price={price}, sort_order={sord}
+                WHERE id='{pid}'
+            """))
+
+    # Upsert agency plans
+    for row in agency_plans:
+        pid, name, slug, price, ptype, wrate, sub_limit, apc, vc, sord = row
+        exists = conn.execute(text(f"SELECT id FROM plans WHERE id='{pid}'")).fetchone()
+        if not exists:
+            conn.execute(text(f"""
+                INSERT INTO plans (id,name,slug,price,currency,interval,max_users,description,is_active,sort_order,
+                                   plan_type,wholesale_rate,sub_client_limit,agents_per_client,voice_clones)
+                VALUES ('{pid}','{name}','{slug}',{price},'INR','monthly',0,'',1,{sord},
+                        '{ptype}',{wrate},{sub_limit if sub_limit is not None else 'NULL'},
+                        {apc if apc is not None else 'NULL'},{vc if vc is not None else 'NULL'})
+            """))
+        else:
+            conn.execute(text(f"""
+                UPDATE plans SET plan_type='{ptype}', wholesale_rate={wrate},
+                    sub_client_limit={sub_limit if sub_limit is not None else 'NULL'},
+                    agents_per_client={apc if apc is not None else 'NULL'},
+                    voice_clones={vc if vc is not None else 'NULL'},
+                    price={price}, sort_order={sord}
+                WHERE id='{pid}'
+            """))
+
+    # Upsert recharge packs
+    packs = [
+        ("pack_starter",    "Starter",    1000.0,  0.0,    1, 0),
+        ("pack_popular",    "Popular",    3000.0,  150.0,  1, 1),
+        ("pack_growth",     "Growth",     5000.0,  400.0,  1, 2),
+        ("pack_business",   "Business",   10000.0, 1000.0, 1, 3),
+        ("pack_enterprise", "Enterprise", 25000.0, 3500.0, 1, 4),
+    ]
+    for pid, name, price, bonus, active, sord in packs:
+        exists = conn.execute(text(f"SELECT id FROM recharge_packs WHERE id='{pid}'")).fetchone()
+        if not exists:
+            conn.execute(text(f"""
+                INSERT INTO recharge_packs (id, name, price, bonus, is_active, sort_order)
+                VALUES ('{pid}', '{name}', {price}, {bonus}, {active}, {sord})
+            """))
+
+    logger.info("Pricing data seeded/updated")
 
 
 def _migrate_quality_schema(engine):

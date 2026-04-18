@@ -440,6 +440,152 @@ async def list_plans(user: dict = Depends(_require_super_admin)):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# PLATFORM PRICING  (direct client plans · agency plans · recharge packs)
+# ═══════════════════════════════════════════════════════════════════
+
+_DIRECT_PLAN_IDS = {"free_trial", "starter", "growth", "business", "enterprise"}
+_AGENCY_PLAN_IDS = {"agency_starter", "agency_growth", "agency_pro"}
+
+
+def _safe_num(val):
+    """Return float if truthy, else None."""
+    try:
+        return float(val) if val is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(val):
+    """Return int if truthy, else None."""
+    try:
+        return int(val) if val is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+@router.get("/pricing/plans")
+async def get_pricing_plans(user: dict = Depends(_require_super_admin)):
+    """
+    Return direct client plans and agency plans with all billing fields.
+    Used by PlatformPricingPage.
+    """
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM plans ORDER BY sort_order"
+        ).fetchall()
+
+    all_plans = [dict(r) for r in rows]
+    direct = [p for p in all_plans if p.get("id") in _DIRECT_PLAN_IDS or p.get("plan_type") == "direct"]
+    agency = [p for p in all_plans if p.get("id") in _AGENCY_PLAN_IDS or p.get("plan_type") == "agency"]
+
+    return {"direct_plans": direct, "agency_plans": agency}
+
+
+@router.put("/pricing/plans")
+async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_admin)):
+    """
+    Upsert all plan pricing fields in one call.
+    Body: { direct_plans: [...], agency_plans: [...] }
+    Each plan must have 'id'. Only known billing fields are updated.
+    """
+    direct_plans = body.get("direct_plans", [])
+    agency_plans = body.get("agency_plans", [])
+
+    _DIRECT_ALLOWED = ["name", "monthly_fee", "price", "call_rate", "agent_limit",
+                       "voice_clones", "calls_per_month", "wallet_min", "is_active"]
+    _AGENCY_ALLOWED = ["name", "monthly_fee", "price", "wholesale_rate", "sub_client_limit",
+                       "agents_per_client", "voice_clones", "is_active"]
+
+    def _upsert_plan(conn, plan: dict, allowed: list, plan_type: str):
+        pid = plan.get("id")
+        if not pid:
+            return
+        # Map monthly_fee → price for backward compat
+        if "monthly_fee" in plan and "price" not in plan:
+            plan["price"] = plan["monthly_fee"]
+        updates = {k: v for k, v in plan.items() if k in allowed and k != "id"}
+        updates["plan_type"] = plan_type
+        if not updates:
+            return
+        exists = conn.execute(
+            f"SELECT id FROM plans WHERE id={_ph}", (pid,)
+        ).fetchone()
+        if exists:
+            set_clause = ", ".join(f"{k}={_ph}" for k in updates)
+            vals = list(updates.values()) + [pid]
+            conn.execute(f"UPDATE plans SET {set_clause} WHERE id={_ph}", vals)
+        else:
+            cols = ", ".join(["id", "plan_type"] + list(updates.keys()))
+            placeholders = ", ".join([_ph] * (2 + len(updates)))
+            vals = [pid, plan_type] + list(updates.values())
+            conn.execute(
+                f"INSERT INTO plans ({cols}) VALUES ({placeholders})", vals
+            )
+
+    with db() as conn:
+        for p in direct_plans:
+            _upsert_plan(conn, p, _DIRECT_ALLOWED, "direct")
+        for p in agency_plans:
+            _upsert_plan(conn, p, _AGENCY_ALLOWED, "agency")
+
+    logger.info("Platform pricing updated by %s: %d direct, %d agency plans",
+                user.get("email"), len(direct_plans), len(agency_plans))
+    return {"message": "Pricing updated", "direct": len(direct_plans), "agency": len(agency_plans)}
+
+
+@router.get("/pricing/recharge-packs")
+async def get_recharge_packs(user: dict = Depends(_require_super_admin)):
+    """Return all recharge packs ordered by sort_order."""
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT * FROM recharge_packs ORDER BY sort_order"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.warning("recharge_packs table not ready: %s", exc)
+        return []
+
+
+@router.put("/pricing/recharge-packs")
+async def update_recharge_packs(body: dict, user: dict = Depends(_require_super_admin)):
+    """
+    Upsert all recharge packs.
+    Body: { packs: [{ id, name, price, bonus, is_active }] }
+    """
+    packs = body.get("packs", [])
+    _ALLOWED = ["name", "price", "bonus", "is_active", "sort_order"]
+
+    with db() as conn:
+        for idx, pack in enumerate(packs):
+            pid = pack.get("id")
+            if not pid:
+                continue
+            updates = {k: v for k, v in pack.items() if k in _ALLOWED}
+            if "sort_order" not in updates:
+                updates["sort_order"] = idx
+            exists = conn.execute(
+                f"SELECT id FROM recharge_packs WHERE id={_ph}", (pid,)
+            ).fetchone()
+            if exists:
+                set_clause = ", ".join(f"{k}={_ph}" for k in updates)
+                vals = list(updates.values()) + [pid]
+                conn.execute(
+                    f"UPDATE recharge_packs SET {set_clause} WHERE id={_ph}", vals
+                )
+            else:
+                cols = ", ".join(["id"] + list(updates.keys()))
+                placeholders = ", ".join([_ph] * (1 + len(updates)))
+                vals = [pid] + list(updates.values())
+                conn.execute(
+                    f"INSERT INTO recharge_packs ({cols}) VALUES ({placeholders})", vals
+                )
+
+    logger.info("Recharge packs updated by %s: %d packs", user.get("email"), len(packs))
+    return {"message": "Recharge packs updated", "count": len(packs)}
+
+
+# ═══════════════════════════════════════════════════════════════════
 # PLATFORM SUPPORT TICKETS (tenant → super admin)
 # ═══════════════════════════════════════════════════════════════════
 

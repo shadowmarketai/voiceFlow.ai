@@ -54,6 +54,7 @@ const CrossTenantUsersPage = lazy(() => import('./modules/admin/CrossTenantUsers
 // Plans page removed — VoiceFlow AI is prepaid wallet only
 // Feature Flags page removed — per-tenant feature toggles live on Tenant Detail
 const SuperAdminSettingsPage = lazy(() => import('./modules/admin/SuperAdminSettingsPage'))
+const PlatformPricingPage = lazy(() => import('./modules/admin/PlatformPricingPage'))
 
 const PlatformSupport = lazy(() => import('./pages/PlatformSupport'))
 
@@ -106,6 +107,7 @@ function App() {
           <Route path="users" element={<S><CrossTenantUsersPage /></S>} />
           <Route path="settings" element={<S><SuperAdminSettingsPage /></S>} />
           <Route path="pricing" element={<S><AgencyPricingPage /></S>} />
+          <Route path="platform-pricing" element={<S><PlatformPricingPage /></S>} />
           <Route path="quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
         </Route>
