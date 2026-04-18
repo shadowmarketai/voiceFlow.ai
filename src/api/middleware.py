@@ -82,6 +82,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if not self.enabled:
             return await call_next(request)
 
+        # Skip rate limiting for WebSocket upgrades — BaseHTTPMiddleware breaks WS
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
+
         client_ip = request.client.host if request.client else "unknown"
         path = request.url.path
         token_data = _extract_token_data(request)
@@ -134,6 +138,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add comprehensive security headers to all responses."""
 
     async def dispatch(self, request: Request, call_next):
+        # Skip for WebSocket upgrades — BaseHTTPMiddleware breaks WS connections
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
@@ -174,6 +181,8 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
         self.max_size = max_size
 
     async def dispatch(self, request: Request, call_next):
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > self.max_size:
             return JSONResponse(
