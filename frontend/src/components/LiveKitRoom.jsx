@@ -14,7 +14,7 @@ import useDeepgramStream from '../hooks/useDeepgramStream';
 import { qualityAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
-function CallUI({ onEnd, language = 'en', agentId }) {
+function CallUI({ onEnd, language = 'en', agentId, onTranscript }) {
   const room = useRoomContext();
   const participants = useParticipants();
   const [muted, setMuted] = useState(false);
@@ -33,6 +33,11 @@ function CallUI({ onEnd, language = 'en', agentId }) {
     return () => stopStt();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Feed STT results back to parent (Testing page) for the Live Transcription panel
+  useEffect(() => {
+    if (onTranscript) onTranscript({ partial, finals });
+  }, [partial, finals, onTranscript]);
 
   // Track duration
   useEffect(() => {
@@ -183,7 +188,7 @@ function CallUI({ onEnd, language = 'en', agentId }) {
   );
 }
 
-export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assistant', userName = 'User', language = 'en', onEnd }) {
+export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assistant', userName = 'User', language = 'en', onEnd, onCallStateChange, onTranscript }) {
   const [token, setToken] = useState(null);
   const [livekitUrl, setLivekitUrl] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -202,6 +207,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
       setToken(data.token);
       setLivekitUrl(data.livekit_url);
       setConnected(true);
+      onCallStateChange?.(true);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to connect to LiveKit');
     }
@@ -211,8 +217,9 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
   const handleEnd = useCallback(() => {
     setToken(null);
     setConnected(false);
+    onCallStateChange?.(false);
     onEnd?.();
-  }, [onEnd]);
+  }, [onEnd, onCallStateChange]);
 
   // Not connected — show start button
   if (!connected || !token) {
@@ -254,7 +261,7 @@ export default function LiveKitVoiceRoom({ agentId = '', agentName = 'AI Assista
       video={false}
       onDisconnected={handleEnd}
     >
-      <CallUI onEnd={handleEnd} language={language} agentId={agentId} />
+      <CallUI onEnd={handleEnd} language={language} agentId={agentId} onTranscript={onTranscript} />
     </LKRoom>
   );
 }

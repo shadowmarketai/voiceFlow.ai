@@ -67,6 +67,10 @@ export default function Testing() {
   const [sending, setSending] = useState(false)
   const chatEndRef = useRef(null)
 
+  /* ── LiveKit call state ──────────────────────────────────────── */
+  const [liveCallActive, setLiveCallActive] = useState(false)
+  const [liveTranscript, setLiveTranscript] = useState({ partial: '', finals: [] })
+
   /* ── Derived agent config ────────────────────────────────────── */
   const agentConfig = useMemo(() => {
     if (!currentAgent) return {}
@@ -147,11 +151,24 @@ export default function Testing() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [conversation])
 
-  /* ── Deepgram STT ────────────────────────────────────────────── */
+  /* ── Deepgram STT (disabled during LiveKit call to avoid mic conflict) */
   const { start, stop, recording, partial, finals, error: sttError } =
     useDeepgramStream({ language: agentConfig.langCode || '', diarize: false })
 
-  const toggleRecording = () => { recording ? stop() : start() }
+  const toggleRecording = () => {
+    if (liveCallActive) return  // mic is owned by LiveKit during call
+    recording ? stop() : start()
+  }
+
+  // Stop Testing page's STT when LiveKit call starts
+  useEffect(() => {
+    if (liveCallActive && recording) stop()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveCallActive])
+
+  // Choose which transcription to show: LiveKit's during call, own otherwise
+  const displayPartial = liveCallActive ? liveTranscript.partial : partial
+  const displayFinals = liveCallActive ? liveTranscript.finals : finals
 
   /* ── Auto-send STT finals to LLM ─────────────────────────────── */
   const lastSentRef = useRef(-1)
@@ -347,11 +364,12 @@ export default function Testing() {
           {/* Input bar */}
           <div className="p-4 border-t border-gray-100 bg-white">
             <div className="flex items-center gap-3">
-              <button onClick={toggleRecording} disabled={!currentAgent}
+              <button onClick={toggleRecording} disabled={!currentAgent || liveCallActive}
+                title={liveCallActive ? 'Mic is used by voice call' : recording ? 'Stop recording' : 'Start recording'}
                 className={`p-3 rounded-xl transition-all duration-200 ${
                   recording
                     ? 'bg-red-500 text-white shadow-sm shadow-red-200'
-                    : currentAgent
+                    : (currentAgent && !liveCallActive)
                     ? 'bg-gray-50 text-gray-500 border border-gray-200 hover:bg-gray-100 hover:text-gray-700'
                     : 'bg-gray-50 text-gray-300 border border-gray-100 cursor-not-allowed'
                 }`}
@@ -386,7 +404,7 @@ export default function Testing() {
               <h3 className="text-sm font-semibold text-gray-900">Live Transcription</h3>
             </div>
             <div className="min-h-[160px] p-4 rounded-xl bg-gray-50/80 border border-gray-200/60 space-y-2 max-h-[260px] overflow-y-auto">
-              {finals.map((f, i) => (
+              {displayFinals.map((f, i) => (
                 <p key={i} className="text-sm text-gray-800 leading-relaxed">
                   {f.speaker != null && (
                     <span className="inline-block px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[10px] font-mono mr-1.5">S{f.speaker}</span>
@@ -394,15 +412,15 @@ export default function Testing() {
                   {f.text}
                 </p>
               ))}
-              {partial && <p className="text-sm text-gray-400 italic leading-relaxed">{partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" /></p>}
-              {!finals.length && !partial && (
-                recording ? (
+              {displayPartial && <p className="text-sm text-gray-400 italic leading-relaxed">{displayPartial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" /></p>}
+              {!displayFinals.length && !displayPartial && (
+                (recording || liveCallActive) ? (
                   <div className="flex items-center gap-2.5">
                     <span className="relative flex h-2.5 w-2.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
                       <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
                     </span>
-                    <p className="text-sm text-gray-600">Listening… speak now</p>
+                    <p className="text-sm text-gray-600">{liveCallActive ? 'Voice call active — listening…' : 'Listening… speak now'}</p>
                   </div>
                 ) : (
                   <p className="text-sm text-gray-400">Click the mic and speak — transcripts appear live via Deepgram Nova-2.</p>
@@ -493,7 +511,9 @@ export default function Testing() {
                 agentId={selectedId}
                 agentName={currentAgent?.name || 'AI Agent'}
                 language={agentConfig.langCode || 'en'}
-                onEnd={() => {}}
+                onEnd={() => setLiveCallActive(false)}
+                onCallStateChange={setLiveCallActive}
+                onTranscript={setLiveTranscript}
               />
             </Suspense>
           </motion.div>

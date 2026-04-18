@@ -48,8 +48,13 @@ export default function useDeepgramStream({ language = '', diarize = true } = {}
   const workletNodeRef = useRef(null)
 
   const stop = useCallback(() => {
-    try { wsRef.current?.send?.('close') } catch {}
-    try { wsRef.current?.close?.() } catch {}
+    // Only send close frame if WS is actually open (prevents console errors)
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      try { wsRef.current.send('close') } catch {}
+    }
+    if (wsRef.current?.readyState !== WebSocket.CLOSED) {
+      try { wsRef.current?.close?.() } catch {}
+    }
     try { workletNodeRef.current?.disconnect?.() } catch {}
     try { audioCtxRef.current?.close?.() } catch {}
     streamRef.current?.getTracks?.().forEach((t) => t.stop())
