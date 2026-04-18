@@ -22,8 +22,8 @@ APP_ENV = os.environ.get("APP_ENV", "development")
 
 # Plan-based rate limits
 PLAN_LIMITS = {
-    "starter": {"general": 60, "auth": 10},
-    "pro":     {"general": 300, "auth": 30},
+    "starter": {"general": 300, "auth": 20},
+    "pro":     {"general": 600, "auth": 30},
     "enterprise": {"general": 1000, "auth": 100},
 }
 DEFAULT_PLAN = "starter"
