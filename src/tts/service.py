@@ -3,29 +3,35 @@ VoiceFlow TTS Service
 Main service that orchestrates all TTS engines with intelligent selection
 """
 
-import asyncio
-import time
-import os
-import json
-import uuid
 import base64
-from typing import Optional, Dict, Any, AsyncGenerator, List
+import json
 import logging
+import os
+import time
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from tts.config import (
-    TTSEngine, EmotionType, Language, TamilDialect,
-    TTS_ENGINE_CONFIG, EMOTION_RESPONSE_MAPPING,
-    USE_CASE_ENGINE_MAPPING, LANGUAGE_ENGINE_QUALITY,
-    TTSRequest, TTSResponse, VoiceCloneRequest, VoiceCloneResponse,
-    VoiceConfig
+    EMOTION_RESPONSE_MAPPING,
+    LANGUAGE_ENGINE_QUALITY,
+    TTS_ENGINE_CONFIG,
+    USE_CASE_ENGINE_MAPPING,
+    EmotionType,
+    TTSEngine,
+    TTSRequest,
+    TTSResponse,
+    VoiceCloneRequest,
+    VoiceCloneResponse,
+    VoiceConfig,
 )
-
+from tts.engines.ai4b_fastpitch import AI4BFastPitchEngine
 from tts.engines.base import BaseTTSEngine
+from tts.engines.bhashini_tts_engine import BhashiniTTSEngine
 from tts.engines.indic_parler import IndicParlerTTSEngine
-from tts.engines.openvoice import OpenVoiceV2Engine
-from tts.engines.xtts import XTTSv2Engine
 from tts.engines.indicf5 import IndicF5Engine
+from tts.engines.openvoice import OpenVoiceV2Engine
 from tts.engines.svara import SvaraTTSEngine
+from tts.engines.xtts import XTTSv2Engine
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +48,7 @@ class TTSService:
     - Streaming support
     - Fallback handling
     """
-    
+
     def __init__(self, voices_dir: str = None):
         import os as _os
         if voices_dir is None:
@@ -53,21 +59,23 @@ class TTSService:
             voices_dir = _os.path.abspath(voices_dir)
         self.voices_dir = voices_dir
         os.makedirs(voices_dir, exist_ok=True)
-        
+
         # Initialize engines (lazy loaded)
-        self.engines: Dict[TTSEngine, BaseTTSEngine] = {}
+        self.engines: dict[TTSEngine, BaseTTSEngine] = {}
         self._engine_classes = {
-            TTSEngine.INDIC_PARLER: IndicParlerTTSEngine,
-            TTSEngine.OPENVOICE_V2: OpenVoiceV2Engine,
-            TTSEngine.XTTS_V2: XTTSv2Engine,
-            TTSEngine.INDICF5: IndicF5Engine,
-            TTSEngine.SVARA: SvaraTTSEngine,
+            TTSEngine.INDIC_PARLER:   IndicParlerTTSEngine,
+            TTSEngine.OPENVOICE_V2:   OpenVoiceV2Engine,
+            TTSEngine.XTTS_V2:        XTTSv2Engine,
+            TTSEngine.INDICF5:        IndicF5Engine,
+            TTSEngine.SVARA:          SvaraTTSEngine,
+            TTSEngine.AI4B_FASTPITCH: AI4BFastPitchEngine,
+            TTSEngine.BHASHINI:       BhashiniTTSEngine,
         }
-        
+
         # Cache for cloned voices
-        self.voice_cache: Dict[str, VoiceConfig] = {}
+        self.voice_cache: dict[str, VoiceConfig] = {}
         self._load_voices()
-    
+
     def _load_voices(self):
         """Load existing cloned voices from disk"""
         for voice_id in os.listdir(self.voices_dir):
@@ -76,7 +84,7 @@ class TTSService:
                 with open(meta_path) as f:
                     data = json.load(f)
                     self.voice_cache[voice_id] = VoiceConfig(**data)
-    
+
     async def _get_engine(self, engine_type: TTSEngine) -> BaseTTSEngine:
         """Get or initialize an engine"""
         if engine_type not in self.engines:
@@ -102,13 +110,13 @@ class TTSService:
             self.engines[engine_type] = engine
 
         return self.engines[engine_type]
-    
+
     def select_engine(
         self,
         language: str,
-        emotion: Optional[str] = None,
-        use_case: Optional[str] = None,
-        detected_customer_emotion: Optional[str] = None,
+        emotion: str | None = None,
+        use_case: str | None = None,
+        detected_customer_emotion: str | None = None,
         prefer_low_latency: bool = False
     ) -> TTSEngine:
         """
@@ -120,51 +128,64 @@ class TTSService:
         3. Language quality matrix
         4. Latency preference
         """
-        
+
+        # 0. Bhashini-only languages (not covered by any other engine)
+        if language in self._BHASHINI_ONLY_LANGS:
+            return TTSEngine.BHASHINI
+
         # 1. Check use case mapping
         if use_case and use_case in USE_CASE_ENGINE_MAPPING:
             mapping = USE_CASE_ENGINE_MAPPING[use_case]
             return mapping["primary"]
-        
+
         # 2. Check emotion response mapping
         if detected_customer_emotion and detected_customer_emotion in EMOTION_RESPONSE_MAPPING:
             mapping = EMOTION_RESPONSE_MAPPING[detected_customer_emotion]
             return mapping["engine"]
-        
-        # 3. Check language quality
+
+        # 3. Check language quality matrix
         if language in LANGUAGE_ENGINE_QUALITY:
             quality_scores = LANGUAGE_ENGINE_QUALITY[language]
-            # Get best engine for this language
             best_engine = max(quality_scores, key=quality_scores.get)
             return best_engine
-        
+
         # 4. Latency preference
         if prefer_low_latency:
-            return TTSEngine.OPENVOICE_V2
-        
+            return TTSEngine.AI4B_FASTPITCH
+
         # Default
         return TTSEngine.INDIC_PARLER
-    
+
     def get_emotion_for_response(
         self,
         detected_customer_emotion: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get the appropriate AI response emotion based on detected customer emotion
         """
         if detected_customer_emotion in EMOTION_RESPONSE_MAPPING:
             return EMOTION_RESPONSE_MAPPING[detected_customer_emotion]
-        
+
         return EMOTION_RESPONSE_MAPPING["neutral"]
-    
-    # Fallback order when a selected engine fails
+
+    # Fallback order when a selected engine fails.
+    # Bhashini and AI4B FastPitch come early — both are API-only (no GPU needed)
+    # and cover the widest language range, so they rarely fail on coverage grounds.
     ENGINE_FALLBACK_ORDER = [
         TTSEngine.INDIC_PARLER,
+        TTSEngine.BHASHINI,
+        TTSEngine.AI4B_FASTPITCH,
         TTSEngine.OPENVOICE_V2,
         TTSEngine.INDICF5,
         TTSEngine.SVARA,
         TTSEngine.XTTS_V2,
     ]
+
+    # Languages ONLY supported by Bhashini (not in other engines)
+    _BHASHINI_ONLY_LANGS = {
+        "bodo", "dogri", "kashmiri", "konkani",
+        "maithili", "manipuri", "sindhi",
+    }
 
     async def _get_engine_with_fallback(
         self,
@@ -293,7 +314,7 @@ class TTSService:
             sample_rate=request.sample_rate,
             format=request.output_format
         )
-    
+
     async def synthesize_stream(
         self,
         request: TTSRequest
@@ -310,9 +331,9 @@ class TTSService:
         engine, engine_type = await self._get_engine_with_fallback(
             engine_type, request.language.value
         )
-        
+
         emotion = request.emotion or EmotionType.NEUTRAL
-        
+
         async for chunk in engine.synthesize_stream(
             text=request.text,
             language=request.language.value,
@@ -322,7 +343,7 @@ class TTSService:
             pitch=request.pitch
         ):
             yield chunk
-    
+
     async def clone_voice(self, request: VoiceCloneRequest) -> VoiceCloneResponse:
         """
         Clone a voice from reference audio
@@ -332,22 +353,21 @@ class TTSService:
             reference_audio = base64.b64decode(request.reference_audio_base64)
         elif request.reference_audio_url:
             import aiohttp
-            async with aiohttp.ClientSession() as session:
-                async with session.get(request.reference_audio_url) as resp:
-                    reference_audio = await resp.read()
+            async with aiohttp.ClientSession() as session, session.get(request.reference_audio_url) as resp:
+                reference_audio = await resp.read()
         else:
             raise ValueError("No reference audio provided")
-        
+
         # Get engine
         engine = await self._get_engine(request.engine)
-        
+
         # Clone voice
         voice_id = await engine.clone_voice(
             reference_audio=reference_audio,
             voice_name=request.name,
             language=request.language.value
         )
-        
+
         # Save to cache
         voice_config = VoiceConfig(
             voice_id=voice_id,
@@ -359,7 +379,7 @@ class TTSService:
             created_at=time.strftime("%Y-%m-%d %H:%M:%S")
         )
         self.voice_cache[voice_id] = voice_config
-        
+
         return VoiceCloneResponse(
             voice_id=voice_id,
             name=request.name,
@@ -367,15 +387,15 @@ class TTSService:
             engine=request.engine,
             estimated_ready_seconds=0
         )
-    
-    def list_voices(self) -> List[VoiceConfig]:
+
+    def list_voices(self) -> list[VoiceConfig]:
         """List all available cloned voices"""
         return list(self.voice_cache.values())
-    
-    def get_voice(self, voice_id: str) -> Optional[VoiceConfig]:
+
+    def get_voice(self, voice_id: str) -> VoiceConfig | None:
         """Get a specific voice configuration"""
         return self.voice_cache.get(voice_id)
-    
+
     async def delete_voice(self, voice_id: str) -> bool:
         """Delete a cloned voice"""
         if voice_id in self.voice_cache:
@@ -386,8 +406,8 @@ class TTSService:
             del self.voice_cache[voice_id]
             return True
         return False
-    
-    def get_available_engines(self) -> List[Dict[str, Any]]:
+
+    def get_available_engines(self) -> list[dict[str, Any]]:
         """Get list of available TTS engines with their capabilities"""
         engines = []
         for engine_type, config in TTS_ENGINE_CONFIG.items():
@@ -402,19 +422,19 @@ class TTSService:
                 "license": config.get("license")
             })
         return engines
-    
-    def get_use_case_recommendations(self) -> Dict[str, Any]:
+
+    def get_use_case_recommendations(self) -> dict[str, Any]:
         """Get recommended engines for each use case"""
         return USE_CASE_ENGINE_MAPPING
-    
-    async def health_check(self) -> Dict[str, Any]:
+
+    async def health_check(self) -> dict[str, Any]:
         """Check health of TTS engines"""
         health = {
             "status": "healthy",
             "engines": {},
             "voices_count": len(self.voice_cache)
         }
-        
+
         for engine_type in self._engine_classes.keys():
             try:
                 engine = await self._get_engine(engine_type)
@@ -428,12 +448,12 @@ class TTSService:
                     "status": "error",
                     "error": str(e)
                 }
-        
+
         return health
 
 
 # Singleton instance
-_tts_service: Optional[TTSService] = None
+_tts_service: TTSService | None = None
 
 
 def get_tts_service() -> TTSService:

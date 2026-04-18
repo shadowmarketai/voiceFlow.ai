@@ -1,10 +1,11 @@
 """
 VoiceFlow TTS Configuration
-Supports: Indic Parler-TTS, IndicF5, OpenVoice V2, XTTS-v2, Svara-TTS
+Supports: Indic Parler-TTS, IndicF5, OpenVoice V2, XTTS-v2, Svara-TTS,
+          AI4B FastPitch (HiFiGAN V1), Bhashini/IITM TTS
 """
 
 from enum import Enum
-from typing import Dict, List, Optional
+
 from pydantic import BaseModel
 
 # =============================================================================
@@ -12,11 +13,13 @@ from pydantic import BaseModel
 # =============================================================================
 
 class TTSEngine(str, Enum):
-    INDIC_PARLER = "indic_parler"
-    INDICF5 = "indicf5"
-    OPENVOICE_V2 = "openvoice_v2"
-    XTTS_V2 = "xtts_v2"
-    SVARA = "svara"
+    INDIC_PARLER   = "indic_parler"
+    INDICF5        = "indicf5"
+    OPENVOICE_V2   = "openvoice_v2"
+    XTTS_V2        = "xtts_v2"
+    SVARA          = "svara"
+    AI4B_FASTPITCH = "ai4b_fastpitch"   # FastPitch + HiFiGAN V1 (13 langs)
+    BHASHINI       = "bhashini"          # Bhashini/IITM Dhruva API (22+ langs)
 
 
 class EmotionType(str, Enum):
@@ -72,12 +75,12 @@ TTS_ENGINE_CONFIG = {
         "huggingface_link": "ai4bharat/indic-parler-tts",
         "license": "Open Source",
         "languages": [
-            "ta", "hi", "te", "kn", "ml", "en", "bn", "mr", "gu", "pa", 
+            "ta", "hi", "te", "kn", "ml", "en", "bn", "mr", "gu", "pa",
             "or", "as", "bodo", "dogri", "kashmiri", "konkani", "maithili",
             "manipuri", "nepali", "sanskrit", "sindhi"
         ],
         "emotions": [
-            "happy", "sad", "angry", "fear", "surprise", "disgust", 
+            "happy", "sad", "angry", "fear", "surprise", "disgust",
             "neutral", "command", "news", "narration", "conversation", "proper_noun"
         ],
         "latency_ms": {"min": 200, "max": 500},
@@ -89,7 +92,7 @@ TTS_ENGINE_CONFIG = {
         "quality_mos": 4.3,
         "best_for": ["emotions", "indian_languages", "podcasts", "audiobooks"]
     },
-    
+
     TTSEngine.INDICF5: {
         "model_id": "ai4bharat/IndicF5",
         "huggingface_link": "ai4bharat/IndicF5",
@@ -105,7 +108,7 @@ TTS_ENGINE_CONFIG = {
         "quality_mos": 4.6,
         "best_for": ["highest_quality", "education", "e_learning", "research"]
     },
-    
+
     TTSEngine.OPENVOICE_V2: {
         "model_id": "myshell-ai/OpenVoiceV2",
         "huggingface_link": "myshell-ai/OpenVoiceV2",
@@ -122,13 +125,13 @@ TTS_ENGINE_CONFIG = {
         "quality_mos": 4.2,
         "best_for": ["real_time", "voice_agents", "commercial", "multilingual"]
     },
-    
+
     TTSEngine.XTTS_V2: {
         "model_id": "coqui/XTTS-v2",
         "huggingface_link": "coqui/XTTS-v2",
         "license": "Coqui Public License",
         "languages": [
-            "en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", 
+            "en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru",
             "nl", "cs", "ar", "zh", "ja", "hu", "ko", "hi"
         ],
         "emotions": ["style_transfer"],  # Transfers emotion from reference
@@ -141,7 +144,7 @@ TTS_ENGINE_CONFIG = {
         "quality_mos": 4.3,
         "best_for": ["production", "customer_service", "cross_lingual"]
     },
-    
+
     TTSEngine.SVARA: {
         "model_id": "canopy-ai/svara-tts",
         "huggingface_link": "community-release",
@@ -160,7 +163,50 @@ TTS_ENGINE_CONFIG = {
         "quality_mos": 4.4,
         "model_sizes": ["150M", "400M", "1B", "3B"],
         "best_for": ["meditation", "wellness", "natural_rhythm", "edge_devices"]
-    }
+    },
+
+    TTSEngine.AI4B_FASTPITCH: {
+        "model_id": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4",
+        "huggingface_link": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4",
+        "license": "Open Source (MIT / CC-BY-4.0)",
+        "languages": [
+            "ta", "te", "kn", "ml", "hi", "mr", "bn", "gu", "pa", "or", "as", "en", "sa"
+        ],
+        "emotions": ["neutral"],
+        "latency_ms": {"min": 80, "max": 200},
+        "gpu_vram_gb": 2,
+        "cpu_capable": True,
+        "streaming": True,
+        "min_audio_seconds": 0,
+        "clone_speed_seconds": 0,
+        "quality_mos": 4.2,
+        "architecture": "FastPitch + HiFiGAN V1",
+        "api_fallback": "bhashini_dhruva",
+        "best_for": ["telephony", "ivr", "low_latency", "api_free"]
+    },
+
+    TTSEngine.BHASHINI: {
+        "model_id": "ai4bharat/indic-tts-coqui-dravidian-gpu--t4",
+        "huggingface_link": "bhashini.gov.in/ulca",
+        "license": "Government of India — Free for Indian entities",
+        "languages": [
+            "ta", "te", "kn", "ml", "hi", "mr", "bn", "gu", "pa", "or", "as",
+            "en", "sa", "bodo", "dogri", "kashmiri", "konkani", "maithili",
+            "manipuri", "nepali", "sindhi"
+        ],
+        "emotions": ["neutral"],
+        "latency_ms": {"min": 100, "max": 300},
+        "gpu_vram_gb": 0,
+        "cpu_capable": True,
+        "streaming": True,
+        "min_audio_seconds": 0,
+        "clone_speed_seconds": 0,
+        "quality_mos": 4.1,
+        "voices_per_language": {"male": 1, "female": 1},
+        "requires_keys": ["BHASHINI_USER_ID", "BHASHINI_API_KEY"],
+        "register_url": "https://bhashini.gov.in/ulca/user/register",
+        "best_for": ["22plus_languages", "government_compliance", "zero_cost", "telephony"]
+    },
 }
 
 
@@ -282,16 +328,22 @@ USE_CASE_ENGINE_MAPPING = {
         "reason": "Command mode for clear instructions"
     },
     "ivr_voice": {
-        "primary": TTSEngine.INDICF5,
-        "fallback": TTSEngine.INDIC_PARLER,
-        "default_emotion": "news",
-        "reason": "Highest intelligibility (4.7/5.0 MOS)"
+        "primary": TTSEngine.AI4B_FASTPITCH,
+        "fallback": TTSEngine.BHASHINI,
+        "default_emotion": "neutral",
+        "reason": "FastPitch — lowest latency (80-200ms), telephony-native 8kHz WAV"
     },
     "real_time_agent": {
-        "primary": TTSEngine.OPENVOICE_V2,
-        "fallback": TTSEngine.INDICF5,
+        "primary": TTSEngine.AI4B_FASTPITCH,
+        "fallback": TTSEngine.OPENVOICE_V2,
         "default_emotion": "neutral",
-        "reason": "Ultra-low latency (<150ms)"
+        "reason": "FastPitch API mode — ultra-low latency, no GPU needed"
+    },
+    "indic_telephony": {
+        "primary": TTSEngine.BHASHINI,
+        "fallback": TTSEngine.AI4B_FASTPITCH,
+        "default_emotion": "neutral",
+        "reason": "22+ languages FREE, telephony-ready 8kHz, government-hosted"
     },
     "audiobook": {
         "primary": TTSEngine.INDIC_PARLER,
@@ -319,49 +371,96 @@ USE_CASE_ENGINE_MAPPING = {
 # =============================================================================
 
 LANGUAGE_ENGINE_QUALITY = {
-    # Language: {engine: quality_score}
+    # Language: {engine: quality_score (1-5)}
     "ta": {  # Tamil
-        TTSEngine.INDICF5: 5,
-        TTSEngine.INDIC_PARLER: 5,
-        TTSEngine.SVARA: 5,
-        TTSEngine.OPENVOICE_V2: 4,
-        TTSEngine.XTTS_V2: 2  # Needs fine-tuning
+        TTSEngine.INDICF5:        5,
+        TTSEngine.INDIC_PARLER:   5,
+        TTSEngine.SVARA:          5,
+        TTSEngine.AI4B_FASTPITCH: 4,
+        TTSEngine.BHASHINI:       4,
+        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.XTTS_V2:        2,
     },
     "hi": {  # Hindi
-        TTSEngine.INDICF5: 5,
-        TTSEngine.INDIC_PARLER: 5,
-        TTSEngine.SVARA: 5,
-        TTSEngine.XTTS_V2: 5,
-        TTSEngine.OPENVOICE_V2: 4
+        TTSEngine.INDICF5:        5,
+        TTSEngine.INDIC_PARLER:   5,
+        TTSEngine.SVARA:          5,
+        TTSEngine.XTTS_V2:        5,
+        TTSEngine.AI4B_FASTPITCH: 4,
+        TTSEngine.BHASHINI:       4,
+        TTSEngine.OPENVOICE_V2:   4,
     },
     "te": {  # Telugu
-        TTSEngine.INDICF5: 5,
-        TTSEngine.INDIC_PARLER: 5,
-        TTSEngine.SVARA: 5,
-        TTSEngine.OPENVOICE_V2: 4,
-        TTSEngine.XTTS_V2: 2
+        TTSEngine.INDICF5:        5,
+        TTSEngine.INDIC_PARLER:   5,
+        TTSEngine.SVARA:          5,
+        TTSEngine.AI4B_FASTPITCH: 4,
+        TTSEngine.BHASHINI:       4,
+        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.XTTS_V2:        2,
     },
     "kn": {  # Kannada
-        TTSEngine.INDICF5: 5,
-        TTSEngine.INDIC_PARLER: 5,
-        TTSEngine.SVARA: 5,
-        TTSEngine.OPENVOICE_V2: 4,
-        TTSEngine.XTTS_V2: 2
+        TTSEngine.INDICF5:        5,
+        TTSEngine.INDIC_PARLER:   5,
+        TTSEngine.SVARA:          5,
+        TTSEngine.AI4B_FASTPITCH: 4,
+        TTSEngine.BHASHINI:       4,
+        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.XTTS_V2:        2,
     },
     "ml": {  # Malayalam
-        TTSEngine.INDICF5: 5,
-        TTSEngine.INDIC_PARLER: 5,
-        TTSEngine.SVARA: 5,
-        TTSEngine.OPENVOICE_V2: 4,
-        TTSEngine.XTTS_V2: 2
+        TTSEngine.INDICF5:        5,
+        TTSEngine.INDIC_PARLER:   5,
+        TTSEngine.SVARA:          5,
+        TTSEngine.AI4B_FASTPITCH: 4,
+        TTSEngine.BHASHINI:       4,
+        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.XTTS_V2:        2,
     },
     "en": {  # English
-        TTSEngine.XTTS_V2: 5,
-        TTSEngine.OPENVOICE_V2: 5,
-        TTSEngine.INDIC_PARLER: 4,  # Indian accent
-        TTSEngine.INDICF5: 3,
-        TTSEngine.SVARA: 4
-    }
+        TTSEngine.XTTS_V2:        5,
+        TTSEngine.OPENVOICE_V2:   5,
+        TTSEngine.INDIC_PARLER:   4,
+        TTSEngine.SVARA:          4,
+        TTSEngine.AI4B_FASTPITCH: 3,
+        TTSEngine.BHASHINI:       3,
+        TTSEngine.INDICF5:        3,
+    },
+    # Languages only covered by Bhashini / AI4B FastPitch
+    "bn": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    "mr": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    "gu": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    "pa": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    "or": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    "as": {
+        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
+    },
+    # 22nd-language — Bhashini only
+    "bodo":     {TTSEngine.BHASHINI: 4},
+    "dogri":    {TTSEngine.BHASHINI: 4},
+    "kashmiri": {TTSEngine.BHASHINI: 4},
+    "konkani":  {TTSEngine.BHASHINI: 4},
+    "maithili": {TTSEngine.BHASHINI: 4},
+    "manipuri": {TTSEngine.BHASHINI: 4},
+    "nepali":   {TTSEngine.BHASHINI: 4, TTSEngine.SVARA: 4},
+    "sindhi":   {TTSEngine.BHASHINI: 4},
+    "sa":       {TTSEngine.BHASHINI: 4, TTSEngine.AI4B_FASTPITCH: 3},
 }
 
 
@@ -417,26 +516,26 @@ class VoiceConfig(BaseModel):
     voice_id: str
     name: str
     language: Language
-    dialect: Optional[TamilDialect] = None
+    dialect: TamilDialect | None = None
     engine: TTSEngine
-    reference_audio_path: Optional[str] = None
-    clone_audio_duration: Optional[float] = None
-    created_at: Optional[str] = None
-    
-    
+    reference_audio_path: str | None = None
+    clone_audio_duration: float | None = None
+    created_at: str | None = None
+
+
 class TTSRequest(BaseModel):
     """Request for TTS generation"""
     text: str
     language: Language = Language.TAMIL
-    dialect: Optional[TamilDialect] = None
-    emotion: Optional[EmotionType] = EmotionType.NEUTRAL
-    engine: Optional[TTSEngine] = None
-    voice_id: Optional[str] = None
-    use_case: Optional[str] = None
-    detected_customer_emotion: Optional[str] = None
-    pace: Optional[float] = 1.0  # 0.5 to 2.0
-    pitch: Optional[float] = 1.0  # 0.5 to 2.0
-    energy: Optional[str] = "normal"
+    dialect: TamilDialect | None = None
+    emotion: EmotionType | None = EmotionType.NEUTRAL
+    engine: TTSEngine | None = None
+    voice_id: str | None = None
+    use_case: str | None = None
+    detected_customer_emotion: str | None = None
+    pace: float | None = 1.0  # 0.5 to 2.0
+    pitch: float | None = 1.0  # 0.5 to 2.0
+    energy: str | None = "normal"
     streaming: bool = False
     output_format: str = "wav"  # wav, mp3
     sample_rate: int = 22050
@@ -444,8 +543,8 @@ class TTSRequest(BaseModel):
 
 class TTSResponse(BaseModel):
     """Response from TTS generation"""
-    audio_url: Optional[str] = None
-    audio_base64: Optional[str] = None
+    audio_url: str | None = None
+    audio_base64: str | None = None
     duration_seconds: float
     engine_used: TTSEngine
     emotion_used: str
@@ -458,9 +557,9 @@ class VoiceCloneRequest(BaseModel):
     """Request to clone a voice"""
     name: str
     language: Language
-    dialect: Optional[TamilDialect] = None
-    reference_audio_base64: Optional[str] = None
-    reference_audio_url: Optional[str] = None
+    dialect: TamilDialect | None = None
+    reference_audio_base64: str | None = None
+    reference_audio_url: str | None = None
     engine: TTSEngine = TTSEngine.OPENVOICE_V2
 
 
@@ -470,4 +569,4 @@ class VoiceCloneResponse(BaseModel):
     name: str
     status: str  # processing, ready, failed
     engine: TTSEngine
-    estimated_ready_seconds: Optional[int] = None
+    estimated_ready_seconds: int | None = None

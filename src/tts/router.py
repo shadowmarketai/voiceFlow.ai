@@ -3,17 +3,22 @@ VoiceFlow TTS API Router
 Adapted from tts_endpoints.py — imports fixed for VoiceFlow src/ structure
 """
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
-from typing import Optional, List
 import logging
 
-from tts.service import get_tts_service
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
+
 from tts.config import (
-    TTSEngine, EmotionType, Language, TamilDialect,
-    TTSRequest, TTSResponse, VoiceCloneRequest, VoiceCloneResponse,
-    VoiceConfig, EMOTION_RESPONSE_MAPPING
+    EMOTION_RESPONSE_MAPPING,
+    Language,
+    TamilDialect,
+    TTSRequest,
+    TTSResponse,
+    VoiceCloneRequest,
+    VoiceCloneResponse,
+    VoiceConfig,
 )
+from tts.service import get_tts_service
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +65,8 @@ async def synthesize_emotion_aware(
     text: str,
     language: Language = Language.TAMIL,
     detected_customer_emotion: str = Query(..., description="Detected emotion from customer speech"),
-    use_case: Optional[str] = Query(None),
-    dialect: Optional[TamilDialect] = None
+    use_case: str | None = Query(None),
+    dialect: TamilDialect | None = None
 ):
     """Emotion-aware synthesis that responds appropriately to detected customer emotion."""
     try:
@@ -94,7 +99,7 @@ async def clone_voice(request: VoiceCloneRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@tts_router.get("/voices", response_model=List[VoiceConfig])
+@tts_router.get("/voices", response_model=list[VoiceConfig])
 async def list_voices():
     """List all available cloned voices."""
     return get_tts_service().list_voices()
@@ -168,27 +173,37 @@ async def list_languages():
     return {
         "ta": {
             "name": "Tamil",
-            "native_support": ["indic_parler", "indicf5", "svara", "openvoice_v2"],
+            "native_support": ["indic_parler", "indicf5", "svara", "ai4b_fastpitch", "bhashini", "openvoice_v2"],
             "dialects": [
                 {"code": "chennai",     "name": "Chennai/North Tamil Nadu"},
                 {"code": "kongu",       "name": "Kongu (Coimbatore)"},
                 {"code": "madurai",     "name": "Madurai/Central"},
                 {"code": "tirunelveli", "name": "Tirunelveli/Southern"},
                 {"code": "standard",    "name": "Standard/Literary"},
-            ]
+            ],
         },
-        "hi": {"name": "Hindi",     "native_support": ["indic_parler", "indicf5", "xtts_v2", "openvoice_v2"], "dialects": []},
-        "te": {"name": "Telugu",    "native_support": ["indic_parler", "indicf5", "openvoice_v2"], "dialects": []},
-        "kn": {"name": "Kannada",   "native_support": ["indic_parler", "indicf5", "openvoice_v2"], "dialects": []},
-        "ml": {"name": "Malayalam", "native_support": ["indic_parler", "indicf5", "openvoice_v2"], "dialects": []},
-        "en": {"name": "English",   "native_support": ["xtts_v2", "openvoice_v2", "indic_parler"],
+        "hi": {"name": "Hindi",     "native_support": ["indic_parler", "indicf5", "xtts_v2", "ai4b_fastpitch", "bhashini", "openvoice_v2"], "dialects": []},
+        "te": {"name": "Telugu",    "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini", "openvoice_v2"], "dialects": []},
+        "kn": {"name": "Kannada",   "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini", "openvoice_v2"], "dialects": []},
+        "ml": {"name": "Malayalam", "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini", "openvoice_v2"], "dialects": []},
+        "en": {"name": "English",   "native_support": ["xtts_v2", "openvoice_v2", "indic_parler", "ai4b_fastpitch"],
                "notes": "Indic Parler-TTS provides Indian English accent"},
-        "bn": {"name": "Bengali",   "native_support": ["indic_parler", "indicf5"], "dialects": []},
-        "mr": {"name": "Marathi",   "native_support": ["indic_parler", "indicf5"], "dialects": []},
-        "gu": {"name": "Gujarati",  "native_support": ["indic_parler", "indicf5"], "dialects": []},
-        "pa": {"name": "Punjabi",   "native_support": ["indic_parler", "indicf5"], "dialects": []},
-        "or": {"name": "Odia",      "native_support": ["indic_parler", "indicf5"], "dialects": []},
-        "as": {"name": "Assamese",  "native_support": ["indic_parler", "indicf5"], "dialects": []},
+        "bn": {"name": "Bengali",   "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        "mr": {"name": "Marathi",   "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        "gu": {"name": "Gujarati",  "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        "pa": {"name": "Punjabi",   "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        "or": {"name": "Odia",      "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        "as": {"name": "Assamese",  "native_support": ["indic_parler", "indicf5", "ai4b_fastpitch", "bhashini"], "dialects": []},
+        # Bhashini-only (22nd-language coverage)
+        "bodo":     {"name": "Bodo",      "native_support": ["bhashini"], "dialects": []},
+        "dogri":    {"name": "Dogri",     "native_support": ["bhashini"], "dialects": []},
+        "kashmiri": {"name": "Kashmiri",  "native_support": ["bhashini"], "dialects": []},
+        "konkani":  {"name": "Konkani",   "native_support": ["bhashini"], "dialects": []},
+        "maithili": {"name": "Maithili",  "native_support": ["bhashini"], "dialects": []},
+        "manipuri": {"name": "Manipuri",  "native_support": ["bhashini"], "dialects": []},
+        "nepali":   {"name": "Nepali",    "native_support": ["bhashini", "svara"], "dialects": []},
+        "sindhi":   {"name": "Sindhi",    "native_support": ["bhashini"], "dialects": []},
+        "sa":       {"name": "Sanskrit",  "native_support": ["bhashini", "ai4b_fastpitch"], "dialects": []},
     }
 
 
