@@ -76,8 +76,14 @@ export default function Testing() {
     if (!currentAgent) return {}
     const cfg = currentAgent.config || {}
     const lang = currentAgent.language || ''
+    // Build full system prompt: base prompt + knowledge context
+    let fullPrompt = cfg.prompt || 'You are a helpful AI voice assistant. Keep replies concise.'
+    if (cfg.knowledgeContext) {
+      fullPrompt += `\n\n## KNOWLEDGE BASE\nUse the following information to answer questions accurately. If a question is not covered here, say you'll find out and get back to them.\n\n${cfg.knowledgeContext}`
+    }
     return {
-      systemPrompt: cfg.prompt || 'You are a helpful AI voice assistant. Keep replies concise.',
+      systemPrompt: fullPrompt,
+      firstMessage: cfg.firstMessage || '',
       provider: cfg.llmProvider || 'auto',
       voice: cfg.voice || 'nova',
       langCode: LANG_MAP[lang] || LANG_MAP[lang.split('+')[0]?.trim()] || 'en',
@@ -126,10 +132,25 @@ export default function Testing() {
       .finally(() => setAgentsLoading(false))
   }, [])
 
+  /* ── Show agent's first message when selected ─────────────────── */
+  const firstMsgShownRef = useRef('')
+  useEffect(() => {
+    if (!currentAgent || firstMsgShownRef.current === currentAgent.id) return
+    const fm = currentAgent.config?.firstMessage
+    if (fm) {
+      firstMsgShownRef.current = currentAgent.id
+      const ts = new Date().toLocaleTimeString()
+      setConversation([{ role: 'agent', text: fm, timestamp: ts, intent: 'greeting' }])
+      if (ttsEnabled) playTTS(fm, currentAgent.config?.voice || 'nova', LANG_MAP[currentAgent.language] || 'en')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAgent])
+
   /* ── Sync currentAgent when dropdown changes ─────────────────── */
   const handleSelectAgent = (id) => {
     setSelectedId(id)
-    setConversation([]) // clear chat when switching
+    setConversation([])
+    firstMsgShownRef.current = '' // reset so first message plays for new agent
     if (!id) { setCurrentAgent(null); return }
     const found = agents.find(a => a.id === id) ||
                   (currentAgent?.id === id ? currentAgent : null)
