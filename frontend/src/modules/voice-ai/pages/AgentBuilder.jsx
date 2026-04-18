@@ -5,13 +5,14 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import CostCalculator from '../components/CostCalculator';
 import AgentVoicePicker from '../components/AgentVoicePicker';
 import PipelineSelector, { PRESET_PIPELINE_MAP } from '../components/PipelineSelector';
 import { useAuth } from '../../../contexts/AuthContext';
-import { agentsAPI } from '../../../services/api';
+import { agentsAPI, voiceAgentAPI } from '../../../services/api';
 import {
   Bot, Mic, Brain, FileText, Webhook, Settings, Play, Pause,
   Trash2, Plus, Copy, Check, ChevronDown, ChevronRight, Save,
@@ -21,7 +22,8 @@ import {
   SlidersHorizontal, MessageSquare, AlertCircle, ArrowRight,
   Headphones, Languages, PhoneCall, PhoneOff, ToggleLeft,
   ToggleRight, Send, ExternalLink, Database, Calendar, Link2,
-  CreditCard, Users, Target, Radio, AudioLines, Wrench
+  CreditCard, Users, Target, Radio, AudioLines, Wrench,
+  UploadCloud, PenLine, Link, ExternalLink as ExternalLinkIcon,
 } from 'lucide-react';
 
 /* ─── Toggle Component — Green=ON, Red=OFF, pill style ────────── */
@@ -379,6 +381,110 @@ export default function AgentBuilder() {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [webhookHeaders, setWebhookHeaders] = useState('');
   const [knowledgeLinked, setKnowledgeLinked] = useState(false);
+
+  // ── Knowledge Base (real data) ──
+  const [kbDocs,         setKbDocs]         = useState([]);
+  const [kbLoading,      setKbLoading]      = useState(false);
+  const [kbMethod,       setKbMethod]       = useState(null); // null | 'upload' | 'text' | 'scrape'
+  const [kbDocType,      setKbDocType]      = useState('document');
+  const [kbUploads,      setKbUploads]      = useState([]);
+  const [kbDragging,     setKbDragging]     = useState(false);
+  const [kbScrapeUrl,    setKbScrapeUrl]    = useState('');
+  const [kbIsScraping,   setKbIsScraping]   = useState(false);
+  const [kbTitle,        setKbTitle]        = useState('');
+  const [kbContent,      setKbContent]      = useState('');
+  const [kbQuestion,     setKbQuestion]     = useState('');
+  const [kbAnswer,       setKbAnswer]       = useState('');
+  const [kbIsAdding,     setKbIsAdding]     = useState(false);
+  const kbUploadRef = React.useRef(null);
+
+  // Load KB docs whenever agent tab becomes active and agentId is known
+  const loadKbDocs = React.useCallback(() => {
+    if (!agentId) return;
+    setKbLoading(true);
+    voiceAgentAPI.listKnowledge({ agent_id: agentId, scope: 'agent' })
+      .then(({ data }) => { if (Array.isArray(data)) setKbDocs(data); })
+      .catch(() => {})
+      .finally(() => setKbLoading(false));
+  }, [agentId]);
+
+  React.useEffect(() => {
+    if (activeTab === 'tools') loadKbDocs();
+  }, [activeTab, loadKbDocs]);
+
+  const handleKbDelete = async (docId) => {
+    try { await voiceAgentAPI.deleteKnowledge(docId); } catch { /* offline */ }
+    setKbDocs(prev => prev.filter(d => d.id !== docId));
+    toast.success('Removed from knowledge base');
+  };
+
+  const handleKbFiles = (files) => {
+    const valid = files.filter(f => ['.pdf','.docx','.txt','.csv','.xlsx','.xls'].some(e => f.name.toLowerCase().endsWith(e)));
+    if (!valid.length) { toast.error('Unsupported file type'); return; }
+    setKbUploads(prev => {
+      const base = prev.length;
+      valid.forEach((file, idx) => {
+        const i = base + idx;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('doc_type', kbDocType);
+        fd.append('scope', 'agent');
+        if (agentId) fd.append('agent_id', agentId);
+        voiceAgentAPI.uploadKnowledge(fd, ev => {
+          const pct = Math.round((ev.loaded / ev.total) * 100);
+          setKbUploads(p => p.map((u, j) => j === i ? { ...u, progress: pct } : u));
+        })
+          .then(({ data }) => {
+            setKbUploads(p => p.map((u, j) => j === i ? { ...u, status: 'done', progress: 100 } : u));
+            toast.success(`"${data.title}" added (${data.chunks} chunk${data.chunks !== 1 ? 's' : ''})`);
+            loadKbDocs();
+          })
+          .catch(err => {
+            const msg = err.response?.data?.detail || 'Upload failed';
+            setKbUploads(p => p.map((u, j) => j === i ? { ...u, status: 'error', error: msg } : u));
+            toast.error(msg);
+          });
+      });
+      return [...prev, ...valid.map(f => ({ file: f, progress: 0, status: 'uploading', error: null }))];
+    });
+  };
+
+  const handleKbScrape = async () => {
+    if (!kbScrapeUrl.trim()) { toast.error('Enter a URL'); return; }
+    setKbIsScraping(true);
+    try {
+      const fd = new FormData();
+      fd.append('url', kbScrapeUrl.trim());
+      fd.append('doc_type', kbDocType);
+      fd.append('scope', 'agent');
+      if (agentId) fd.append('agent_id', agentId);
+      const { data } = await voiceAgentAPI.scrapeUrl(fd);
+      toast.success(`Scraped "${data.title}" — ${data.chunks} chunk(s)`);
+      setKbScrapeUrl('');
+      loadKbDocs();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Scrape failed');
+    } finally { setKbIsScraping(false); }
+  };
+
+  const handleKbAddText = async () => {
+    if (!kbTitle.trim() || !kbContent.trim()) { toast.error('Title and content required'); return; }
+    setKbIsAdding(true);
+    try {
+      const payload = {
+        title: kbTitle, content: kbContent, doc_type: kbDocType, scope: 'agent',
+        agent_id: agentId,
+        ...(kbDocType === 'faq' && { question: kbQuestion, answer: kbAnswer }),
+      };
+      const { data } = await voiceAgentAPI.addKnowledge(payload);
+      const chunks = Array.isArray(data) ? data : [data];
+      setKbDocs(prev => [...chunks, ...prev]);
+      toast.success(`Added ${chunks.length} chunk(s)`);
+      setKbTitle(''); setKbContent(''); setKbQuestion(''); setKbAnswer('');
+      setKbMethod(null);
+    } catch { toast.error('Failed to save'); }
+    finally { setKbIsAdding(false); }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1055,6 +1161,163 @@ export default function AgentBuilder() {
                 </div>
               ))}
             </div>
+          </Section>
+
+          {/* ── Knowledge Base ── */}
+          <Section title="Knowledge Base" icon={BookOpen} badge={kbDocs.length > 0 ? `${kbDocs.length} doc${kbDocs.length !== 1 ? 's' : ''}` : ''}>
+            <p className="text-xs text-gray-500 mb-3">
+              Add documents, FAQs, or website content that this agent will use to answer questions during calls.
+            </p>
+
+            {/* Info: global docs always included */}
+            <div className="flex items-start gap-2 p-3 bg-indigo-50 rounded-xl border border-indigo-100 mb-3">
+              <AlertCircle className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+              <p className="text-xs text-indigo-700">
+                <span className="font-semibold">Global knowledge</span> (added in the Knowledge Base section) is automatically available to all agents. Docs added here are <span className="font-semibold">private to this agent only</span>.
+              </p>
+            </div>
+
+            {/* Add method buttons */}
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[
+                { id: 'upload', icon: UploadCloud, label: 'Upload File', sub: 'PDF, DOCX, TXT, CSV' },
+                { id: 'text',   icon: PenLine,     label: 'Write / FAQ', sub: 'Paste text or Q&A' },
+                { id: 'scrape', icon: Link,         label: 'Website URL', sub: 'Scrape a webpage' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setKbMethod(kbMethod === m.id ? null : m.id)}
+                  className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 transition-all text-center ${
+                    kbMethod === m.id
+                      ? 'border-indigo-400 bg-indigo-50 text-indigo-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                  }`}
+                >
+                  <m.icon className="w-5 h-5" />
+                  <span className="text-xs font-medium leading-tight">{m.label}</span>
+                  <span className="text-[10px] text-gray-400 leading-tight">{m.sub}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Inline panels */}
+            <AnimatePresence>
+              {kbMethod === 'upload' && (
+                <motion.div key="upload-panel"
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden mb-3">
+                  <div
+                    onDragOver={e => { e.preventDefault(); setKbDragging(true); }}
+                    onDragLeave={() => setKbDragging(false)}
+                    onDrop={e => { e.preventDefault(); setKbDragging(false); handleKbFiles(e.dataTransfer.files); }}
+                    onClick={() => kbUploadRef.current?.click()}
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors ${kbDragging ? 'border-indigo-400 bg-indigo-50' : 'border-gray-300 hover:border-indigo-300 hover:bg-gray-50'}`}
+                  >
+                    <UploadCloud className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm font-medium text-gray-600">Drop files here or click to browse</p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOCX, TXT, CSV, XLSX — max 10 MB each</p>
+                    <input ref={kbUploadRef} type="file" multiple accept=".pdf,.docx,.txt,.csv,.xlsx"
+                      className="hidden" onChange={e => handleKbFiles(e.target.files)} />
+                  </div>
+                  {kbUploads.length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {kbUploads.map((u, i) => (
+                        <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg text-xs">
+                          <span className="text-gray-700 truncate max-w-[200px]">{u.name}</span>
+                          {u.status === 'uploading' && <span className="text-indigo-500">Uploading…</span>}
+                          {u.status === 'done'      && <span className="text-emerald-600 flex items-center gap-1"><Check className="w-3 h-3" /> Done</span>}
+                          {u.status === 'error'     && <span className="text-red-500">Failed</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              {kbMethod === 'text' && (
+                <motion.div key="text-panel"
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden mb-3">
+                  <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <div className="flex gap-2">
+                      <select value={kbDocType} onChange={e => setKbDocType(e.target.value)}
+                        className="px-3 py-2 rounded-lg border border-gray-200 text-xs bg-white">
+                        <option value="document">Document</option>
+                        <option value="faq">FAQ (Q&A)</option>
+                        <option value="script">Script</option>
+                        <option value="product_catalog">Product Catalog</option>
+                      </select>
+                    </div>
+                    <input value={kbTitle} onChange={e => setKbTitle(e.target.value)}
+                      placeholder="Title (e.g. Pricing FAQ)" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                    {kbDocType === 'faq' ? (
+                      <>
+                        <input value={kbQuestion} onChange={e => setKbQuestion(e.target.value)}
+                          placeholder="Question" className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                        <textarea value={kbAnswer} onChange={e => setKbAnswer(e.target.value)}
+                          placeholder="Answer" rows={3}
+                          className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none" />
+                      </>
+                    ) : (
+                      <textarea value={kbContent} onChange={e => setKbContent(e.target.value)}
+                        placeholder="Paste your content here…" rows={5}
+                        className="w-full px-3 py-2 rounded-lg border border-gray-200 text-sm resize-none" />
+                    )}
+                    <button onClick={handleKbAddText} disabled={kbIsAdding}
+                      className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60">
+                      {kbIsAdding ? 'Saving…' : 'Save to Knowledge Base'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {kbMethod === 'scrape' && (
+                <motion.div key="scrape-panel"
+                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden mb-3">
+                  <div className="space-y-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                    <p className="text-xs text-gray-500">Enter a public URL to scrape and add its content to this agent's knowledge base.</p>
+                    <div className="flex gap-2">
+                      <input value={kbScrapeUrl} onChange={e => setKbScrapeUrl(e.target.value)}
+                        placeholder="https://yoursite.com/about" className="flex-1 px-3 py-2 rounded-lg border border-gray-200 text-sm" />
+                      <button onClick={handleKbScrape} disabled={kbIsScraping || !kbScrapeUrl.trim()}
+                        className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-60 flex items-center gap-1.5">
+                        {kbIsScraping ? 'Scraping…' : <><ExternalLinkIcon className="w-4 h-4" /> Scrape</>}
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Document list */}
+            {kbLoading ? (
+              <div className="py-6 text-center text-xs text-gray-400">Loading documents…</div>
+            ) : kbDocs.length === 0 ? (
+              <div className="py-6 text-center border-2 border-dashed border-gray-200 rounded-xl">
+                <BookOpen className="w-7 h-7 text-gray-300 mx-auto mb-1.5" />
+                <p className="text-sm text-gray-500 font-medium">No documents yet</p>
+                <p className="text-xs text-gray-400">Use the options above to add knowledge for this agent.</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {kbDocs.map(doc => (
+                  <div key={doc.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <p className="text-sm font-medium text-gray-900 truncate">{doc.title}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-gray-400 capitalize">{doc.doc_type}</span>
+                        {doc.question && <span className="text-[10px] text-indigo-500 truncate max-w-[180px]">Q: {doc.question}</span>}
+                        {!doc.question && <span className="text-[10px] text-gray-400 truncate max-w-[200px]">{doc.content?.slice(0, 60)}…</span>}
+                      </div>
+                    </div>
+                    <button onClick={() => handleKbDelete(doc.id)} className="p-1.5 text-gray-300 hover:text-red-500 transition-colors shrink-0">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </Section>
         </div>
       )}
