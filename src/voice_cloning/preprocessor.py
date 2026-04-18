@@ -7,7 +7,13 @@ Cleans and validates audio samples before embedding extraction.
 import logging
 import tempfile
 
-import librosa
+try:
+    import librosa as _librosa
+    _LIBROSA_AVAILABLE = True
+except ImportError:
+    _librosa = None  # type: ignore[assignment]
+    _LIBROSA_AVAILABLE = False
+
 import numpy as np
 import soundfile as sf
 
@@ -22,9 +28,14 @@ class AudioPreprocessor:
 
     def load_and_normalize(self, file_path: str) -> tuple[np.ndarray, int]:
         """Load audio and normalize to target sample rate."""
-        audio, sr = librosa.load(file_path, sr=None, mono=True)
+        if not _LIBROSA_AVAILABLE:
+            raise RuntimeError(
+                "librosa not installed — audio preprocessing unavailable in production. "
+                "Install librosa for local voice cloning quality checks."
+            )
+        audio, sr = _librosa.load(file_path, sr=None, mono=True)
         if sr != self.target_sr:
-            audio = librosa.resample(audio, orig_sr=sr, target_sr=self.target_sr)
+            audio = _librosa.resample(audio, orig_sr=sr, target_sr=self.target_sr)
         return audio, self.target_sr
 
     def remove_noise(self, audio: np.ndarray, sr: int) -> np.ndarray:
@@ -51,7 +62,9 @@ class AudioPreprocessor:
 
     def trim_silence(self, audio: np.ndarray, sr: int) -> np.ndarray:
         """Remove leading/trailing silence."""
-        trimmed, _ = librosa.effects.trim(audio, top_db=20)
+        if not _LIBROSA_AVAILABLE:
+            return audio  # no-op fallback when librosa not installed
+        trimmed, _ = _librosa.effects.trim(audio, top_db=20)
         return trimmed
 
     def calculate_snr(self, audio: np.ndarray) -> float:

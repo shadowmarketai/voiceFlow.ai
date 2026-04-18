@@ -87,11 +87,9 @@ beautifulsoup4>=4.12.0
 # Object storage (corpus collection + voice-clone L3)
 aioboto3>=12.3.0
 
-# Audio Processing (lightweight)
-librosa==0.10.1
+# Audio Processing (lightweight — no numba/llvmlite in production)
 soundfile==0.12.1
-numpy>=1.24.0
-scipy==1.11.3
+numpy>=1.24.0,<2.0.0
 
 # Testing
 pytest>=7.4.0
