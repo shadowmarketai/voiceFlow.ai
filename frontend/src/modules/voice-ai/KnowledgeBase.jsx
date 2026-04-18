@@ -1,22 +1,23 @@
 /**
- * Knowledge Base — 3-level scoped training data
+ * Knowledge Base — redesigned for clarity
  *
- * Scopes:
- *   Global   → shared by ALL agents & campaigns in the tenant
- *   Campaign → shared by all agents WITHIN a campaign
- *   Agent    → private to one specific agent
- *
- * Input methods: Manual text · PDF · DOCX · TXT · CSV · Excel · URL scrape
+ * Layout:
+ *  1. Header
+ *  2. Add Knowledge — 3 method cards (Upload · Scrape · Write)
+ *     → clicking one expands the input panel inline
+ *  3. Assign To — scope picker (Global / Campaign / Agent)
+ *  4. Your Documents — filter tabs + document list
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
-  BookOpen, Plus, Search, FileText, HelpCircle, ShoppingBag, ScrollText,
-  Trash2, Upload, Loader2, X, Bot, UploadCloud, CheckCircle2, AlertCircle,
-  ChevronDown, Globe, Megaphone, Link, Table,
+  BookOpen, FileUp, Globe, PenLine, Search, FileText, HelpCircle,
+  ShoppingBag, ScrollText, Trash2, Loader2, X, Bot, UploadCloud,
+  CheckCircle2, AlertCircle, ChevronDown, Megaphone, Link,
+  Plus, ArrowRight, File, FileSpreadsheet,
 } from 'lucide-react';
-import { usePermissions } from '../../hooks/usePermissions';
 import { voiceAgentAPI, agentsAPI, campaignsAPI } from '../../services/api';
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -29,83 +30,124 @@ const DOC_TYPES = [
 ];
 
 const SCOPES = [
-  { id: 'global',   label: 'Global',   icon: Globe,      color: 'text-emerald-600', bg: 'bg-emerald-50',  border: 'border-emerald-200', desc: 'All agents & campaigns' },
-  { id: 'campaign', label: 'Campaign', icon: Megaphone,  color: 'text-blue-600',    bg: 'bg-blue-50',     border: 'border-blue-200',    desc: 'All agents in a campaign' },
-  { id: 'agent',    label: 'Agent',    icon: Bot,        color: 'text-indigo-600',  bg: 'bg-indigo-50',   border: 'border-indigo-200',  desc: 'Single agent only' },
+  {
+    id: 'global',
+    label: 'Global',
+    icon: Globe,
+    color: 'text-emerald-600',
+    activeBg: 'bg-emerald-50 border-emerald-300',
+    dot: 'bg-emerald-500',
+    desc: 'All agents & campaigns can use this',
+  },
+  {
+    id: 'campaign',
+    label: 'Campaign',
+    icon: Megaphone,
+    color: 'text-blue-600',
+    activeBg: 'bg-blue-50 border-blue-300',
+    dot: 'bg-blue-500',
+    desc: 'All agents within a specific campaign',
+  },
+  {
+    id: 'agent',
+    label: 'Agent',
+    icon: Bot,
+    color: 'text-indigo-600',
+    activeBg: 'bg-indigo-50 border-indigo-300',
+    dot: 'bg-indigo-500',
+    desc: 'One specific agent only',
+  },
 ];
 
-const ACCEPTED_EXTS = ['.pdf', '.docx', '.txt', '.csv', '.xlsx', '.xls'];
+const ACCEPTED = ['.pdf', '.docx', '.txt', '.csv', '.xlsx', '.xls'];
+const FILE_ICONS = { pdf: FileText, xlsx: FileSpreadsheet, xls: FileSpreadsheet, csv: FileSpreadsheet, docx: File, txt: File };
 
-function scopeInfo(s) { return SCOPES.find(x => x.id === s) || SCOPES[2]; }
-function typeInfo(t)  { return DOC_TYPES.find(x => x.id === t) || DOC_TYPES[0]; }
-
-// ─── tiny components ─────────────────────────────────────────────────────────
-
-function Dropdown({ label, icon: Icon, iconClass, value, options, onChange, placeholder }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, []);
-
-  const selected = options.find(o => o.id === value);
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:border-indigo-400 transition-colors min-w-[160px] justify-between"
-      >
-        <span className="flex items-center gap-1.5 truncate">
-          {Icon && <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${iconClass || 'text-slate-400'}`} />}
-          <span className="truncate">{selected?.name || selected?.label || placeholder || label}</span>
-        </span>
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 z-30 bg-white rounded-xl border border-slate-200 shadow-lg py-1 min-w-[200px]">
-          {options.map(o => (
-            <button
-              key={o.id ?? '__null__'}
-              onClick={() => { onChange(o.id); setOpen(false); }}
-              className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-slate-50 transition-colors ${value === o.id ? 'text-indigo-700 font-medium bg-indigo-50' : 'text-slate-700'}`}
-            >
-              {o.label || o.name}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+function fileIcon(name) {
+  const ext = (name || '').split('.').pop()?.toLowerCase();
+  return FILE_ICONS[ext] || File;
 }
+function scopeOf(s) { return SCOPES.find(x => x.id === s) || SCOPES[2]; }
+function typeOf(t)  { return DOC_TYPES.find(x => x.id === t) || DOC_TYPES[0]; }
 
-function ScopePill({ scope }) {
-  const s = scopeInfo(scope);
+// ─── small reusables ─────────────────────────────────────────────────────────
+
+function ScopeBadge({ scope }) {
+  const s = scopeOf(scope);
   const Icon = s.icon;
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${s.bg} ${s.color}`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-medium ${s.activeBg} ${s.color} border`}>
       <Icon className="w-3 h-3" />{s.label}
     </span>
   );
 }
 
-function UploadItem({ file, progress, status, error }) {
+function UploadRow({ file, progress, status, error }) {
+  const Icon = fileIcon(file?.name);
   return (
-    <div className="flex items-center gap-3 py-2">
-      <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+    <div className="flex items-center gap-3 py-2.5 border-b border-slate-100 last:border-0">
+      <Icon className="w-4 h-4 text-slate-400 flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-slate-700 truncate">{file?.name || 'file'}</p>
+        <p className="text-xs font-medium text-slate-700 truncate">{file?.name}</p>
         {status === 'uploading' && (
           <div className="mt-1 h-1 bg-slate-100 rounded-full overflow-hidden">
-            <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${progress}%` }} />
+            <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${progress}%` }} />
           </div>
         )}
-        {status === 'error' && <p className="text-xs text-red-500 mt-0.5">{error}</p>}
+        {status === 'error' && <p className="text-[11px] text-red-500 mt-0.5">{error}</p>}
       </div>
-      {status === 'done'      && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
-      {status === 'error'     && <AlertCircle  className="w-4 h-4 text-red-500 flex-shrink-0" />}
-      {status === 'uploading' && <Loader2      className="w-4 h-4 text-indigo-500 animate-spin flex-shrink-0" />}
+      <span className="flex-shrink-0">
+        {status === 'done'      && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+        {status === 'error'     && <AlertCircle  className="w-4 h-4 text-red-500" />}
+        {status === 'uploading' && <Loader2      className="w-4 h-4 text-indigo-400 animate-spin" />}
+      </span>
+    </div>
+  );
+}
+
+// ─── assign-to row ────────────────────────────────────────────────────────────
+
+function AssignTo({ scope, setScope, agentId, setAgentId, campaignId, setCampaignId, agents, campaigns }) {
+  return (
+    <div className="mt-5 pt-5 border-t border-slate-100">
+      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Assign to</p>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {SCOPES.map(s => {
+          const Icon = s.icon;
+          const active = scope === s.id;
+          return (
+            <button key={s.id} onClick={() => setScope(s.id)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
+                active ? `${s.activeBg} ${s.color}` : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+              }`}>
+              <Icon className="w-3.5 h-3.5" />
+              {s.label}
+              {active && <span className="text-[10px] font-normal opacity-70">— {s.desc}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-3">
+        {scope !== 'global' && (
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-medium text-slate-500 mb-1">Campaign</label>
+            <select value={campaignId || ''} onChange={e => setCampaignId(e.target.value || null)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800">
+              <option value="">— Select campaign —</option>
+              {campaigns.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+            </select>
+          </div>
+        )}
+        {scope === 'agent' && (
+          <div className="flex-1 min-w-[180px]">
+            <label className="block text-xs font-medium text-slate-500 mb-1">Agent</label>
+            <select value={agentId || ''} onChange={e => setAgentId(e.target.value || null)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800">
+              <option value="">— Select agent —</option>
+              {agents.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -113,46 +155,43 @@ function UploadItem({ file, progress, status, error }) {
 // ─── main ─────────────────────────────────────────────────────────────────────
 
 export default function KnowledgeBasePage() {
-  const { can } = usePermissions();
-
   // ── data ──
-  const [docs,     setDocs]     = useState([]);
-  const [agents,   setAgents]   = useState([]);
+  const [docs,      setDocs]      = useState([]);
+  const [agents,    setAgents]    = useState([]);
   const [campaigns, setCampaigns] = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  const [loading,   setLoading]   = useState(true);
 
-  // ── scope filter (top bar) ──
-  const [filterScope,      setFilterScope]      = useState('all');  // all | global | campaign | agent
-  const [filterCampaignId, setFilterCampaignId] = useState(null);
-  const [filterAgentId,    setFilterAgentId]    = useState(null);
-  const [filterDocType,    setFilterDocType]    = useState('all');
-  const [search,           setSearch]           = useState('');
+  // ── active method panel: null | 'upload' | 'scrape' | 'text' ──
+  const [activeMethod, setActiveMethod] = useState(null);
 
-  // ── new-item scope (for add/upload) ──
-  const [addScope,      setAddScope]      = useState('agent');
-  const [addAgentId,    setAddAgentId]    = useState(null);
-  const [addCampaignId, setAddCampaignId] = useState(null);
+  // ── shared scope state for all methods ──
+  const [scope,      setScope]      = useState('agent');
+  const [agentId,    setAgentId]    = useState(null);
+  const [campaignId, setCampaignId] = useState(null);
+  const [docType,    setDocType]    = useState('document');
 
-  // ── panels ──
-  const [showAddModal,    setShowAddModal]    = useState(false);
-  const [showUploadPanel, setShowUploadPanel] = useState(false);
+  // ── filter ──
+  const [filterScope, setFilterScope] = useState('all');
+  const [filterType,  setFilterType]  = useState('all');
+  const [search,      setSearch]      = useState('');
 
-  // ── manual-add form ──
+  // ── upload ──
+  const [uploads,  setUploads]  = useState([]);
+  const [dragging, setDragging] = useState(false);
+  const uploadRef = useRef(null);
+
+  // ── scrape ──
+  const [scrapeUrl,  setScrapeUrl]  = useState('');
+  const [isScraping, setIsScraping] = useState(false);
+
+  // ── text form ──
   const [formTitle,    setFormTitle]    = useState('');
   const [formContent,  setFormContent]  = useState('');
-  const [formDocType,  setFormDocType]  = useState('document');
   const [formQuestion, setFormQuestion] = useState('');
   const [formAnswer,   setFormAnswer]   = useState('');
   const [isAdding,     setIsAdding]     = useState(false);
 
-  // ── upload queue ──
-  const [uploads, setUploads] = useState([]);
-
-  // ── URL scrape ──
-  const [scrapeUrl,     setScrapeUrl]     = useState('');
-  const [isScraping,    setIsScraping]    = useState(false);
-
-  // ── load reference data ──
+  // ── load ──
   useEffect(() => {
     agentsAPI.list()
       .then(({ data }) => setAgents(Array.isArray(data) ? data : (data?.agents ?? [])))
@@ -162,119 +201,76 @@ export default function KnowledgeBasePage() {
       .catch(() => {});
   }, []);
 
-  // ── load docs ──
   const loadDocs = useCallback(() => {
     setLoading(true);
     const params = {};
-    if (filterScope !== 'all')    params.scope       = filterScope;
-    if (filterCampaignId)         params.campaign_id = filterCampaignId;
-    if (filterAgentId)            params.agent_id    = filterAgentId;
-    if (filterDocType !== 'all')  params.doc_type    = filterDocType;
-
+    if (filterScope !== 'all') params.scope = filterScope;
+    if (filterType  !== 'all') params.doc_type = filterType;
     voiceAgentAPI.listKnowledge(params)
       .then(({ data }) => { if (Array.isArray(data)) setDocs(data); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [filterScope, filterCampaignId, filterAgentId, filterDocType]);
+  }, [filterScope, filterType]);
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
 
-  // ── search filter (client-side) ──
   const filtered = docs.filter(d => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return d.title?.toLowerCase().includes(q) || d.content?.toLowerCase().includes(q);
   });
 
-  // ── counts ──
-  const scopeCounts = { all: docs.length };
-  SCOPES.forEach(s => { scopeCounts[s.id] = docs.filter(d => d.scope === s.id).length; });
-
-  // ── manual add ──
-  const handleAdd = async () => {
-    if (!formTitle.trim() || !formContent.trim()) { toast.error('Title and content are required'); return; }
-    setIsAdding(true);
-    try {
-      const payload = {
-        title: formTitle, content: formContent, doc_type: formDocType,
-        scope: addScope,
-        agent_id: addScope === 'agent' ? addAgentId : undefined,
-        campaign_id: addScope !== 'global' ? addCampaignId : undefined,
-        ...(formDocType === 'faq' && { question: formQuestion, answer: formAnswer }),
-      };
-      const { data } = await voiceAgentAPI.addKnowledge(payload);
-      const chunks = Array.isArray(data) ? data : [data];
-      setDocs(prev => [...chunks, ...prev]);
-      toast.success(`Added ${chunks.length} chunk(s)`);
-    } catch {
-      setDocs(prev => [{
-        id: Date.now(), title: formTitle, doc_type: formDocType, content: formContent,
-        scope: addScope, agent_id: addAgentId, campaign_id: addCampaignId,
-        question: formDocType === 'faq' ? formQuestion : null,
-        answer:   formDocType === 'faq' ? formAnswer   : null,
-        chunk_index: 0, is_active: true, created_at: new Date().toISOString(),
-      }, ...prev]);
-      toast.success('Saved locally (offline mode)');
-    }
-    setFormTitle(''); setFormContent(''); setFormQuestion(''); setFormAnswer('');
-    setShowAddModal(false); setIsAdding(false);
-  };
+  // ── toggle method ──
+  const toggleMethod = (m) => setActiveMethod(prev => prev === m ? null : m);
 
   // ── file upload ──
-  const uploadRef = useRef(null);
-  const [dragging, setDragging] = useState(false);
-
   const handleFiles = useCallback((files) => {
-    const validFiles = files.filter(f => ACCEPTED_EXTS.some(e => f.name.toLowerCase().endsWith(e)));
-    if (validFiles.length < files.length) toast.error('Some files skipped — unsupported format');
-    if (!validFiles.length) return;
+    const valid = files.filter(f => ACCEPTED.some(e => f.name.toLowerCase().endsWith(e)));
+    if (!valid.length) { toast.error('Unsupported file type'); return; }
 
-    const newItems = validFiles.map(f => ({ file: f, progress: 0, status: 'uploading', error: null }));
     setUploads(prev => {
       const base = prev.length;
-      newItems.forEach((item, idx) => {
+      valid.forEach((file, idx) => {
         const i = base + idx;
         const fd = new FormData();
-        fd.append('file', item.file);
-        fd.append('doc_type', formDocType);
-        fd.append('scope', addScope);
-        if (addAgentId && addScope === 'agent')       fd.append('agent_id', addAgentId);
-        if (addCampaignId && addScope !== 'global')   fd.append('campaign_id', addCampaignId);
+        fd.append('file', file);
+        fd.append('doc_type', docType);
+        fd.append('scope', scope);
+        if (agentId    && scope === 'agent')    fd.append('agent_id',    agentId);
+        if (campaignId && scope !== 'global')   fd.append('campaign_id', campaignId);
 
-        voiceAgentAPI.uploadKnowledge(fd, (ev) => {
+        voiceAgentAPI.uploadKnowledge(fd, ev => {
           const pct = Math.round((ev.loaded / ev.total) * 100);
           setUploads(p => p.map((u, j) => j === i ? { ...u, progress: pct } : u));
         })
           .then(({ data }) => {
             setUploads(p => p.map((u, j) => j === i ? { ...u, status: 'done', progress: 100 } : u));
-            toast.success(`"${data.title}" — ${data.chunks} chunk(s)`);
+            toast.success(`"${data.title}" — ${data.chunks} chunk(s) added`);
             loadDocs();
           })
           .catch(err => {
             const msg = err.response?.data?.detail || 'Upload failed';
             setUploads(p => p.map((u, j) => j === i ? { ...u, status: 'error', error: msg } : u));
+            toast.error(msg);
           });
       });
-      return [...prev, ...newItems];
+      return [...prev, ...valid.map(f => ({ file: f, progress: 0, status: 'uploading', error: null }))];
     });
-  }, [formDocType, addScope, addAgentId, addCampaignId, loadDocs]);
+  }, [docType, scope, agentId, campaignId, loadDocs]);
 
-  const handleDrop = (e) => {
-    e.preventDefault(); setDragging(false);
-    handleFiles(Array.from(e.dataTransfer.files));
-  };
+  const handleDrop = (e) => { e.preventDefault(); setDragging(false); handleFiles(Array.from(e.dataTransfer.files)); };
 
-  // ── URL scrape ──
+  // ── scrape ──
   const handleScrape = async () => {
     if (!scrapeUrl.trim()) { toast.error('Enter a URL'); return; }
     setIsScraping(true);
     try {
       const fd = new FormData();
       fd.append('url', scrapeUrl.trim());
-      fd.append('doc_type', formDocType);
-      fd.append('scope', addScope);
-      if (addAgentId && addScope === 'agent')       fd.append('agent_id', addAgentId);
-      if (addCampaignId && addScope !== 'global')   fd.append('campaign_id', addCampaignId);
+      fd.append('doc_type', docType);
+      fd.append('scope', scope);
+      if (agentId    && scope === 'agent')    fd.append('agent_id',    agentId);
+      if (campaignId && scope !== 'global')   fd.append('campaign_id', campaignId);
       const { data } = await voiceAgentAPI.scrapeUrl(fd);
       toast.success(`Scraped "${data.title}" — ${data.chunks} chunk(s)`);
       setScrapeUrl('');
@@ -286,373 +282,391 @@ export default function KnowledgeBasePage() {
     }
   };
 
+  // ── manual add ──
+  const handleAdd = async () => {
+    if (!formTitle.trim() || !formContent.trim()) { toast.error('Title and content required'); return; }
+    setIsAdding(true);
+    try {
+      const payload = {
+        title: formTitle, content: formContent, doc_type: docType, scope,
+        agent_id:    scope === 'agent'  ? agentId    : undefined,
+        campaign_id: scope !== 'global' ? campaignId : undefined,
+        ...(docType === 'faq' && { question: formQuestion, answer: formAnswer }),
+      };
+      const { data } = await voiceAgentAPI.addKnowledge(payload);
+      const chunks = Array.isArray(data) ? data : [data];
+      setDocs(prev => [...chunks, ...prev]);
+      toast.success(`Added ${chunks.length} chunk(s)`);
+      setFormTitle(''); setFormContent(''); setFormQuestion(''); setFormAnswer('');
+      setActiveMethod(null);
+    } catch {
+      toast.error('Failed to save');
+    } finally { setIsAdding(false); }
+  };
+
   // ── delete ──
-  const handleDelete = async (docId) => {
-    try { await voiceAgentAPI.deleteKnowledge(docId); } catch { /* offline */ }
-    setDocs(prev => prev.filter(d => d.id !== docId));
+  const handleDelete = async (id) => {
+    try { await voiceAgentAPI.deleteKnowledge(id); } catch { /* offline */ }
+    setDocs(prev => prev.filter(d => d.id !== id));
     toast.success('Removed');
   };
 
-  // ── scope tab bar ──
-  const scopeTabs = [
-    { id: 'all', label: 'All', count: scopeCounts.all },
-    ...SCOPES.map(s => ({ id: s.id, label: s.label, count: scopeCounts[s.id] || 0, icon: s.icon })),
+  // ── scope / type counts ──
+  const cnt = { all: docs.length, global: 0, campaign: 0, agent: 0 };
+  docs.forEach(d => { if (cnt[d.scope] !== undefined) cnt[d.scope]++; });
+
+  // ── method card config ──
+  const METHODS = [
+    {
+      id: 'upload',
+      icon: FileUp,
+      iconBg: 'bg-indigo-100',
+      iconColor: 'text-indigo-600',
+      label: 'Upload Files',
+      desc: 'PDF, Word, TXT, CSV, Excel',
+      activeBorder: 'border-indigo-400 ring-1 ring-indigo-200',
+    },
+    {
+      id: 'scrape',
+      icon: Globe,
+      iconBg: 'bg-blue-100',
+      iconColor: 'text-blue-600',
+      label: 'Website URL',
+      desc: 'Paste a URL to auto-extract',
+      activeBorder: 'border-blue-400 ring-1 ring-blue-200',
+    },
+    {
+      id: 'text',
+      icon: PenLine,
+      iconBg: 'bg-purple-100',
+      iconColor: 'text-purple-600',
+      label: 'Write / Paste Text',
+      desc: 'Type or paste content & FAQs',
+      activeBorder: 'border-purple-400 ring-1 ring-purple-200',
+    },
   ];
 
-  // ── campaign / agent options for dropdowns ──
-  const campaignOptions = [{ id: null, label: '— None —' }, ...campaigns.map(c => ({ id: String(c.id), label: c.name }))];
-  const agentOptions    = [{ id: null, label: '— None —' }, ...agents.map(a => ({ id: String(a.id), label: a.name }))];
-
-  // ─── render ───────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 max-w-5xl">
 
-      {/* ── Header ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <BookOpen className="w-6 h-6 text-indigo-500" /> Knowledge Base
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Train your AI agents with scoped documents, FAQs, and scripts</p>
-        </div>
-        {can('voiceAI', 'create') && (
+      {/* ── 1. Header ── */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+          <BookOpen className="w-6 h-6 text-indigo-500" /> Knowledge Base
+        </h1>
+        <p className="text-sm text-slate-500 mt-1">
+          Add documents, FAQs, and scripts to train your AI agents. You can scope each piece of knowledge to all agents, a specific campaign, or a single agent.
+        </p>
+      </div>
+
+      {/* ── 2. Add Knowledge ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Add Knowledge</p>
+            <p className="text-xs text-slate-400 mt-0.5">Choose how you want to add information</p>
+          </div>
+          {/* Doc type selector — always visible */}
           <div className="flex items-center gap-2">
-            <button onClick={() => setShowUploadPanel(o => !o)}
-              className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:border-indigo-400 hover:text-indigo-700 transition-colors">
-              <Upload className="w-4 h-4" /> Upload / Scrape
-            </button>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
-              <Plus className="w-4 h-4" /> Add Text
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Scope cards ── */}
-      <div className="grid grid-cols-3 gap-3">
-        {SCOPES.map(s => {
-          const Icon = s.icon;
-          return (
-            <button key={s.id}
-              onClick={() => setFilterScope(filterScope === s.id ? 'all' : s.id)}
-              className={`flex items-center gap-3 p-4 rounded-xl border text-left transition-all ${
-                filterScope === s.id ? `${s.bg} ${s.border} ring-1 ring-offset-1 ${s.border}` : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}>
-              <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center flex-shrink-0`}>
-                <Icon className={`w-4 h-4 ${s.color}`} />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-slate-800">{s.label}</p>
-                  <span className={`text-xs font-bold ${s.color}`}>{scopeCounts[s.id] || 0}</span>
-                </div>
-                <p className="text-xs text-slate-400 truncate">{s.desc}</p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* ── Filter bar ── */}
-      <div className="flex flex-wrap items-center gap-2">
-        {/* Scope tabs */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          {scopeTabs.map(t => (
-            <button key={t.id} onClick={() => setFilterScope(t.id)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                filterScope === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
-              }`}>
-              {t.label} ({t.count})
-            </button>
-          ))}
-        </div>
-
-        {/* Campaign filter */}
-        <Dropdown
-          label="Campaign" icon={Megaphone} iconClass="text-blue-400"
-          value={filterCampaignId}
-          options={campaignOptions}
-          onChange={setFilterCampaignId}
-          placeholder="All Campaigns"
-        />
-
-        {/* Agent filter */}
-        <Dropdown
-          label="Agent" icon={Bot} iconClass="text-indigo-400"
-          value={filterAgentId}
-          options={agentOptions}
-          onChange={setFilterAgentId}
-          placeholder="All Agents"
-        />
-
-        {/* Doc type filter */}
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          <button onClick={() => setFilterDocType('all')}
-            className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${filterDocType === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
-            All
-          </button>
-          {DOC_TYPES.map(t => (
-            <button key={t.id} onClick={() => setFilterDocType(filterDocType === t.id ? 'all' : t.id)}
-              className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${filterDocType === t.id ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Search */}
-        <div className="relative ml-auto">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-          <input type="text" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 w-44" />
-        </div>
-      </div>
-
-      {/* ── Upload / Scrape Panel ── */}
-      {showUploadPanel && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
-          {/* Panel header with scope selector */}
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <Upload className="w-4 h-4 text-indigo-500" /> Upload Files &amp; Scrape URLs
-            </h3>
-            <button onClick={() => setShowUploadPanel(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-              <X className="w-4 h-4 text-slate-400" />
-            </button>
-          </div>
-
-          {/* Scope assignment row */}
-          <div className="flex flex-wrap items-center gap-3 p-3 bg-slate-50 rounded-xl">
-            <span className="text-xs font-medium text-slate-500 mr-1">Assign to:</span>
-            {SCOPES.map(s => (
-              <button key={s.id} onClick={() => setAddScope(s.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                  addScope === s.id ? `${s.bg} ${s.color} ${s.border}` : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                }`}>
-                <s.icon className="w-3.5 h-3.5" />{s.label}
-              </button>
-            ))}
-            {addScope !== 'global' && (
-              <Dropdown label="Campaign" icon={Megaphone} iconClass="text-blue-400"
-                value={addCampaignId} options={campaignOptions} onChange={setAddCampaignId} placeholder="Pick Campaign" />
-            )}
-            {addScope === 'agent' && (
-              <Dropdown label="Agent" icon={Bot} iconClass="text-indigo-400"
-                value={addAgentId} options={agentOptions} onChange={setAddAgentId} placeholder="Pick Agent" />
-            )}
-            <select value={formDocType} onChange={e => setFormDocType(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white text-slate-700 ml-auto">
-              {DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-            </select>
-          </div>
-
-          {/* Drag-drop zone */}
-          <div
-            onDragOver={e => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={handleDrop}
-            onClick={() => uploadRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors ${
-              dragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
-            }`}
-          >
-            <div className="w-12 h-12 rounded-full bg-indigo-100 flex items-center justify-center">
-              <UploadCloud className="w-6 h-6 text-indigo-500" />
+            <span className="text-xs text-slate-400">Type:</span>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              {DOC_TYPES.map(t => (
+                <button key={t.id} onClick={() => setDocType(t.id)}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    docType === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-            <div className="text-center">
-              <p className="text-sm font-medium text-slate-700">Drag &amp; drop or <span className="text-indigo-600">browse</span></p>
-              <p className="text-xs text-slate-400 mt-0.5">PDF · DOCX · TXT · CSV · Excel</p>
-            </div>
-            <input ref={uploadRef} type="file" multiple accept={ACCEPTED_EXTS.join(',')}
-              onChange={e => handleFiles(Array.from(e.target.files || []))} className="hidden" />
           </div>
-
-          {/* URL scrape row */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input type="url" placeholder="https://yourwebsite.com/page-to-scrape"
-                value={scrapeUrl} onChange={e => setScrapeUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleScrape()}
-                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 bg-white" />
-            </div>
-            <button onClick={handleScrape} disabled={isScraping || !scrapeUrl.trim()}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-              {isScraping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
-              Scrape URL
-            </button>
-          </div>
-
-          {/* Upload progress list */}
-          {uploads.length > 0 && (
-            <div className="divide-y divide-slate-100">
-              {uploads.map((u, i) => <UploadItem key={i} {...u} />)}
-              {uploads.some(u => u.status !== 'uploading') && (
-                <button onClick={() => setUploads(p => p.filter(u => u.status === 'uploading'))}
-                  className="pt-2 text-xs text-slate-400 hover:text-slate-600">Clear completed</button>
-              )}
-            </div>
-          )}
         </div>
-      )}
 
-      {/* ── Document list ── */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20 text-slate-400">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" /><span className="text-sm">Loading…</span>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-          <BookOpen className="w-12 h-12 mb-3 opacity-30" />
-          <p className="text-sm font-medium">No documents found</p>
-          <p className="text-xs mt-1">Upload files or add text to get started</p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(doc => {
-            const ti = typeInfo(doc.doc_type);
-            const Icon = ti.icon;
-            const agentName    = agents.find(a => String(a.id) === String(doc.agent_id))?.name;
-            const campaignName = campaigns.find(c => String(c.id) === String(doc.campaign_id))?.name;
+        {/* Method cards */}
+        <div className="grid grid-cols-3 gap-4 p-6">
+          {METHODS.map(m => {
+            const Icon = m.icon;
+            const active = activeMethod === m.id;
             return (
-              <div key={doc.id} className="bg-white rounded-xl border border-slate-200 px-4 py-3.5 hover:border-indigo-200 transition-colors">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <div className={`w-9 h-9 rounded-lg ${ti.bg} flex items-center justify-center flex-shrink-0`}>
-                      <Icon className={`w-4 h-4 ${ti.color}`} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-medium text-slate-900">{doc.title}</h3>
-                        <ScopePill scope={doc.scope || 'agent'} />
-                        {campaignName && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-700 text-xs rounded">
-                            <Megaphone className="w-3 h-3" />{campaignName}
-                          </span>
-                        )}
-                        {agentName && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded">
-                            <Bot className="w-3 h-3" />{agentName}
-                          </span>
-                        )}
-                      </div>
-                      {doc.doc_type === 'faq' && doc.question && (
-                        <p className="text-xs text-emerald-600 mt-0.5">Q: {doc.question}</p>
-                      )}
-                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">{doc.content}</p>
-                      <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
-                        <span className={`px-1.5 py-0.5 ${ti.bg} ${ti.color} rounded`}>{ti.label}</span>
-                        {doc.chunk_index > 0 && <span>Chunk {doc.chunk_index + 1}</span>}
-                        <span>{new Date(doc.created_at).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {can('voiceAI', 'delete') && (
-                    <button onClick={() => handleDelete(doc.id)}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors flex-shrink-0">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
+              <button key={m.id} onClick={() => toggleMethod(m.id)}
+                className={`flex flex-col items-center gap-3 p-5 rounded-xl border-2 transition-all text-center cursor-pointer ${
+                  active ? m.activeBorder + ' bg-slate-50' : 'border-slate-200 hover:border-slate-300 bg-white hover:shadow-sm'
+                }`}>
+                <div className={`w-12 h-12 rounded-xl ${m.iconBg} flex items-center justify-center`}>
+                  <Icon className={`w-6 h-6 ${m.iconColor}`} />
                 </div>
-              </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{m.label}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{m.desc}</p>
+                </div>
+                <div className={`text-xs font-medium flex items-center gap-1 ${active ? 'text-indigo-600' : 'text-slate-400'}`}>
+                  {active ? <><X className="w-3 h-3" /> Close</> : <><Plus className="w-3 h-3" /> Open</>}
+                </div>
+              </button>
             );
           })}
         </div>
-      )}
 
-      {/* ── Add Text Modal ── */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowAddModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-900">Add to Knowledge Base</h2>
-              <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-slate-100 rounded-lg">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
+        {/* Expanded input panels */}
+        <AnimatePresence>
+          {activeMethod && (
+            <motion.div
+              key={activeMethod}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden border-t border-slate-100"
+            >
+              <div className="px-6 py-5 space-y-4">
 
-            <div className="space-y-4">
-              {/* Scope selector */}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Scope</label>
-                <div className="flex gap-2">
-                  {SCOPES.map(s => (
-                    <button key={s.id} onClick={() => setAddScope(s.id)}
-                      className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl border text-xs font-medium transition-all ${
-                        addScope === s.id ? `${s.bg} ${s.color} ${s.border}` : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
-                      }`}>
-                      <s.icon className="w-4 h-4" />{s.label}
+                {/* ── Upload panel ── */}
+                {activeMethod === 'upload' && (
+                  <>
+                    <div
+                      onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                      onDragLeave={() => setDragging(false)}
+                      onDrop={handleDrop}
+                      onClick={() => uploadRef.current?.click()}
+                      className={`border-2 border-dashed rounded-xl p-10 flex flex-col items-center gap-3 cursor-pointer transition-colors ${
+                        dragging ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 hover:border-indigo-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="w-14 h-14 bg-indigo-100 rounded-full flex items-center justify-center">
+                        <UploadCloud className="w-7 h-7 text-indigo-500" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-semibold text-slate-700">
+                          Drag &amp; drop files here
+                        </p>
+                        <p className="text-xs text-slate-400 mt-1">
+                          or <span className="text-indigo-600 font-medium">click to browse</span>
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap justify-center gap-2 mt-1">
+                        {['PDF', 'DOCX', 'TXT', 'CSV', 'Excel'].map(f => (
+                          <span key={f} className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-500 font-medium">
+                            {f}
+                          </span>
+                        ))}
+                      </div>
+                      <input ref={uploadRef} type="file" multiple accept={ACCEPTED.join(',')}
+                        onChange={e => handleFiles(Array.from(e.target.files || []))} className="hidden" />
+                    </div>
+
+                    {uploads.length > 0 && (
+                      <div className="bg-slate-50 rounded-xl px-4 py-2">
+                        {uploads.map((u, i) => <UploadRow key={i} {...u} />)}
+                        {uploads.some(u => u.status !== 'uploading') && (
+                          <button onClick={() => setUploads(p => p.filter(u => u.status === 'uploading'))}
+                            className="text-xs text-slate-400 hover:text-slate-600 pt-1">
+                            Clear completed
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ── Scrape panel ── */}
+                {activeMethod === 'scrape' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Website URL</label>
+                      <p className="text-xs text-slate-400 mb-2">
+                        Paste a public webpage URL. We'll extract all the text content automatically.
+                      </p>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                          <input type="url"
+                            placeholder="https://example.com/about"
+                            value={scrapeUrl} onChange={e => setScrapeUrl(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleScrape()}
+                            className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200" />
+                        </div>
+                        <button onClick={handleScrape} disabled={isScraping || !scrapeUrl.trim()}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                          {isScraping ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
+                          {isScraping ? 'Scraping…' : 'Extract'}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2">
+                      Works best with product pages, FAQs, about pages, and documentation.
+                      JavaScript-heavy SPAs may not extract fully.
+                    </p>
+                  </div>
+                )}
+
+                {/* ── Text / FAQ panel ── */}
+                {activeMethod === 'text' && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                      <input type="text" value={formTitle} onChange={e => setFormTitle(e.target.value)}
+                        placeholder="e.g. Company Overview, Pricing FAQ…"
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200" />
+                    </div>
+
+                    {docType === 'faq' && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Question</label>
+                          <input type="text" value={formQuestion} onChange={e => setFormQuestion(e.target.value)}
+                            placeholder="What is your return policy?"
+                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Answer</label>
+                          <textarea value={formAnswer} onChange={e => setFormAnswer(e.target.value)} rows={3}
+                            placeholder="We offer a 30-day return policy…"
+                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white resize-none focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200" />
+                        </div>
+                      </>
+                    )}
+
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">Content</label>
+                      <textarea value={formContent} onChange={e => setFormContent(e.target.value)} rows={6}
+                        placeholder="Paste or type your content here…"
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-800 bg-white resize-none focus:outline-none focus:border-purple-400 focus:ring-1 focus:ring-purple-200" />
+                    </div>
+
+                    <button onClick={handleAdd} disabled={isAdding}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 text-white rounded-xl text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors">
+                      {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                      {isAdding ? 'Saving…' : 'Save to Knowledge Base'}
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              {addScope !== 'global' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Campaign</label>
-                  <select value={addCampaignId || ''} onChange={e => setAddCampaignId(e.target.value || null)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900">
-                    <option value="">— Select Campaign —</option>
-                    {campaigns.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {addScope === 'agent' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Agent</label>
-                  <select value={addAgentId || ''} onChange={e => setAddAgentId(e.target.value || null)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900">
-                    <option value="">— Select Agent —</option>
-                    {agents.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
-                <select value={formDocType} onChange={e => setFormDocType(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900">
-                  {DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-                <input type="text" value={formTitle} onChange={e => setFormTitle(e.target.value)}
-                  placeholder="e.g. Product FAQ" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900" />
-              </div>
-
-              {formDocType === 'faq' && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Question</label>
-                    <input type="text" value={formQuestion} onChange={e => setFormQuestion(e.target.value)}
-                      placeholder="What products do you offer?" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Answer</label>
-                    <textarea value={formAnswer} onChange={e => setFormAnswer(e.target.value)} rows={3}
-                      placeholder="We offer…" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 resize-none" />
-                  </div>
-                </>
-              )}
+                )}
 
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Content</label>
-                <textarea value={formContent} onChange={e => setFormContent(e.target.value)} rows={5}
-                  placeholder="Paste your content here…" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 resize-none" />
+                {/* ── Assign to (shared for all methods) ── */}
+                <AssignTo
+                  scope={scope} setScope={setScope}
+                  agentId={agentId} setAgentId={setAgentId}
+                  campaignId={campaignId} setCampaignId={setCampaignId}
+                  agents={agents} campaigns={campaigns}
+                />
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
-              <button onClick={handleAdd} disabled={isAdding}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-                {isAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                Add to Knowledge Base
+      {/* ── 3. Your Documents ── */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Your Documents</p>
+            <p className="text-xs text-slate-400 mt-0.5">{docs.length} total · {filtered.length} shown</p>
+          </div>
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Scope tabs */}
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              {[
+                { id: 'all',      label: `All (${cnt.all})` },
+                { id: 'global',   label: `Global (${cnt.global})` },
+                { id: 'campaign', label: `Campaign (${cnt.campaign})` },
+                { id: 'agent',    label: `Agent (${cnt.agent})` },
+              ].map(t => (
+                <button key={t.id} onClick={() => setFilterScope(t.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                    filterScope === t.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {/* Type filter */}
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              <button onClick={() => setFilterType('all')}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${filterType === 'all' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                All
               </button>
+              {DOC_TYPES.map(t => (
+                <button key={t.id} onClick={() => setFilterType(filterType === t.id ? 'all' : t.id)}
+                  className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${filterType === t.id ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input type="text" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-white text-slate-700 w-40" />
             </div>
           </div>
         </div>
-      )}
+
+        {/* Document rows */}
+        {loading ? (
+          <div className="flex items-center justify-center py-16 text-slate-400">
+            <Loader2 className="w-5 h-5 animate-spin mr-2" /><span className="text-sm">Loading…</span>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+            <BookOpen className="w-10 h-10 mb-3 opacity-30" />
+            <p className="text-sm font-medium text-slate-500">No documents yet</p>
+            <p className="text-xs mt-1">Use one of the methods above to add knowledge</p>
+            <button onClick={() => setActiveMethod('upload')}
+              className="mt-4 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors">
+              <FileUp className="w-4 h-4" /> Upload your first file
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {filtered.map(doc => {
+              const ti = typeOf(doc.doc_type);
+              const TypeIcon = ti.icon;
+              const agentName    = agents.find(a => String(a.id) === String(doc.agent_id))?.name;
+              const campaignName = campaigns.find(c => String(c.id) === String(doc.campaign_id))?.name;
+              return (
+                <div key={doc.id} className="flex items-start gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
+                  {/* Type icon */}
+                  <div className={`w-9 h-9 rounded-xl ${ti.bg} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                    <TypeIcon className={`w-4 h-4 ${ti.color}`} />
+                  </div>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center flex-wrap gap-2 mb-1">
+                      <span className="text-sm font-semibold text-slate-800">{doc.title}</span>
+                      <ScopeBadge scope={doc.scope || 'agent'} />
+                      {campaignName && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-md text-[11px] font-medium">
+                          <Megaphone className="w-3 h-3" />{campaignName}
+                        </span>
+                      )}
+                      {agentName && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-md text-[11px] font-medium">
+                          <Bot className="w-3 h-3" />{agentName}
+                        </span>
+                      )}
+                    </div>
+                    {doc.doc_type === 'faq' && doc.question && (
+                      <p className="text-xs text-emerald-600 mb-1 font-medium">Q: {doc.question}</p>
+                    )}
+                    <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">{doc.content}</p>
+                    <div className="flex items-center gap-3 mt-1.5 text-[11px] text-slate-400">
+                      <span className={`${ti.bg} ${ti.color} px-1.5 py-0.5 rounded font-medium`}>{ti.label}</span>
+                      {doc.chunk_index > 0 && <span>Chunk {doc.chunk_index + 1}</span>}
+                      <span>{new Date(doc.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                  </div>
+                  {/* Delete */}
+                  <button onClick={() => handleDelete(doc.id)}
+                    className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0 mt-0.5">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
