@@ -56,8 +56,7 @@ const NAV_GROUPS = [
  {
  label: 'Configure',
  items: [
- { path: '/admin/pricing', label: 'Pricing & Fees', icon: CreditCard },
-     { path: '/admin/platform-pricing', label: 'Platform Pricing', icon: CreditCard },
+ { path: '/admin/pricing', label: 'Platform Pricing', icon: CreditCard },
  { path: '/admin/settings', label: 'Settings', icon: Settings },
  ],
  },

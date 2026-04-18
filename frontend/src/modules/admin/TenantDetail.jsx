@@ -399,8 +399,8 @@ function UsersManager({ tenantId, users, onRefresh }) {
  <Users className="w-4.5 h-4.5 text-blue-700" />
  </div>
  <div>
- <h3 className="font-semibold text-slate-900">Tenant Users</h3>
- <p className="text-xs text-slate-500">{users.length} {users.length === 1 ? 'user' : 'users'} in this tenant</p>
+ <h3 className="font-semibold text-slate-900">Agency Users</h3>
+ <p className="text-xs text-slate-500">{users.length} {users.length === 1 ? 'user' : 'users'} in this agency</p>
  </div>
  </div>
  <button
@@ -418,7 +418,7 @@ function UsersManager({ tenantId, users, onRefresh }) {
  <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-slate-100/50 flex items-center justify-center">
  <Users className="w-6 h-6 text-slate-400" />
  </div>
- <p className="text-slate-600 font-medium">No users in this tenant yet</p>
+ <p className="text-slate-600 font-medium">No users in this agency yet</p>
  <p className="text-sm text-slate-500 mt-1">Click "New User" above to add the first one</p>
  </div>
  ) : (
@@ -897,7 +897,7 @@ function BrandingPanel({ tenant, onSaved }) {
  {/* Identity */}
  <Section title="Identity" subtitle="Display name and tagline shown in the tenant's app">
  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
- <Field label="Tenant Name" required>
+ <Field label="Agency Name" required>
  <TextInput value={form.name} onChange={(v) => set('name', v)} placeholder="Acme Corp" />
  </Field>
  <Field label="App Name" hint="Shown in the top bar inside the tenant dashboard">

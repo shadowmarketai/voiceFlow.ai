@@ -137,7 +137,7 @@ export default function CrossTenantUsersPage() {
  <thead className="bg-slate-50 text-slate-500 text-left text-xs uppercase tracking-wider">
  <tr>
  <th className="px-6 py-3 font-medium">User</th>
- <th className="px-6 py-3 font-medium">Tenant</th>
+ <th className="px-6 py-3 font-medium">Agency</th>
  <th className="px-6 py-3 font-medium">Role</th>
  <th className="px-6 py-3 font-medium">Status</th>
  <th className="px-6 py-3 font-medium">Actions</th>

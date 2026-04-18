@@ -143,7 +143,7 @@ export default function AgencyPricingPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Agency Pricing</h1>
-          <p className="text-gray-500 mt-1">Set platform fee, markup, and provider lock for each client tenant</p>
+          <p className="text-gray-500 mt-1">Set base platform fee, provider stack, and markup. This is the cost floor all plan prices are built on top of.</p>
         </div>
         <button onClick={() => { localStorage.removeItem(ADMIN_TOKEN_KEY); setAdminToken('') }}
           className="text-sm text-gray-500 hover:text-red-600">Log out</button>
@@ -153,7 +153,7 @@ export default function AgencyPricingPage() {
       <div className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
         <div className="flex items-center gap-3">
           <Building2 className="w-5 h-5 text-indigo-500" />
-          <label className="text-sm font-medium text-gray-700">Tenant</label>
+          <label className="text-sm font-medium text-gray-700">Agency ID</label>
           <input value={tenantId} onChange={(e) => setTenantId(e.target.value)}
             placeholder="tenant-id (e.g. default, clt001, ...)"
             className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono" />
@@ -275,7 +275,7 @@ export default function AgencyPricingPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-emerald-800">Load a tenant to see margin.</p>
+                <p className="text-sm text-emerald-800">Load an agency to see margin.</p>
               )}
             </div>
           </div>

@@ -10,13 +10,12 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Building2, Save, Plus, Trash2, RefreshCw, Loader2, TrendingUp,
   Users, Zap, Package, Edit2, Check, X, ChevronDown, IndianRupee, Settings,
+  Lock, Unlock, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const PLATFORM_COST_PER_MIN = 2.50
 
 const DEFAULT_DIRECT_PLANS = [
   { id: 'free_trial',  name: 'Free Trial',  monthly_fee: 0,    call_rate: 4.50, agents: 1,    calls_mo: 100,  voice_clones: 0,    wallet_min: 500,   is_active: true },
@@ -243,6 +242,14 @@ export default function PlatformPricingPage() {
   const [savingAgency, setSavingAgency] = useState(false)
   const [savingPacks, setSavingPacks] = useState(false)
 
+  // Base cost state
+  const [platformCostPerMin, setPlatformCostPerMin] = useState(2.50)
+  const [basePlan, setBasePlan] = useState(null)
+  const [baseCatalog, setBaseCatalog] = useState(null)
+  const [baseSaving, setBaseSaving] = useState(false)
+  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('voiceflow_admin_token') || '')
+  const [baseAgencyId, setBaseAgencyId] = useState('default')
+
   // Dirty tracking (snapshot of last-saved state)
   const savedDirectRef = useRef(snapshot(DEFAULT_DIRECT_PLANS))
   const savedAgencyRef = useRef(snapshot(DEFAULT_AGENCY_PLANS))
@@ -255,6 +262,52 @@ export default function PlatformPricingPage() {
   // Focused row for margin display (direct plans)
   const [focusedDirectIdx, setFocusedDirectIdx] = useState(0)
   const [focusedAgencyIdx, setFocusedAgencyIdx] = useState(0)
+
+  // ── Base cost handlers ────────────────────────────────────────────────────
+
+  const loadBasePlan = useCallback(async () => {
+    if (!adminToken) return
+    try {
+      const [planRes, catRes] = await Promise.allSettled([
+        api.get(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`, {
+          headers: { 'X-Admin-Token': adminToken }
+        }),
+        api.get('/api/v1/billing/catalog'),
+      ])
+      if (planRes.status === 'fulfilled') setBasePlan(planRes.value.data)
+      if (catRes.status === 'fulfilled') setBaseCatalog(catRes.value.data.catalog)
+      if (planRes.status === 'fulfilled') {
+        const p = planRes.value.data
+        setPlatformCostPerMin(p.min_floor_inr || p.platform_fee_inr || 2.50)
+      }
+    } catch {
+      toast.error('Failed to load base plan')
+    }
+  }, [adminToken, baseAgencyId])
+
+  useEffect(() => { if (activeTab === 'base') loadBasePlan() }, [activeTab, loadBasePlan])
+
+  const saveBasePlan = async () => {
+    if (!basePlan || !adminToken) return
+    setBaseSaving(true)
+    try {
+      await api.put(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`, {
+        stt: basePlan.stt, llm: basePlan.llm, tts: basePlan.tts, telephony: basePlan.telephony,
+        platform_fee_inr: basePlan.platform_fee_inr,
+        ai_markup_pct: basePlan.ai_markup_pct,
+        telephony_markup_pct: basePlan.telephony_markup_pct,
+        min_floor_inr: basePlan.min_floor_inr,
+        lock_llm: basePlan.lock_llm,
+        lock_tts: basePlan.lock_tts,
+      }, { headers: { 'X-Admin-Token': adminToken } })
+      toast.success('Base cost saved — all pricing built on top of this is now updated')
+      loadBasePlan()
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to save base cost')
+    } finally {
+      setBaseSaving(false)
+    }
+  }
 
   // ── Load ─────────────────────────────────────────────────────────────────
 
@@ -455,6 +508,10 @@ export default function PlatformPricingPage() {
         aria-label="Pricing sections"
         className="flex items-center gap-1 p-1 bg-slate-100 rounded-2xl w-fit"
       >
+        <TabButton active={activeTab === 'base'} onClick={() => setActiveTab('base')}>
+          <Settings className="w-3.5 h-3.5" aria-hidden="true" />
+          Base Cost
+        </TabButton>
         <TabButton
           active={activeTab === 'direct'}
           onClick={() => setActiveTab('direct')}
@@ -480,6 +537,194 @@ export default function PlatformPricingPage() {
           Recharge Packs
         </TabButton>
       </nav>
+
+      {/* ── Base Platform Cost ───────────────────────────────────────────────── */}
+      {activeTab === 'base' && (
+        <section aria-label="Base Platform Cost">
+          <div className="bg-white ring-1 ring-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-900">Base Platform Cost</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Provider stack + platform margin. This is the cost floor — all direct plan rates and agency wholesale rates must be set above this.
+              </p>
+            </div>
+            <div className="p-5 space-y-5">
+
+              {/* Admin token gate */}
+              {!adminToken ? (
+                <div className="max-w-sm space-y-3">
+                  <p className="text-sm text-slate-600">Enter admin token to manage base platform costs.</p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      placeholder="Admin token"
+                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          localStorage.setItem('voiceflow_admin_token', e.target.value)
+                          setAdminToken(e.target.value)
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        const val = e.currentTarget.previousElementSibling.value
+                        localStorage.setItem('voiceflow_admin_token', val)
+                        setAdminToken(val)
+                      }}
+                      className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                    >
+                      Unlock
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Agency selector */}
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Agency ID</label>
+                    <input
+                      value={baseAgencyId}
+                      onChange={(e) => setBaseAgencyId(e.target.value)}
+                      placeholder="default"
+                      className="flex-1 max-w-xs border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={loadBasePlan}
+                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                    >
+                      <RefreshCw className="w-4 h-4" /> Load
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { localStorage.removeItem('voiceflow_admin_token'); setAdminToken('') }}
+                      className="text-sm text-slate-400 hover:text-red-600 transition-colors"
+                    >
+                      Log out
+                    </button>
+                  </div>
+
+                  {basePlan && baseCatalog ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+                      <div className="lg:col-span-2 space-y-5">
+                        {/* Provider stack */}
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900 mb-3">Provider Stack</h3>
+                          <div className="grid grid-cols-2 gap-3">
+                            {['stt', 'llm', 'tts', 'telephony'].map((cat) => (
+                              <div key={cat}>
+                                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{cat}</label>
+                                <select
+                                  value={basePlan[cat] || ''}
+                                  onChange={(e) => setBasePlan(p => ({ ...p, [cat]: e.target.value }))}
+                                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                                >
+                                  {Object.entries(baseCatalog[cat] || {}).map(([k, v]) => (
+                                    <option key={k} value={k}>{v.label} · ₹{v.cost}/min</option>
+                                  ))}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Pricing controls */}
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900 mb-3">Platform Fee &amp; Markup</h3>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {[
+                              { key: 'platform_fee_inr', label: 'Platform fee ₹/min', step: 0.25 },
+                              { key: 'ai_markup_pct', label: 'AI markup %', step: 1 },
+                              { key: 'telephony_markup_pct', label: 'Telephony markup %', step: 1 },
+                              { key: 'min_floor_inr', label: 'Min floor ₹/min', step: 0.25 },
+                            ].map(({ key, label, step }) => (
+                              <div key={key}>
+                                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</label>
+                                <input
+                                  type="number" step={step} min={0}
+                                  value={basePlan[key] ?? ''}
+                                  onChange={(e) => setBasePlan(p => ({ ...p, [key]: Number(e.target.value) }))}
+                                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Lock toggles */}
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            { key: 'lock_llm', label: 'Lock LLM for clients' },
+                            { key: 'lock_tts', label: 'Lock TTS for clients' },
+                          ].map(({ key, label }) => (
+                            <label key={key} className="flex items-center gap-2 p-3 rounded-xl bg-slate-50 cursor-pointer">
+                              {basePlan[key]
+                                ? <Lock className="w-4 h-4 text-red-500" />
+                                : <Unlock className="w-4 h-4 text-emerald-500" />
+                              }
+                              <span className="text-sm font-medium text-slate-700">{label}</span>
+                              <input
+                                type="checkbox"
+                                checked={!!basePlan[key]}
+                                onChange={(e) => setBasePlan(p => ({ ...p, [key]: e.target.checked }))}
+                                className="ml-auto"
+                              />
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={saveBasePlan}
+                            disabled={baseSaving}
+                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-40"
+                          >
+                            {baseSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                            Save Base Cost
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Cost breakdown card */}
+                      <div className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100">
+                        <h3 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4" /> Cost Floor
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between text-emerald-800">
+                            <span>Platform fee</span>
+                            <span className="font-mono">₹{Number(basePlan.platform_fee_inr || 0).toFixed(2)}/min</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-800">
+                            <span>AI markup</span>
+                            <span className="font-mono">{basePlan.ai_markup_pct || 0}%</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-800">
+                            <span>Min floor</span>
+                            <span className="font-mono">₹{Number(basePlan.min_floor_inr || 0).toFixed(2)}/min</span>
+                          </div>
+                          <div className="pt-2 border-t border-emerald-200 flex justify-between font-semibold text-emerald-900">
+                            <span>Effective base</span>
+                            <span className="font-mono">≈ ₹{Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50).toFixed(2)}/min</span>
+                          </div>
+                          <p className="text-xs text-emerald-700 pt-1">
+                            Direct plan call rates and agency wholesale rates must be set above this value.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">Enter an agency ID and click Load to view and edit the base cost configuration.</p>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── Direct Client Plans ──────────────────────────────────────────────── */}
       {activeTab === 'direct' && (
@@ -749,7 +994,7 @@ export default function PlatformPricingPage() {
                     Your cost vs client margin — <span className="text-indigo-600">{focusedDirect.name}</span>
                   </p>
                   <MarginCard
-                    cost={PLATFORM_COST_PER_MIN}
+                    cost={platformCostPerMin}
                     clientRate={focusedDirect.call_rate}
                     label="Client"
                   />
@@ -1029,7 +1274,7 @@ export default function PlatformPricingPage() {
                     Your margin on agency calls — <span className="text-teal-600">{focusedAgency.name}</span>
                   </p>
                   <MarginCard
-                    cost={PLATFORM_COST_PER_MIN}
+                    cost={platformCostPerMin}
                     clientRate={focusedAgency.wholesale_rate}
                     label="Agency"
                   />

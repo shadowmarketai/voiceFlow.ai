@@ -107,8 +107,8 @@ function App() {
           <Route path="tickets/:ticketId" element={<S><PlatformTicketDetail /></S>} />
           <Route path="users" element={<S><CrossTenantUsersPage /></S>} />
           <Route path="settings" element={<S><SuperAdminSettingsPage /></S>} />
-          <Route path="pricing" element={<S><AgencyPricingPage /></S>} />
-          <Route path="platform-pricing" element={<S><PlatformPricingPage /></S>} />
+          <Route path="pricing" element={<S><PlatformPricingPage /></S>} />
+          <Route path="platform-pricing" element={<Navigate to="/admin/pricing" replace />} />
           <Route path="quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
         </Route>

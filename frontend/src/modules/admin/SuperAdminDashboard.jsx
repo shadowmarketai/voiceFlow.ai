@@ -84,7 +84,7 @@ export default function SuperAdminDashboard() {
  <span className="absolute inset-0 bg-gradient-to-r from-blue-600 to-blue-700 opacity-0 group-hover:opacity-50 blur-xl transition-opacity" />
  <span className="relative flex items-center gap-2 px-5 py-2.5 text-slate-900 text-sm font-semibold">
  <Plus className="w-4 h-4" />
- New Tenant
+ New Agency
  </span>
  </button>
  </div>
@@ -160,7 +160,7 @@ export default function SuperAdminDashboard() {
  <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
  <div className="flex items-center gap-2">
  <Building2 className="w-4 h-4 text-blue-700" />
- <h3 className="text-sm font-semibold text-slate-900">Tenants</h3>
+ <h3 className="text-sm font-semibold text-slate-900">Agencies</h3>
  </div>
  <Link to="/admin/tenants" className="text-[11px] text-blue-700 hover:text-blue-700">
  Manage →
