@@ -86,7 +86,7 @@ async def stt_stream(
     try:
         async with websockets.connect(
             dg_url,
-            extra_headers={"Authorization": f"Token {api_key}"},
+            additional_headers={"Authorization": f"Token {api_key}"},
             ping_interval=20, ping_timeout=20, max_size=2**24,
         ) as dg_ws:
             await client_ws.send_json({"type": "connected", "provider": "deepgram_nova2"})
