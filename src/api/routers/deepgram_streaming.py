@@ -67,13 +67,15 @@ async def stt_stream(
         return
 
     # Build Deepgram URL with language hint (only if supported by Nova-2)
+    # NOTE: detect_language is NOT supported in WebSocket streaming — only REST API.
+    # For unsupported languages, omit the param and let Deepgram default to English.
     dg_url = DEEPGRAM_WS_URL
     lang_code = (language or "").lower()[:2]
     if language and lang_code in _NOVA2_SUPPORTED:
         dg_url += f"&language={lang_code}"
     elif language:
-        logger.info("Language %s not supported by Nova-2, using auto-detect", language)
-        dg_url += "&detect_language=true"
+        logger.info("Language %s not supported by Nova-2 streaming, defaulting to en", language)
+        dg_url += "&language=en"
     if not diarize:
         dg_url = dg_url.replace("&diarize=true", "")
 

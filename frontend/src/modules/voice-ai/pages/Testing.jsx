@@ -34,12 +34,12 @@ const fadeUp = {
 
 /* ── TTS helper — plays agent reply aloud ──────────────────────── */
 let _ttsAudio = null
-async function playTTS(text, voice = 'nova', language = 'en') {
+async function playTTS(text, voice = 'nova', language = 'en', provider = 'auto') {
   if (!text || text === '…') return
   // Stop any currently playing TTS
   if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio = null }
   try {
-    const params = new URLSearchParams({ text, voice, provider: 'auto', language })
+    const params = new URLSearchParams({ text, voice, provider, language })
     const { data } = await api.get(`/api/v1/tts/preview?${params}`)
     if (data?.audio_base64) {
       const binary = atob(data.audio_base64)
@@ -64,6 +64,11 @@ export default function Testing() {
   const [selectedId, setSelectedId] = useState('')
   const [agentsLoading, setAgentsLoading] = useState(true)
   const [ttsEnabled, setTtsEnabled] = useState(true)
+
+  /* ── Provider overrides ───────────────────────────────────────── */
+  const [sttOverride, setSttOverride] = useState('deepgram')
+  const [llmOverride, setLlmOverride] = useState('')  // '' = use agent default
+  const [ttsOverride, setTtsOverride] = useState('')  // '' = auto
 
   /* ── Chat state ──────────────────────────────────────────────── */
   const [message, setMessage] = useState('')
@@ -201,7 +206,7 @@ export default function Testing() {
       const { data } = await api.post('/api/v1/chat', {
         message: text,
         system_prompt: agentConfig.systemPrompt,
-        provider: agentConfig.provider,
+        provider: llmOverride || agentConfig.provider,
         language: agentConfig.langCode || undefined,
       })
       const reply = data.text || '(empty reply)'
@@ -215,7 +220,7 @@ export default function Testing() {
         return out
       })
       if (ttsEnabled) {
-        await playTTS(reply, agentConfig.voice, agentConfig.langCode)
+        await playTTS(reply, agentConfig.voice, agentConfig.langCode, ttsOverride || 'auto')
       }
     } catch (e) {
       const detail = e.response?.data?.detail || 'LLM call failed'
@@ -227,7 +232,7 @@ export default function Testing() {
     } finally {
       setAgentSpeaking(false)
     }
-  }, [agentConfig, ttsEnabled])
+  }, [agentConfig, ttsEnabled, llmOverride, ttsOverride])
 
   /* ── Text input send ─────────────────────────────────────────── */
   const handleSend = async () => {
@@ -342,7 +347,7 @@ export default function Testing() {
             {currentAgent && (
               <div className="mt-2 flex items-center gap-2 text-xs text-gray-500">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="truncate">Using <span className="font-medium text-gray-700">{currentAgent.name}</span> — {agentConfig.provider} + {agentConfig.langCode?.toUpperCase()}</span>
+                <span className="truncate">Using <span className="font-medium text-gray-700">{currentAgent.name}</span> — {llmOverride || agentConfig.provider} + {agentConfig.langCode?.toUpperCase()}</span>
               </div>
             )}
           </div>
@@ -483,7 +488,9 @@ export default function Testing() {
                 >
                   <Phone className="w-5 h-5" /> Start Voice Call
                 </button>
-                <p className="text-[10px] text-gray-400">Deepgram STT → LLM → ElevenLabs TTS</p>
+                <p className="text-[10px] text-gray-400">
+                  {sttOverride === 'deepgram' ? 'Deepgram' : sttOverride} STT → {llmOverride || agentConfig.provider || 'auto'} LLM → {ttsOverride || 'auto'} TTS
+                </p>
               </div>
             )}
           </motion.div>
@@ -558,29 +565,78 @@ export default function Testing() {
             )}
           </motion.div>
 
-          {/* Voice Pipeline */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.3 }}
+          {/* Provider Selection */}
+          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.25 }}
             className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm"
           >
             <div className="flex items-center gap-2.5 mb-4">
               <div className="p-1.5 rounded-lg bg-emerald-50"><AudioLines className="w-4 h-4 text-emerald-600" /></div>
               <h3 className="text-sm font-semibold text-gray-900">Voice Pipeline</h3>
             </div>
-            <div className="space-y-2">
-              {[
-                { label: 'STT', status: 'Deepgram Nova-2', color: 'indigo', active: recording },
-                { label: 'LLM', status: currentAgent ? (agentConfig.provider === 'auto' ? 'Auto (Groq→OpenAI)' : agentConfig.provider) : 'No agent', color: 'violet', active: !!currentAgent },
-                { label: 'TTS', status: ttsEnabled ? 'ElevenLabs' : 'Disabled', color: 'pink', active: ttsEnabled },
-                { label: 'Language', status: currentAgent ? (agentConfig.langCode?.toUpperCase() || 'EN') : '—', color: 'amber', active: !!currentAgent },
-                { label: 'Mode', status: voiceCallActive ? 'Voice Call' : recording ? 'Mic Active' : 'Text Chat', color: 'emerald', active: voiceCallActive || recording },
-              ].map(step => (
-                <div key={step.label} className="flex items-center justify-between py-1.5">
-                  <span className="text-xs text-gray-500">{step.label}</span>
-                  <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${
-                    step.active ? `bg-${step.color}-50 text-${step.color}-700 border border-${step.color}-100` : 'bg-gray-50 text-gray-400 border border-gray-100'
-                  }`}>{step.status}</span>
-                </div>
-              ))}
+            <div className="space-y-3">
+              {/* STT Provider */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">STT (Speech-to-Text)</label>
+                <select value={sttOverride} onChange={e => setSttOverride(e.target.value)}
+                  disabled={voiceCallActive}
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-indigo-300 focus:ring-1 focus:ring-indigo-100 disabled:opacity-50 transition-all"
+                >
+                  <option value="deepgram">Deepgram Nova-2</option>
+                  <option value="sarvam">Sarvam AI (Indic)</option>
+                  <option value="groq">Groq Whisper</option>
+                  <option value="openai">OpenAI Whisper</option>
+                </select>
+                {sttOverride !== 'deepgram' && (
+                  <p className="text-[10px] text-amber-600 mt-1">Live streaming uses Deepgram. Other STT providers work for recorded audio.</p>
+                )}
+              </div>
+
+              {/* LLM Provider */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">LLM (Language Model)</label>
+                <select value={llmOverride} onChange={e => setLlmOverride(e.target.value)}
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-100 transition-all"
+                >
+                  <option value="">Agent Default ({agentConfig.provider || 'auto'})</option>
+                  <option value="auto">Auto (Groq → Gemini → OpenAI)</option>
+                  <option value="groq">Groq (Fastest)</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openai">OpenAI GPT</option>
+                  <option value="anthropic">Anthropic Claude</option>
+                  <option value="deepseek">DeepSeek</option>
+                </select>
+              </div>
+
+              {/* TTS Provider */}
+              <div>
+                <label className="text-xs font-medium text-gray-500 mb-1 block">TTS (Text-to-Speech)</label>
+                <select value={ttsOverride} onChange={e => setTtsOverride(e.target.value)}
+                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-pink-300 focus:ring-1 focus:ring-pink-100 transition-all"
+                >
+                  <option value="">Auto (best available)</option>
+                  <option value="elevenlabs">ElevenLabs</option>
+                  <option value="sarvam">Sarvam AI (Indic)</option>
+                  <option value="openai">OpenAI TTS</option>
+                  <option value="deepgram">Deepgram Aura</option>
+                  <option value="google">Google Cloud TTS</option>
+                  <option value="edge">Edge TTS (Free)</option>
+                </select>
+              </div>
+
+              {/* Active pipeline status */}
+              <div className="pt-2 mt-1 border-t border-gray-100 space-y-1.5">
+                {[
+                  { label: 'Language', status: currentAgent ? (agentConfig.langCode?.toUpperCase() || 'EN') : '—', color: 'amber', active: !!currentAgent },
+                  { label: 'Mode', status: voiceCallActive ? 'Voice Call' : recording ? 'Mic Active' : 'Text Chat', color: 'emerald', active: voiceCallActive || recording },
+                ].map(step => (
+                  <div key={step.label} className="flex items-center justify-between py-1">
+                    <span className="text-xs text-gray-500">{step.label}</span>
+                    <span className={`text-[10px] font-medium px-2 py-0.5 rounded-md ${
+                      step.active ? `bg-${step.color}-50 text-${step.color}-700 border border-${step.color}-100` : 'bg-gray-50 text-gray-400 border border-gray-100'
+                    }`}>{step.status}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </motion.div>
         </div>
