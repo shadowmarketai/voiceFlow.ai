@@ -1,14 +1,12 @@
 """
-LiveKit Token Service — Generate access tokens for rooms.
+LiveKit Token Service — Generate access tokens for rooms using PyJWT.
 """
 
-import base64
-import hashlib
-import hmac
-import json
 import logging
 import os
 import time
+
+import jwt
 
 logger = logging.getLogger(__name__)
 
@@ -16,18 +14,8 @@ LIVEKIT_API_KEY = os.environ.get("LIVEKIT_API_KEY", "")
 LIVEKIT_API_SECRET = os.environ.get("LIVEKIT_API_SECRET", "")
 LIVEKIT_URL = os.environ.get("LIVEKIT_URL", "")
 
-# W6.3 — idle-room kill. Empty rooms are auto-deleted after this many
-# seconds so WebRTC bandwidth/CPU doesn't keep burning on abandoned
-# sessions. 30s default — short enough to close abandoned calls
-# quickly, long enough that a reconnect grace period still works.
 LIVEKIT_EMPTY_TIMEOUT = int(os.environ.get("LIVEKIT_EMPTY_TIMEOUT", "30"))
-# Max participants per room — keeps a leaked token from spinning up
-# a 100-person room and chewing bandwidth.
 LIVEKIT_MAX_PARTICIPANTS = int(os.environ.get("LIVEKIT_MAX_PARTICIPANTS", "4"))
-
-
-def _b64url_encode(data: bytes) -> str:
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
 def create_token(
@@ -38,7 +26,7 @@ def create_token(
     can_subscribe: bool = True,
     ttl: int = 3600,
 ) -> str:
-    """Create a LiveKit access token (JWT).
+    """Create a LiveKit access token (JWT) using PyJWT.
 
     Args:
         identity: Unique participant identity (e.g., user_id or "ai-agent")
@@ -56,11 +44,6 @@ def create_token(
 
     now = int(time.time())
 
-    header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
-
-    # W6.3 — roomConfig inside the video claim auto-applies on first
-    # participant join. LiveKit server enforces emptyTimeout + maxParticipants
-    # so we don't need a separate room creation RPC.
     claims = {
         "iss": LIVEKIT_API_KEY,
         "sub": identity,
@@ -82,16 +65,8 @@ def create_token(
         },
     }
 
-    payload = _b64url_encode(json.dumps(claims).encode())
-    signature = _b64url_encode(
-        hmac.new(
-            LIVEKIT_API_SECRET.encode(),
-            f"{header}.{payload}".encode(),
-            hashlib.sha256,
-        ).digest()
-    )
-
-    return f"{header}.{payload}.{signature}"
+    token = jwt.encode(claims, LIVEKIT_API_SECRET, algorithm="HS256")
+    return token
 
 
 def get_livekit_url() -> str:
