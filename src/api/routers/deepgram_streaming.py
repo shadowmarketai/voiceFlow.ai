@@ -30,6 +30,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/stt", tags=["stt-stream"])
 
+# Nova-2 supported language codes — unsupported codes cause HTTP 400
+_NOVA2_SUPPORTED = {
+    "en", "es", "fr", "de", "pt", "it", "nl", "ru", "ja", "ko", "zh",
+    "ar", "hi", "tr", "pl", "uk", "sv", "no", "da", "cs", "fi", "ro",
+    "sk", "bg", "hr", "hu", "el", "sr", "lt", "lv", "et", "sl", "ca",
+    "af", "id", "ms", "vi", "th", "tl",
+}
+
 DEEPGRAM_WS_URL = (
     "wss://api.deepgram.com/v1/listen"
     "?model=nova-2"
@@ -58,10 +66,14 @@ async def stt_stream(
         await client_ws.close()
         return
 
-    # Build Deepgram URL with language hint
+    # Build Deepgram URL with language hint (only if supported by Nova-2)
     dg_url = DEEPGRAM_WS_URL
-    if language:
-        dg_url += f"&language={language}"
+    lang_code = (language or "").lower()[:2]
+    if language and lang_code in _NOVA2_SUPPORTED:
+        dg_url += f"&language={lang_code}"
+    elif language:
+        logger.info("Language %s not supported by Nova-2, using auto-detect", language)
+        dg_url += "&detect_language=true"
     if not diarize:
         dg_url = dg_url.replace("&diarize=true", "")
 
