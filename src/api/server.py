@@ -75,6 +75,9 @@ def create_app() -> FastAPI:
     # JSON API (/api/v1/status/*) is reachable from the same host.
     @application.middleware("http")
     async def _status_host_router(request: Request, call_next):
+        # Skip for WebSocket upgrades — middleware("http") breaks WS connections
+        if request.headers.get("upgrade", "").lower() == "websocket":
+            return await call_next(request)
         host = (request.headers.get("host") or "").split(":")[0].lower()
         if request.url.path in ("", "/"):
             if host.startswith("status."):
