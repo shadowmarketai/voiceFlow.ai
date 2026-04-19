@@ -333,40 +333,62 @@ export default function CampaignsPage() {
  const canUpdate = can('campaigns','update');
  const canDelete = can('campaigns','delete');
 
- const [campaigns, setCampaigns] = useState(initialCampaigns);
+ const [campaigns, setCampaigns] = useState([]);
+ const [contactLists, setContactLists] = useState([]);
+ const [contactListsLoaded, setContactListsLoaded] = useState(false);
  const [viewMode, setViewMode] = useState('kanban'); //'kanban' |'table'
 
  // Load campaigns from API on mount
+ // Load campaigns from API; fall back to demo data only if API returns nothing
  useEffect(() => {
  let cancelled = false;
  campaignsAPI.getAll()
  .then(({ data }) => {
- if (cancelled || !Array.isArray(data) || data.length === 0) return;
- const mapped = data.map(c => ({
+ if (cancelled) return;
+ const items = Array.isArray(data) ? data : (data?.items || []);
+ if (items.length === 0) {
+   // Show demo campaigns only when DB is empty
+   setCampaigns(initialCampaigns);
+   return;
+ }
+ const mapped = items.map(c => ({
  id: c.id,
  name: c.name || c.campaign_name || 'Campaign',
- agent: c.agent_name || c.assistant_name || 'AI Agent',
- status: c.status || 'scheduled',
- total: c.total_contacts || c.total || 0,
- called: c.calls_made || c.called || 0,
- connected: c.calls_connected || c.connected || 0,
- converted: c.conversions || c.converted || 0,
- progress: c.total_contacts > 0 ? Math.round((c.calls_made || 0) / c.total_contacts * 100) : 0,
+ agent: c.agent_name || c.assistant_name || c.description?.split(' with ')[1] || 'AI Agent',
+ status: c.status || 'draft',
+ total: c.audience_size || c.total_contacts || 0,
+ called: c.total_calls_made || c.calls_made || 0,
+ connected: c.calls_connected || 0,
+ converted: c.conversions || 0,
+ progress: (c.audience_size || 0) > 0 ? Math.round((c.total_calls_made || 0) / (c.audience_size || 1) * 100) : 0,
  startDate: c.start_date ? new Date(c.start_date).toISOString().split('T')[0] : '',
  endDate: c.end_date ? new Date(c.end_date).toISOString().split('T')[0] : '—',
- targetDialect: c.target_dialect || 'Chennai',
- dialects: c.dialects || [{ dialect: 'Chennai', count: 0, pct: 1.0 }],
- emotions: c.emotions || { neutral: 1.0 },
- genZMode: c.genz_mode || false,
- genZScore: c.genz_score || 0,
- genZTopTerms: c.genz_terms || [],
- contactList: c.contact_list_name || c.contact_list || '',
- emotionStrategy: c.emotion_strategy || 'Adaptive',
+ targetDialect: (c.audience_criteria || {}).target_dialect || 'General',
+ dialects: [{ dialect: (c.audience_criteria || {}).target_dialect || 'General', count: 0, pct: 1.0 }],
+ emotions: { neutral: 1.0 },
+ genZMode: false,
+ genZScore: 0,
+ genZTopTerms: [],
+ contactList: c.audience_type || '',
+ emotionStrategy: (c.audience_criteria || {}).emotion_strategy || 'Adaptive',
  }));
- setCampaigns(prev => [...mapped, ...prev.filter(p => !mapped.find(m => m.id === p.id))]);
+ setCampaigns(mapped);
  })
- .catch(() => {}); // keep mock data
+ .catch(() => { setCampaigns(initialCampaigns); });
  return () => { cancelled = true; };
+ }, []);
+
+ // Load contact lists from API
+ useEffect(() => {
+ fetch('/api/v1/contact-lists')
+   .then(r => r.json())
+   .then(data => {
+     if (Array.isArray(data)) {
+       setContactLists(data);
+       setContactListsLoaded(true);
+     }
+   })
+   .catch(() => setContactListsLoaded(true));
  }, []);
  const [selectedCampaign, setSelectedCampaign] = useState(null);
  const [showCreateModal, setShowCreateModal] = useState(false);
@@ -380,10 +402,14 @@ export default function CampaignsPage() {
  name: '',
  agent: 'Sales Pro',
  contactList: '',
+ contactListId: '',
  schedule: '',
  targetDialect: 'Chennai',
  emotionStrategy: 'Adaptive',
  genZMode: false,
+ telephonyProvider: 'vobiz',
+ fromNumber: '',
+ language: 'hi',
  });
 
  // ── Derived data ─────────────────────────────────────────────────────────────
@@ -520,6 +546,11 @@ export default function CampaignsPage() {
  telephonyProvider: newCampaign.telephonyProvider || 'vobiz',
  };
 
+ // Find contact list size from loaded lists
+ const selectedList = contactLists.find(cl => cl.name === newCampaign.contactList || String(cl.id) === newCampaign.contactListId);
+ const listSize = selectedList?.total_count || contactListSizes[newCampaign.contactList] || 0;
+ localCampaign.total = listSize;
+
  // Try real API
  try {
  const { data } = await campaignsAPI.create({
@@ -528,22 +559,31 @@ export default function CampaignsPage() {
  campaign_type: 'outbound_call',
  platform: 'voice',
  audience_type: newCampaign.contactList,
- audience_size: contactListSizes[newCampaign.contactList] || 0,
+ audience_size: listSize,
+ audience_criteria: {
+   contact_list_id: selectedList?.id || null,
+   telephony_provider: newCampaign.telephonyProvider || 'vobiz',
+   from_number: newCampaign.fromNumber || '',
+   language: newCampaign.language || 'hi',
+   target_dialect: newCampaign.targetDialect,
+   emotion_strategy: newCampaign.emotionStrategy,
+   genz_mode: newCampaign.genZMode,
+ },
  budget: 0,
  currency: 'INR',
  start_date: newCampaign.schedule || new Date().toISOString(),
  });
  localCampaign.id = data.id || localCampaign.id;
- toast.success(`Campaign "${newCampaign.name}" created!`);
+ toast.success(`Campaign "${newCampaign.name}" created with ${listSize} contacts!`);
  } catch {
  toast.success(`Campaign "${newCampaign.name}" created (offline mode)`);
  }
 
  setCampaigns(prev => [localCampaign, ...prev]);
  setNewCampaign({
- name: '', agent: 'Sales Pro', contactList: '', schedule: '',
+ name: '', agent: 'Sales Pro', contactList: '', contactListId: '', schedule: '',
  targetDialect: 'Chennai', emotionStrategy: 'Adaptive', genZMode: false,
- telephonyProvider: 'vobiz',
+ telephonyProvider: 'vobiz', fromNumber: '', language: 'hi',
  });
  setShowCreateModal(false);
  };
@@ -1258,20 +1298,64 @@ export default function CampaignsPage() {
  </select>
  </div>
 
- {/* Contact List */}
+ {/* Contact List — from DB or fallback */}
  <div>
  <label className="block text-sm font-medium text-slate-700 mb-1">Contact List</label>
  <select
  value={newCampaign.contactList}
- onChange={(e) => setNewCampaign((p) => ({ ...p, contactList: e.target.value }))}
+ onChange={(e) => {
+   const selected = contactLists.find(cl => cl.name === e.target.value);
+   setNewCampaign((p) => ({ ...p, contactList: e.target.value, contactListId: selected ? String(selected.id) : '' }));
+ }}
  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900"
  >
  <option value="">Select a contact list</option>
- <option value="February Leads">February Leads (2,456)</option>
- <option value="IndiaMart Leads">IndiaMart Leads (892)</option>
- <option value="Website Signups">Website Signups (567)</option>
- <option value="Product Interest List">Product Interest List (1,340)</option>
- <option value="Active Customers">Active Customers (3,210)</option>
+ {contactLists.length > 0 ? (
+   contactLists.map(cl => (
+     <option key={cl.id} value={cl.name}>{cl.name} ({cl.total_count.toLocaleString()} contacts)</option>
+   ))
+ ) : (
+   <>
+   <option value="February Leads">February Leads (demo)</option>
+   <option value="Product Interest List">Product Interest List (demo)</option>
+   <option value="Active Customers">Active Customers (demo)</option>
+   </>
+ )}
+ </select>
+ {contactLists.length === 0 && contactListsLoaded && (
+   <p className="text-[10px] text-amber-600 mt-1">No contact lists in DB. Upload a CSV in Channels → Developer to create one.</p>
+ )}
+ </div>
+
+ {/* Caller ID (From Number) */}
+ <div>
+ <label className="block text-sm font-medium text-slate-700 mb-1">Caller ID (From Number)</label>
+ <input
+ type="text"
+ value={newCampaign.fromNumber}
+ onChange={(e) => setNewCampaign((p) => ({ ...p, fromNumber: e.target.value }))}
+ placeholder="+91XXXXXXXXXX"
+ className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+ />
+ <p className="text-[10px] text-slate-400 mt-1">Your registered business number for outbound calls</p>
+ </div>
+
+ {/* Language */}
+ <div>
+ <label className="block text-sm font-medium text-slate-700 mb-1">Campaign Language</label>
+ <select
+ value={newCampaign.language}
+ onChange={(e) => setNewCampaign((p) => ({ ...p, language: e.target.value }))}
+ className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900"
+ >
+ <option value="hi">Hindi</option>
+ <option value="ta">Tamil</option>
+ <option value="en">English</option>
+ <option value="te">Telugu</option>
+ <option value="kn">Kannada</option>
+ <option value="ml">Malayalam</option>
+ <option value="bn">Bengali</option>
+ <option value="mr">Marathi</option>
  </select>
  </div>
 

@@ -136,6 +136,8 @@ class CampaignResponse(BaseModel):
     impressions: int = 0
     clicks: int = 0
     conversions: int = 0
+    total_calls_made: int = 0
+    calls_connected: int = 0
 
     start_date: str | None = None
     end_date: str | None = None

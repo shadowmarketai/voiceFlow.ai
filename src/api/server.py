@@ -561,6 +561,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("API Keys router not available: %s", exc)
 
+    # ── Contact Lists (Campaign phone numbers) ────────────
+    try:
+        from api.routers.contact_lists import router as contact_lists_router
+        application.include_router(contact_lists_router)
+        logger.info("Contact Lists router loaded")
+    except Exception as exc:
+        logger.warning("Contact Lists router not available: %s", exc)
+
     # ── CRM Integration API ──────────────────────────────────
     _register_crm_integration_api(application)
 

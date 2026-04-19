@@ -231,6 +231,25 @@ async def telephony_webhook(provider: str, request: Request):
         except Exception as exc:
             logger.warning("Call processing failed for %s: %s", call_record.id, exc)
 
+    # Update campaign stats if this call belongs to a campaign
+    try:
+        campaign_id = payload.get("campaign_id") or call_record.__dict__.get("campaign_id")
+        if campaign_id:
+            from api.database import get_session_factory
+            from api.models.campaign import Campaign
+
+            with get_session_factory()() as db:
+                campaign = db.get(Campaign, int(campaign_id))
+                if campaign:
+                    campaign.total_calls_made = (campaign.total_calls_made or 0) + 1
+                    if call_record.status == CallStatus.COMPLETED and call_record.duration_seconds > 2:
+                        campaign.calls_connected = (campaign.calls_connected or 0) + 1
+                    db.commit()
+                    logger.info("Campaign %s stats updated: dialed=%d connected=%d",
+                                campaign_id, campaign.total_calls_made, campaign.calls_connected)
+    except Exception as exc:
+        logger.warning("Campaign stats update failed: %s", exc)
+
     return {"status": "processed", "call_id": call_record.id, "provider": provider}
 
 

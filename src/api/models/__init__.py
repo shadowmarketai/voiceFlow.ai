@@ -13,7 +13,7 @@ from api.models.base import Base  # noqa: F401
 for _mod in (
     "analytics", "campaign", "crm", "tenant", "user", "voice",
     "voice_agent", "webhook", "quality_metrics", "billing_wallet",
-    "voice_agent_db", "api_key", "voice_library",
+    "voice_agent_db", "api_key", "voice_library", "contact_list",
 ):
     try:
         __import__(f"api.models.{_mod}")

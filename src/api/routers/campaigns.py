@@ -406,15 +406,37 @@ async def start_campaign(
 
         from api.services.campaign_execution import execute_campaign
 
-        # Load phone numbers from audience_criteria if available
-        phone_numbers = []
-        if campaign.audience_criteria and isinstance(campaign.audience_criteria, dict):
-            phone_numbers = campaign.audience_criteria.get("phone_numbers", [])
+        criteria = campaign.audience_criteria or {}
+        if isinstance(criteria, str):
+            import json
+            try:
+                criteria = json.loads(criteria)
+            except Exception:
+                criteria = {}
+
+        # Load phone numbers: first from contact_list_id in DB, then from criteria
+        phone_numbers = criteria.get("phone_numbers", [])
+        contact_list_id = criteria.get("contact_list_id")
+        if contact_list_id and not phone_numbers:
+            try:
+                from api.models.contact_list import ContactList as CLModel
+                cl = db.execute(
+                    __import__("sqlalchemy", fromlist=["select"]).select(CLModel)
+                    .where(CLModel.id == int(contact_list_id), CLModel.is_active.is_(True))
+                ).scalar_one_or_none()
+                if cl and cl.phone_numbers:
+                    phone_numbers = cl.phone_numbers
+                    logger.info("Loaded %d numbers from contact list %s", len(phone_numbers), contact_list_id)
+            except Exception as exc:
+                logger.warning("Failed to load contact list %s: %s", contact_list_id, exc)
 
         # Use campaign-level provider/language or defaults
-        provider = (campaign.audience_criteria or {}).get("telephony_provider", "vobiz")
-        from_number = (campaign.audience_criteria or {}).get("from_number", "")
-        language = (campaign.audience_criteria or {}).get("language", "hi")
+        provider = criteria.get("telephony_provider", "vobiz")
+        from_number = criteria.get("from_number", campaign.caller_id or "")
+        language = criteria.get("language", "hi")
+
+        if not phone_numbers:
+            logger.warning("Campaign %s started with 0 phone numbers", campaign_id)
 
         asyncio.create_task(execute_campaign(
             campaign_id=campaign.id,
