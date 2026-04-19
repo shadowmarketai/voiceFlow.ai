@@ -5,7 +5,7 @@ import {
  ArrowUpDown, ArrowUp, ArrowDown, Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { voiceAgentAPI } from '../../services/api';
+import { voiceAgentAPI, agentsAPI } from '../../services/api';
 import Timeline from './components/Timeline';
 import CallDetailPanel from './components/CallDetailPanel';
 import ResizablePanel from './components/ResizablePanel';
@@ -163,47 +163,111 @@ export default function CallLogsPage() {
  const [viewMode, setViewMode] = useState('timeline'); //'timeline' |'table'
  const [search, setSearch] = useState('');
  const [dateFilter, setDateFilter] = useState('all');
+ const [agentFilter, setAgentFilter] = useState('all');
+ const [agents, setAgents] = useState([]);
  const [selectedCall, setSelectedCall] = useState(null);
  const [sortField, setSortField] = useState(null);
  const [sortDir, setSortDir] = useState('asc');
  const [currentPage, setCurrentPage] = useState(1);
  const [apiCalls, setApiCalls] = useState([]);
 
- // Load call recordings from API
+ // Load agents list
+ useEffect(() => {
+ agentsAPI.list()
+   .then(({ data }) => {
+     const list = data?.agents || data || [];
+     setAgents(Array.isArray(list) ? list : []);
+   })
+   .catch(() => {
+     // Fallback: load from localStorage
+     try {
+       const saved = JSON.parse(localStorage.getItem('voiceflow_agents') || '[]');
+       if (saved.length > 0) setAgents(saved);
+     } catch {}
+   });
+ }, []);
+
+ // Load call logs — use agent filter when set
  useEffect(() => {
  let cancelled = false;
- voiceAgentAPI.listRecordings(undefined, 200)
- .then(({ data }) => {
- if (cancelled || !Array.isArray(data) || data.length === 0) return;
- const mapped = data.map(r => ({
- id: `api-${r.id}`,
- name: r.caller_number || `Call #${r.id}`,
- phone: r.caller_number || '',
- duration: r.duration_seconds ? `${Math.floor(r.duration_seconds / 60)}:${String(r.duration_seconds % 60).padStart(2,'0')}` : '0:00',
- agent: r.agent_voice_id || 'AI Agent',
- outcome: r.post_call_analysis?.outcome || 'Completed',
- sentiment: r.post_call_analysis?.sentiment || 'neutral',
- time: r.created_at ? new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
- date: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '',
- direction: r.direction || 'outbound',
- dialect: r.post_call_analysis?.dialect || 'Chennai',
- dialectConfidence: r.post_call_analysis?.dialect_confidence || 0.7,
- dialectPatterns: [],
- language: r.language || 'Tamil',
- emotion: r.post_call_analysis?.emotion || 'neutral',
- emotionConfidence: r.post_call_analysis?.emotion_confidence || 0.5,
- emotionTrend: ['neutral'],
- genZScore: 0,
- genZTerms: [],
- codeMixLanguages: '',
- codeMixRatio: 0,
- transcript: r.transcript || [],
- }));
- setApiCalls(mapped);
- })
- .catch(() => {});
+
+ const loadCalls = async () => {
+   // Try call-logs endpoint first (supports agent_id filter)
+   try {
+     const params = { limit: 200 };
+     if (agentFilter !== 'all') params.agent_id = agentFilter;
+     const { data } = await agentsAPI.callLogs(params);
+     const logs = data?.logs || data || [];
+     if (!cancelled && Array.isArray(logs) && logs.length > 0) {
+       const agentMap = {};
+       agents.forEach(a => { agentMap[a.id] = a.name; agentMap[String(a.id)] = a.name; });
+
+       const mapped = logs.map(r => ({
+         id: `log-${r.id}`,
+         name: r.from || r.caller_number || `Call #${r.id}`,
+         phone: r.from || r.to || '',
+         duration: r.duration_sec ? `${Math.floor(r.duration_sec / 60)}:${String(Math.floor(r.duration_sec % 60)).padStart(2,'0')}` : '0:00',
+         agent: agentMap[r.agent_id] || r.agent_id || 'AI Agent',
+         agentId: r.agent_id || '',
+         outcome: r.outcome || 'Completed',
+         sentiment: r.sentiment || 'neutral',
+         time: r.started_at ? new Date(r.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+         date: r.started_at ? new Date(r.started_at).toISOString().split('T')[0] : '',
+         direction: r.direction || 'outbound',
+         dialect: r.meta?.dialect || 'General',
+         dialectConfidence: r.meta?.dialect_confidence || 0,
+         dialectPatterns: [],
+         language: r.meta?.language || 'English',
+         emotion: r.emotion || 'neutral',
+         emotionConfidence: r.meta?.emotion_confidence || 0.5,
+         emotionTrend: ['neutral'],
+         genZScore: 0,
+         genZTerms: [],
+         codeMixLanguages: '',
+         codeMixRatio: 0,
+         transcript: r.transcript || [],
+       }));
+       setApiCalls(mapped);
+       return;
+     }
+   } catch {}
+
+   // Fallback: recordings endpoint
+   try {
+     const { data } = await voiceAgentAPI.listRecordings(undefined, 200);
+     if (cancelled || !Array.isArray(data) || data.length === 0) return;
+     const mapped = data.map(r => ({
+       id: `api-${r.id}`,
+       name: r.caller_number || `Call #${r.id}`,
+       phone: r.caller_number || '',
+       duration: r.duration_seconds ? `${Math.floor(r.duration_seconds / 60)}:${String(r.duration_seconds % 60).padStart(2,'0')}` : '0:00',
+       agent: r.agent_voice_id || 'AI Agent',
+       agentId: r.agent_voice_id || '',
+       outcome: r.post_call_analysis?.outcome || 'Completed',
+       sentiment: r.post_call_analysis?.sentiment || 'neutral',
+       time: r.created_at ? new Date(r.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+       date: r.created_at ? new Date(r.created_at).toISOString().split('T')[0] : '',
+       direction: r.direction || 'outbound',
+       dialect: r.post_call_analysis?.dialect || 'Chennai',
+       dialectConfidence: r.post_call_analysis?.dialect_confidence || 0.7,
+       dialectPatterns: [],
+       language: r.language || 'Tamil',
+       emotion: r.post_call_analysis?.emotion || 'neutral',
+       emotionConfidence: r.post_call_analysis?.emotion_confidence || 0.5,
+       emotionTrend: ['neutral'],
+       genZScore: 0,
+       genZTerms: [],
+       codeMixLanguages: '',
+       codeMixRatio: 0,
+       transcript: r.transcript || [],
+     }));
+     setApiCalls(mapped);
+   } catch {}
+ };
+
+ loadCalls();
  return () => { cancelled = true; };
- }, []);
+ }, [agentFilter, agents]);
 
  const allCalls = useMemo(() => [...apiCalls, ...mockCalls], [apiCalls]);
 
@@ -229,6 +293,11 @@ export default function CallLogsPage() {
  if (dateFilter === 'today') result = result.filter(c => c.date === today);
  else if (dateFilter === 'yesterday') result = result.filter(c => c.date === yesterday);
  //'7d','30d','all' keep everything for mock data
+
+ // agent filter (client-side for mock data)
+ if (agentFilter !== 'all') {
+ result = result.filter(c => c.agentId === agentFilter || c.agent === agentFilter);
+ }
 
  // sorting (table only)
  if (sortField) {
@@ -334,6 +403,21 @@ export default function CallLogsPage() {
  >
  {dateFilterOptions.map(o => (
  <option key={o.value} value={o.value}>{o.label}</option>
+ ))}
+ </select>
+ </div>
+
+ {/* Agent filter */}
+ <div className="relative">
+ <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+ <select
+ value={agentFilter}
+ onChange={e => { setAgentFilter(e.target.value); setCurrentPage(1); }}
+ className="pl-8 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none cursor-pointer"
+ >
+ <option value="all">All Agents</option>
+ {agents.map(a => (
+ <option key={a.id} value={String(a.id)}>{a.name}</option>
  ))}
  </select>
  </div>

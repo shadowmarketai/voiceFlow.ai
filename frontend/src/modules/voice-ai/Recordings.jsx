@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import DialectBadge from './components/DialectBadge';
 import EmotionIndicator from './components/EmotionIndicator';
 import GenZBadge from './components/GenZBadge';
-import { ttsAPI, voiceAgentAPI } from '../../services/api';
+import { ttsAPI, voiceAgentAPI, agentsAPI } from '../../services/api';
 
 const DIALECT_TO_LANG = { Kongu: 'ta', Chennai: 'ta', Madurai: 'ta', Tirunelveli: 'ta' };
 const LANG_TO_BCP47 = { ta: 'ta-IN', hi: 'hi-IN', en: 'en-IN', te: 'te-IN', kn: 'kn-IN', ml: 'ml-IN' };
@@ -208,12 +208,26 @@ export default function RecordingsPage() {
  const [viewMode, setViewMode] = useState('grid'); //'grid' |'list'
  const [search, setSearch] = useState('');
  const [dialectFilter, setDialectFilter] = useState('All');
+ const [agentFilter, setAgentFilter] = useState('all');
+ const [agents, setAgents] = useState([]);
  const [playingId, setPlayingId] = useState(null);
  const [loadingId, setLoadingId] = useState(null);
  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
  const [apiRecordings, setApiRecordings] = useState([]);
  const audioRef = useRef(null);
  const audioCache = useRef({}); // cache generated audio URLs by recording id
+
+ // Load agents list
+ useEffect(() => {
+ agentsAPI.list()
+   .then(({ data }) => {
+     const list = data?.agents || data || [];
+     setAgents(Array.isArray(list) ? list : []);
+   })
+   .catch(() => {
+     try { setAgents(JSON.parse(localStorage.getItem('voiceflow_agents') || '[]')); } catch {}
+   });
+ }, []);
 
  // Fetch real recordings from API, merge with mock data
  useEffect(() => {
@@ -261,8 +275,11 @@ export default function RecordingsPage() {
  if (dialectFilter !=='All') {
  result = result.filter(r => r.dialect === dialectFilter);
  }
+ if (agentFilter !== 'all') {
+ result = result.filter(r => r.agent === agentFilter || r.agentId === agentFilter);
+ }
  return result;
- }, [search, dialectFilter]);
+ }, [search, dialectFilter, agentFilter]);
 
  const browserSpeakingId = useRef(null);
 
@@ -486,6 +503,18 @@ export default function RecordingsPage() {
  className="pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 focus:border-transparent w-56"
  />
  </div>
+
+ {/* Agent filter */}
+ <select
+ value={agentFilter}
+ onChange={e => setAgentFilter(e.target.value)}
+ className="px-3 py-2 text-sm rounded-lg border border-slate-200 bg-white text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-transparent appearance-none cursor-pointer"
+ >
+ <option value="all">All Agents</option>
+ {agents.map(a => (
+ <option key={a.id} value={a.name}>{a.name}</option>
+ ))}
+ </select>
 
  {/* Dialect filter */}
  <div className="relative">
