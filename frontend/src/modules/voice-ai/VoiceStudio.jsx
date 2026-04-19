@@ -899,6 +899,16 @@ function VoiceCloningTab({ onCountChange }) {
                 </div>
               )}
 
+              {/* Voice Name — editable here so user can name before cloning */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Voice Name</label>
+                <input
+                  type="text" value={voiceName} onChange={(e) => setVoiceName(e.target.value)}
+                  placeholder="e.g., Dr. Kumar, Priya Sales Voice"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
+                />
+              </div>
+
               <div className="p-3 bg-gray-50 rounded-xl">
                 <p className="text-xs text-gray-600">
                   Selected provider: <span className="font-medium">{CLONING_PROVIDERS.find(p => p.id === selectedProvider)?.name}</span>
@@ -915,7 +925,7 @@ function VoiceCloningTab({ onCountChange }) {
                   className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-xl text-sm font-semibold hover:shadow-lg disabled:opacity-40"
                 >
                   <Dna className="w-4 h-4 inline mr-2" />
-                  {voiceName.trim() ? `Clone "${voiceName}"` : 'Enter voice name first'}
+                  {voiceName.trim() ? `Clone "${voiceName}"` : 'Enter voice name to continue'}
                 </button>
               </div>
             </div>
