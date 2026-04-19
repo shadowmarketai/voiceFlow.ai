@@ -491,9 +491,11 @@ async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_a
     direct_plans = body.get("direct_plans", [])
     agency_plans = body.get("agency_plans", [])
 
-    _DIRECT_ALLOWED = ["name", "monthly_fee", "price", "call_rate", "profit_margin",
+    # "monthly_fee" is a frontend alias — serialized to "price" before sending.
+    # Never include "monthly_fee" here; the DB column is "price".
+    _DIRECT_ALLOWED = ["name", "price", "call_rate", "profit_margin",
                        "agent_limit", "voice_clones", "calls_per_month", "wallet_min", "is_active"]
-    _AGENCY_ALLOWED = ["name", "monthly_fee", "price", "wholesale_rate", "profit_margin",
+    _AGENCY_ALLOWED = ["name", "price", "wholesale_rate", "profit_margin",
                        "sub_client_limit", "agents_per_client", "voice_clones", "is_active"]
 
     def _upsert_plan(conn, plan: dict, allowed: list, plan_type: str):

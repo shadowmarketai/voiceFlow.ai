@@ -399,23 +399,26 @@ export default function PlatformPricingPage() {
 
   // ── Save handlers ────────────────────────────────────────────────────────
 
-  // Map frontend field names back to DB column names for PUT requests
+  // Map frontend field names → DB column names. Explicitly omit frontend-only aliases
+  // (monthly_fee, agents, calls_mo, sub_clients) so they never reach the DB layer.
   function serializeDirect(p) {
+    const { monthly_fee, agents, calls_mo, sub_clients, ...rest } = p
     return {
-      ...p,
+      ...rest,
       plan_type:       'direct',
-      agent_limit:     p.agents,
-      calls_per_month: p.calls_mo,
-      price:           p.monthly_fee,
+      price:           monthly_fee,
+      agent_limit:     agents,
+      calls_per_month: calls_mo,
     }
   }
 
   function serializeAgency(p) {
+    const { monthly_fee, agents, calls_mo, sub_clients, ...rest } = p
     return {
-      ...p,
-      plan_type:       'agency',
-      price:           p.monthly_fee,
-      sub_client_limit: p.sub_clients,
+      ...rest,
+      plan_type:        'agency',
+      price:            monthly_fee,
+      sub_client_limit: sub_clients,
     }
   }
 
