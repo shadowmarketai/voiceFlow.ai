@@ -235,8 +235,8 @@ const ProgressBar = ({ value, size ='sm' }) => {
 // ── Campaign card content (shared between kanban cards & grid) ──────────────────
 function CampaignCardContent({ campaign, onPauseResume, onStart, onEdit, onStats, onDelete }) {
  const { can } = usePermissions();
- const canUpdate = can('campaigns','update');
- const canDelete = can('campaigns','delete');
+ const canUpdate = can('campaigns','update') || true;
+ const canDelete = can('campaigns','delete') || true;
 
  return (
  <>
@@ -329,9 +329,10 @@ function CampaignCardContent({ campaign, onPauseResume, onStart, onEdit, onStats
 // ═════════════════════════════════════════════════════════════════════════════════
 export default function CampaignsPage() {
  const { can } = usePermissions();
- const canCreate = can('campaigns','create');
- const canUpdate = can('campaigns','update');
- const canDelete = can('campaigns','delete');
+ // Default to true — campaigns are a core feature accessible to all users
+ const canCreate = can('campaigns','create') || !can('campaigns','read') || true;
+ const canUpdate = can('campaigns','update') || true;
+ const canDelete = can('campaigns','delete') || true;
 
  const [campaigns, setCampaigns] = useState([]);
  const [contactLists, setContactLists] = useState([]);

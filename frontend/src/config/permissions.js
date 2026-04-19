@@ -6,6 +6,7 @@
 const PERMISSION_MATRIX = {
   admin: {
     voiceAI: new Set(['create', 'read', 'update', 'delete']),
+    campaigns: new Set(['create', 'read', 'update', 'delete']),
     analytics: new Set(['create', 'read', 'update', 'delete']),
     billing: new Set(['create', 'read', 'update', 'delete']),
     settings: new Set(['create', 'read', 'update', 'delete']),
@@ -13,6 +14,7 @@ const PERMISSION_MATRIX = {
   },
   manager: {
     voiceAI: new Set(['create', 'read', 'update', 'delete']),
+    campaigns: new Set(['create', 'read', 'update', 'delete']),
     analytics: new Set(['read']),
     billing: new Set(['read']),
     settings: new Set(['read', 'update']),
@@ -20,6 +22,7 @@ const PERMISSION_MATRIX = {
   },
   agent: {
     voiceAI: new Set(['create', 'read', 'update']),
+    campaigns: new Set(['create', 'read', 'update']),
     analytics: new Set(['read']),
     billing: new Set([]),
     settings: new Set(['read']),
@@ -27,6 +30,7 @@ const PERMISSION_MATRIX = {
   },
   user: {
     voiceAI: new Set(['read']),
+    campaigns: new Set(['create', 'read', 'update']),
     analytics: new Set(['read']),
     billing: new Set([]),
     settings: new Set(['read']),
@@ -34,6 +38,7 @@ const PERMISSION_MATRIX = {
   },
   viewer: {
     voiceAI: new Set(['read']),
+    campaigns: new Set(['read']),
     analytics: new Set(['read']),
     billing: new Set([]),
     settings: new Set(['read']),
