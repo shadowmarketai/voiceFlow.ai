@@ -553,6 +553,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Telephony router not available: %s", exc)
 
+    # ── API Key Management ──────────────────────────────────
+    try:
+        from api.routers.api_keys import router as api_keys_router
+        application.include_router(api_keys_router)
+        logger.info("API Keys router loaded")
+    except Exception as exc:
+        logger.warning("API Keys router not available: %s", exc)
+
     # ── CRM Integration API ──────────────────────────────────
     _register_crm_integration_api(application)
 

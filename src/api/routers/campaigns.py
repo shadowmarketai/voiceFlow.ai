@@ -406,15 +406,28 @@ async def start_campaign(
 
         from api.services.campaign_execution import execute_campaign
 
+        # Load phone numbers from audience_criteria if available
+        phone_numbers = []
+        if campaign.audience_criteria and isinstance(campaign.audience_criteria, dict):
+            phone_numbers = campaign.audience_criteria.get("phone_numbers", [])
+
+        # Use campaign-level provider/language or defaults
+        provider = (campaign.audience_criteria or {}).get("telephony_provider", "vobiz")
+        from_number = (campaign.audience_criteria or {}).get("from_number", "")
+        language = (campaign.audience_criteria or {}).get("language", "hi")
+
         asyncio.create_task(execute_campaign(
             campaign_id=campaign.id,
             campaign_name=campaign.name,
-            phone_numbers=[],  # Load from contact list in production
-            from_number="",    # Load from tenant config
-            provider="vobiz",  # Default bulk provider
-            language="hi",
+            phone_numbers=phone_numbers,
+            from_number=from_number,
+            provider=provider,
+            language=language,
         ))
-        logger.info("Campaign execution triggered: id=%s", campaign_id)
+        logger.info(
+            "Campaign execution triggered: id=%s provider=%s contacts=%d",
+            campaign_id, provider, len(phone_numbers),
+        )
     except Exception as exc:
         logger.warning("Campaign execution trigger failed (campaign still active): %s", exc)
 

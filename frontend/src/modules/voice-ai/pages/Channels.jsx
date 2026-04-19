@@ -284,25 +284,134 @@ function WhatsAppConfig({ initial, onSave, onRefresh }) {
   )
 }
 
-function PhoneConfig() {
+function PhoneConfig({ initial, onSave, onRefresh }) {
+  const [provider, setProvider] = useState(initial.provider || '')
+  const [fromNumber, setFromNumber] = useState(initial.from_number || '')
+  const [agentId, setAgentId] = useState(initial.agent_id || '')
+  const [recordCalls, setRecordCalls] = useState(initial.record_calls ?? true)
+  const [transcribe, setTranscribe] = useState(initial.transcribe ?? true)
+  const [businessHours, setBusinessHours] = useState(initial.business_hours || '09:00-18:00')
+  const [webhookUrl, setWebhookUrl] = useState(initial.webhook_url || '')
+  const [providerStatuses, setProviderStatuses] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const PROVIDERS = [
+    { id: 'telecmi', name: 'TeleCMI', cost: '1.2/min', region: 'India', color: 'bg-blue-500' },
+    { id: 'vobiz', name: 'Vobiz', cost: '0.9/min', region: 'India (Bulk)', color: 'bg-indigo-500' },
+    { id: 'bolna', name: 'Bolna', cost: '1.5/min', region: 'AI Agents', color: 'bg-violet-500' },
+    { id: 'exotel', name: 'Exotel', cost: '1.5/min', region: 'India (IVR)', color: 'bg-emerald-500' },
+    { id: 'twilio', name: 'Twilio', cost: '4.5/min', region: 'International', color: 'bg-red-500' },
+    { id: 'vonage', name: 'Vonage', cost: '3.5/min', region: 'International', color: 'bg-amber-500' },
+    { id: 'sip', name: 'SIP Trunk', cost: 'Varies', region: 'Custom', color: 'bg-gray-500' },
+  ]
+
+  useEffect(() => {
+    const fetchProviders = async () => {
+      try {
+        const resp = await api.get('/api/v1/telephony/providers')
+        setProviderStatuses(resp.data?.providers || [])
+      } catch { }
+      setLoading(false)
+    }
+    fetchProviders()
+  }, [])
+
+  const isProviderConfigured = (id) => {
+    const p = providerStatuses.find(s => s.name?.toLowerCase() === id || s.id === id)
+    return p?.configured || false
+  }
+
   return (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-600">
-        Configure your telephony providers to enable inbound and outbound voice calls.
-      </p>
-      <ul className="space-y-2 text-sm text-gray-700">
-        {[
-          'Connect TeleCMI / Twilio / Vonage / Exotel / SIP providers',
-          'Assign agents to inbound numbers',
-          'Configure call routing and business hours',
-          'Enable recording, transcription, and post-call webhooks',
-        ].map((x) => (
-          <li key={x} className="flex gap-2"><CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />{x}</li>
-        ))}
-      </ul>
-      <p className="text-xs text-gray-400">
-        Go to <b>Integrations</b> to connect your telephony provider credentials.
-      </p>
+    <div className="space-y-5">
+      {/* Provider Selection */}
+      <div>
+        <label className="text-sm font-medium text-gray-700 mb-2 block">Telephony Provider</label>
+        {loading ? (
+          <div className="flex items-center gap-2 py-4 text-sm text-gray-400"><Loader2 className="w-4 h-4 animate-spin" /> Loading providers...</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {PROVIDERS.map(p => {
+              const configured = isProviderConfigured(p.id)
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setProvider(p.id)}
+                  className={`p-3 rounded-xl border-2 text-left transition-all ${
+                    provider === p.id
+                      ? 'border-indigo-500 bg-indigo-50'
+                      : configured
+                        ? 'border-gray-200 hover:border-gray-300'
+                        : 'border-gray-100 opacity-60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`w-2 h-2 rounded-full ${configured ? p.color : 'bg-gray-300'}`} />
+                    <span className="text-sm font-medium text-gray-900">{p.name}</span>
+                    {configured && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Ready</span>}
+                  </div>
+                  <p className="text-[10px] text-gray-500">{p.region} - Rs {p.cost}</p>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* From Number */}
+      <div>
+        <label className="text-sm font-medium text-gray-700">From Number (DID)</label>
+        <input value={fromNumber} onChange={(e) => setFromNumber(e.target.value)}
+          placeholder="+91XXXXXXXXXX"
+          className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        <p className="text-xs text-gray-400 mt-1">Your business phone number for inbound/outbound calls</p>
+      </div>
+
+      {/* Call Settings */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-sm font-medium text-gray-700">Business Hours</label>
+          <input value={businessHours} onChange={(e) => setBusinessHours(e.target.value)}
+            placeholder="09:00-18:00"
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="text-sm font-medium text-gray-700">Post-call Webhook</label>
+          <input value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)}
+            placeholder="https://your-server.com/webhook"
+            className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        </div>
+      </div>
+
+      {/* Toggles */}
+      <div className="flex items-center gap-6">
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={recordCalls} onChange={(e) => setRecordCalls(e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
+          <span className="text-sm text-gray-700">Record calls</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" checked={transcribe} onChange={(e) => setTranscribe(e.target.checked)}
+            className="w-4 h-4 text-indigo-600 border-gray-300 rounded" />
+          <span className="text-sm text-gray-700">Auto-transcribe</span>
+        </label>
+      </div>
+
+      {/* Info */}
+      <div className="rounded-xl bg-blue-50 border border-blue-100 p-4 text-xs text-blue-800">
+        <p className="font-medium mb-1">Setup</p>
+        <p>Go to <b>Integrations</b> to add your provider API credentials first. Once configured, providers will show as "Ready" above.</p>
+      </div>
+
+      <div className="flex justify-between">
+        <button onClick={onRefresh} className="text-sm text-gray-500 hover:text-indigo-600">Refresh status</button>
+        <button
+          onClick={() => onSave({ provider, from_number: fromNumber, agent_id: agentId, record_calls: recordCalls, transcribe, business_hours: businessHours, webhook_url: webhookUrl })}
+          disabled={!provider}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40"
+        >
+          <Save className="w-4 h-4" /> Save configuration
+        </button>
+      </div>
     </div>
   )
 }
@@ -427,7 +536,7 @@ export default function Channels() {
       case 'whatsapp':
         return <WhatsAppConfig initial={initial} onSave={(d) => handleSave(id, d)} onRefresh={refreshStatuses} />
       case 'phone':
-        return <PhoneConfig />
+        return <PhoneConfig initial={initial} onSave={(d) => handleSave(id, d)} onRefresh={refreshStatuses} />
       default: return null
     }
   }

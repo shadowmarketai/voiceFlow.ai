@@ -64,6 +64,11 @@ class CampaignCreate(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
 
+    # Telephony (for voice campaigns)
+    telephony_provider: str | None = Field(default=None, description="vobiz, bolna, telecmi, exotel, twilio")
+    from_number: str | None = Field(default=None, description="Outbound caller ID (+91...)")
+    language: str | None = Field(default="en", description="Campaign language: en, hi, ta, te, etc.")
+
     @field_validator("audience_criteria")
     @classmethod
     def validate_audience_criteria(cls, v: dict | None) -> dict | None:

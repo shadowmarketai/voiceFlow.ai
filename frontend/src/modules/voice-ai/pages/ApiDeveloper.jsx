@@ -119,15 +119,11 @@ function generateApiKey(prefix = 'vf_sk') {
 /* ─── Main Component ──────────────────────────────────────────────── */
 export default function ApiDeveloper({ embedded = false } = {}) {
   const [activeTab, setActiveTab] = useState('endpoints') // endpoints | keys | embed | webhooks
-  const [apiKeys, setApiKeys] = useState(() => {
-    const saved = localStorage.getItem('vf_api_keys')
-    return saved ? JSON.parse(saved) : [
-      { id: '1', name: 'Production Key', key: generateApiKey('vf_prod'), created: new Date().toISOString(), lastUsed: 'Never' },
-    ]
-  })
+  const [apiKeys, setApiKeys] = useState([])
   const [showKey, setShowKey] = useState(null)
   const [newKeyName, setNewKeyName] = useState('')
   const [showNewKeyModal, setShowNewKeyModal] = useState(false)
+  const [newlyCreatedKey, setNewlyCreatedKey] = useState(null)
   const [webhooks, setWebhooks] = useState(() => {
     const saved = localStorage.getItem('vf_webhooks')
     return saved ? JSON.parse(saved) : []
@@ -141,13 +137,59 @@ export default function ApiDeveloper({ embedded = false } = {}) {
   const [testLoading, setTestLoading] = useState(false)
   const [copiedEmbed, setCopiedEmbed] = useState(false)
 
-  // Persist API keys and webhooks
-  useEffect(() => { localStorage.setItem('vf_api_keys', JSON.stringify(apiKeys)) }, [apiKeys])
+  // Persist webhooks in localStorage (no backend for webhooks yet)
   useEffect(() => { localStorage.setItem('vf_webhooks', JSON.stringify(webhooks)) }, [webhooks])
 
-  // ── API Key CRUD ──
-  const handleCreateKey = () => {
+  // Load API keys from backend on mount
+  useEffect(() => {
+    const loadKeys = async () => {
+      try {
+        const resp = await fetch(`${API_BASE}/api/v1/api-keys`)
+        if (resp.ok) {
+          const data = await resp.json()
+          setApiKeys(data.map(k => ({
+            id: k.key_id,
+            name: k.name,
+            key: k.key_prefix,
+            created: k.created_at,
+            lastUsed: k.last_used_at || 'Never',
+          })))
+          return
+        }
+      } catch {}
+      // Fallback to localStorage
+      const saved = localStorage.getItem('vf_api_keys')
+      if (saved) setApiKeys(JSON.parse(saved))
+    }
+    loadKeys()
+  }, [])
+
+  // ── API Key CRUD (backend-first) ──
+  const handleCreateKey = async () => {
     if (!newKeyName.trim()) { toast.error('Enter a key name'); return }
+    try {
+      const resp = await fetch(`${API_BASE}/api/v1/api-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newKeyName.trim() }),
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        setNewlyCreatedKey(data.key) // Show full key once
+        setApiKeys(prev => [...prev, {
+          id: data.key_id,
+          name: data.name,
+          key: data.key_prefix,
+          created: data.created_at,
+          lastUsed: 'Never',
+        }])
+        setNewKeyName('')
+        setShowNewKeyModal(false)
+        toast.success(`API key "${data.name}" created. Copy it now — it won't be shown again.`)
+        return
+      }
+    } catch {}
+    // Fallback to local
     const newKey = {
       id: Date.now().toString(),
       name: newKeyName.trim(),
@@ -156,9 +198,11 @@ export default function ApiDeveloper({ embedded = false } = {}) {
       lastUsed: 'Never',
     }
     setApiKeys(prev => [...prev, newKey])
+    setNewlyCreatedKey(newKey.key)
+    localStorage.setItem('vf_api_keys', JSON.stringify([...apiKeys, newKey]))
     setNewKeyName('')
     setShowNewKeyModal(false)
-    toast.success(`API key "${newKey.name}" created`)
+    toast.success(`API key "${newKey.name}" created (local mode)`)
   }
 
   const handleCopyKey = (key) => {
@@ -166,9 +210,12 @@ export default function ApiDeveloper({ embedded = false } = {}) {
     toast.success('API key copied to clipboard')
   }
 
-  const handleDeleteKey = (id) => {
+  const handleDeleteKey = async (id) => {
+    try {
+      await fetch(`${API_BASE}/api/v1/api-keys/${id}`, { method: 'DELETE' })
+    } catch {}
     setApiKeys(prev => prev.filter(k => k.id !== id))
-    toast.success('API key deleted')
+    toast.success('API key revoked')
   }
 
   // ── Endpoint Testing ──
