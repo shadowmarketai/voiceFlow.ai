@@ -5,7 +5,7 @@ import {
  Megaphone, Plus, Columns, Table2, X, Play, Pause, Edit3, Trash2,
  BarChart3, Calendar, Users, Phone, PhoneCall, ArrowUpDown, ArrowUp,
  ArrowDown, Search, Filter, ChevronRight, Clock, Target, Sparkles,
- CheckCircle, XCircle, Zap, TrendingUp
+ CheckCircle, XCircle, Zap, TrendingUp, Loader2
 } from 'lucide-react';
 import CollapsibleSection from './components/CollapsibleSection';
 import KanbanBoard from './components/KanbanBoard';
@@ -614,6 +614,41 @@ export default function CampaignsPage() {
  : <ArrowDown className="w-3 h-3 text-indigo-500" />;
  };
 
+ // ── Computed stats ──────────────────────────────────────────────────────────
+ const totalContacts = campaigns.reduce((s, c) => s + (c.total || 0), 0);
+ const totalCalled = campaigns.reduce((s, c) => s + (c.called || 0), 0);
+ const totalConnected = campaigns.reduce((s, c) => s + (c.connected || 0), 0);
+ const totalConverted = campaigns.reduce((s, c) => s + (c.converted || 0), 0);
+ const overallConnectRate = totalCalled > 0 ? Math.round((totalConnected / totalCalled) * 100) : 0;
+ const overallConvertRate = totalConnected > 0 ? Math.round((totalConverted / totalConnected) * 100) : 0;
+
+ // CSV upload handler
+ const csvInputRef = React.useRef(null);
+ const [uploading, setUploading] = React.useState(false);
+ const handleCsvUpload = async (e) => {
+   const file = e.target.files?.[0];
+   if (!file) return;
+   setUploading(true);
+   try {
+     const formData = new FormData();
+     formData.append('file', file);
+     formData.append('name', file.name.replace(/\.(csv|xlsx?)$/i, ''));
+     const resp = await fetch('/api/v1/contact-lists/upload-csv', { method: 'POST', body: formData });
+     if (resp.ok) {
+       const data = await resp.json();
+       setContactLists(prev => [data, ...prev]);
+       toast.success(`Uploaded "${data.name}" with ${data.total_count} contacts`);
+     } else {
+       const err = await resp.json().catch(() => ({}));
+       toast.error(err.detail || 'Upload failed');
+     }
+   } catch {
+     toast.error('Upload failed — check file format');
+   }
+   setUploading(false);
+   if (csvInputRef.current) csvInputRef.current.value = '';
+ };
+
  // ── Render ───────────────────────────────────────────────────────────────────
  return (
  <div className="space-y-6">
@@ -652,17 +687,60 @@ export default function CampaignsPage() {
  <Table2 className="w-4 h-4" />
  </button>
  </div>
+ {/* Upload CSV */}
+ <button
+ onClick={() => csvInputRef.current?.click()}
+ disabled={uploading}
+ className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+ title="Upload contact list CSV"
+ >
+ {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+ Upload CSV
+ </button>
+ <input ref={csvInputRef} type="file" accept=".csv,.xlsx" onChange={handleCsvUpload} className="hidden" />
  {/* Create button */}
  {canCreate && (
  <button
  onClick={() => setShowCreateModal(true)}
- className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+ className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white rounded-lg text-sm font-medium hover:from-indigo-700 hover:to-violet-700 shadow-sm shadow-indigo-200 transition-all"
  >
  <Plus className="w-4 h-4" /> New Campaign
  </button>
  )}
  </div>
  </div>
+
+ {/* ─── Stats Summary Cards ──────────────────────────────────────────── */}
+ <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+ {[
+   { label: 'Campaigns', value: campaigns.length, icon: Megaphone, color: 'bg-indigo-50 text-indigo-500' },
+   { label: 'Total Contacts', value: totalContacts.toLocaleString(), icon: Users, color: 'bg-blue-50 text-blue-500' },
+   { label: 'Called', value: totalCalled.toLocaleString(), icon: PhoneCall, color: 'bg-emerald-50 text-emerald-500' },
+   { label: 'Connected', value: totalConnected.toLocaleString(), icon: CheckCircle, color: 'bg-teal-50 text-teal-500' },
+   { label: 'Converted', value: totalConverted.toLocaleString(), icon: Target, color: 'bg-amber-50 text-amber-500' },
+   { label: 'Connect Rate', value: `${overallConnectRate}%`, icon: TrendingUp, color: 'bg-violet-50 text-violet-500' },
+ ].map(s => (
+   <div key={s.label} className="p-4 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+     <div className="flex items-center gap-2.5">
+       <div className={`p-2 rounded-xl ${s.color}`}>
+         <s.icon className="w-4 h-4" />
+       </div>
+       <div>
+         <p className="text-lg font-bold text-gray-900">{s.value}</p>
+         <p className="text-[10px] text-gray-500">{s.label}</p>
+       </div>
+     </div>
+   </div>
+ ))}
+ </div>
+
+ {/* Contact Lists count */}
+ {contactLists.length > 0 && (
+   <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-700">
+     <Users className="w-3.5 h-3.5" />
+     <span><b>{contactLists.length}</b> contact list{contactLists.length !== 1 ? 's' : ''} in database ({contactLists.reduce((s, cl) => s + cl.total_count, 0).toLocaleString()} total numbers)</span>
+   </div>
+ )}
 
  {/* ─── Kanban View ────────────────────────────────────────────────────── */}
  {viewMode === 'kanban' && (
