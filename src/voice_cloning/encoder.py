@@ -29,19 +29,14 @@ class SpeakerEncoder:
     def _get_provider(self) -> str:
         if self._provider != "auto":
             return self._provider
-        # Try XTTS first, fall back to resemblyzer
+        # Try lightweight options first, avoid heavy ML imports
         try:
-            import torch
-            from TTS.tts.models.xtts import Xtts
-            return "xtts"
+            import librosa  # noqa: F401
+            return "basic"  # basic MFCC works without torch
         except ImportError:
             pass
-        try:
-            from resemblyzer import VoiceEncoder
-            return "resemblyzer"
-        except ImportError:
-            pass
-        return "basic"
+        # No ML available — just store reference audio path
+        return "reference"
 
     def extract_embedding(self, audio_path: str) -> dict[str, Any]:
         """Extract speaker embedding from audio file.
@@ -55,7 +50,13 @@ class SpeakerEncoder:
             return self._extract_xtts(audio_path)
         elif provider == "resemblyzer":
             return self._extract_resemblyzer(audio_path)
-        return self._extract_basic(audio_path)
+        elif provider == "basic":
+            return self._extract_basic(audio_path)
+        # reference — just store the audio path (no ML needed)
+        return {
+            "provider": "reference_audio",
+            "reference_audio": audio_path,
+        }
 
     def _extract_xtts(self, audio_path: str) -> dict[str, Any]:
         """Extract using XTTS v2 (highest quality)."""

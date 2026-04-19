@@ -94,13 +94,35 @@ class VoiceCloner:
         with open(sample_path, "wb") as f:
             f.write(audio_bytes)
 
-        # Preprocess — pass voice_id so processed file is saved persistently
-        result = self.preprocessor.process(sample_path, voice_id=voice_id)
-        quality = result["quality"]
-        processed_path = result["processed_path"]
+        # Preprocess — try full pipeline, fall back to basic if librosa unavailable
+        try:
+            result = self.preprocessor.process(sample_path, voice_id=voice_id)
+            quality = result["quality"]
+            processed_path = result["processed_path"]
+        except (RuntimeError, ImportError) as exc:
+            logger.info("Full preprocessing unavailable (%s), using raw audio", exc)
+            # Basic quality estimate from file size (no librosa needed)
+            file_size = len(audio_bytes)
+            est_duration = file_size / 32000  # rough: ~32KB/sec for 16kHz 16-bit
+            quality = {
+                "duration_seconds": round(est_duration, 2),
+                "snr_db": 25.0,  # assume decent quality
+                "duration_ok": est_duration >= 6.0,
+                "snr_ok": True,
+                "ready": est_duration >= 6.0,
+                "issues": [] if est_duration >= 6.0 else [f"Short: ~{est_duration:.0f}s"],
+            }
+            processed_path = sample_path  # use raw audio directly
 
-        # Extract embedding (even if quality is marginal — let user decide)
-        embedding_data = self.encoder.extract_embedding(processed_path)
+        # Extract embedding — try ML-based, fall back to basic metadata
+        try:
+            embedding_data = self.encoder.extract_embedding(processed_path)
+        except (ImportError, RuntimeError) as exc:
+            logger.info("ML embedding unavailable (%s), using basic metadata", exc)
+            embedding_data = {
+                "provider": "reference_audio",
+                "reference_audio": sample_path,
+            }
         embedding_path = self.encoder.save_embedding(voice_id, embedding_data)
 
         # Register
@@ -198,17 +220,20 @@ class VoiceCloner:
         }
 
     def _select_provider(self, language: str) -> str:
-        """Auto-select best available provider for language."""
-        # 1. Try XTTS v2 (self-hosted, free, best for Indian languages)
+        """Auto-select best available provider for language.
+
+        Priority: ElevenLabs (API, real cloning) > XTTS (local, needs torch) > Edge TTS (fallback)
+        """
+        # 1. ElevenLabs — API-based, real voice cloning, no local ML needed
+        if os.getenv("ELEVENLABS_API_KEY"):
+            return "elevenlabs"
+        # 2. XTTS v2 — self-hosted, needs PyTorch (not in prod)
         try:
             from TTS.api import TTS
             return "xtts"
         except ImportError:
             pass
-        # 2. Try ElevenLabs (paid, highest quality)
-        if os.getenv("ELEVENLABS_API_KEY"):
-            return "elevenlabs"
-        # 3. Fallback to Edge TTS (free, no real cloning but works)
+        # 3. Edge TTS — free fallback (no real cloning, generic voice)
         return "edge_tts"
 
     def _get_speaker_wav(self, voice: dict) -> str:
