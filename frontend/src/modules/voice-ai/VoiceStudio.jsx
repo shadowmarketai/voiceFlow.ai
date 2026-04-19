@@ -1,25 +1,21 @@
 /**
- * Voice Studio — Browse voices, generate speech, clone voices, train custom models
- * All 4 tabs fully functional with API + browser fallbacks
+ * Voice Studio — Browse voices, generate speech, and clone custom voices
+ * 3 tabs fully functional with API + browser fallbacks
  */
 
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Mic, Play, Pause, Upload, Volume2, Sliders, Sparkles,
-  Languages, Brain, AudioWaveform, User, UserCircle,
-  CheckCircle, UploadCloud, FileAudio, RotateCcw, Save,
-  ChevronDown, Loader2, Square, Search, Dna,
-  AlertCircle, Trash2 as TrashIcon, Clock, AudioLines,
-  Download, History, Waveform, Settings2, Zap, X,
-  ChevronRight, RefreshCw, Play as PlayIcon, BarChart3
+  Mic, Play, Upload, Volume2, AudioWaveform,
+  CheckCircle, FileAudio, ChevronDown, Loader2, Square,
+  Search, Dna, AlertCircle, Trash2 as TrashIcon, AudioLines,
+  Download, History, Settings2, X
 } from 'lucide-react';
 
 const VoiceLibrary = lazy(() => import('./pages/VoiceLibrary'));
-import CollapsibleSection from './components/CollapsibleSection';
 import {
-  VOICES, PROVIDERS, PROVIDER_COLORS, BADGE_COLORS, SAMPLE_TEXTS,
-  getVoiceEngine, getApiVoiceId, UNIQUE_LANG_LABELS,
+  VOICES, PROVIDER_COLORS, SAMPLE_TEXTS,
+  getVoiceEngine, getApiVoiceId,
 } from './data/voices';
 import { ttsAPI } from '../../services/api';
 
@@ -41,8 +37,6 @@ const CLONE_LANGUAGES = [
   { value: 'bn', label: 'Bengali' }, { value: 'mr', label: 'Marathi' },
   { value: 'gu', label: 'Gujarati' }, { value: 'pa', label: 'Punjabi' },
 ];
-
-const TRAINING_LANGUAGES = ['Tamil', 'Hindi', 'English', 'Telugu', 'Kannada', 'Malayalam', 'Bengali', 'Marathi'];
 
 /* -- Browser TTS helper ------------------------------------------------- */
 
@@ -71,13 +65,11 @@ function browserSpeak(text, { lang = 'en-IN', rate = 1.0, pitch = 1.0, onStart, 
 export default function VoiceStudioPage() {
   const [activeTab, setActiveTab] = useState('library');
   const [clonedVoiceCount, setClonedVoiceCount] = useState(0);
-  const [trainedModelCount, setTrainedModelCount] = useState(0);
 
   const tabs = [
     { key: 'library', label: 'Voice Library', icon: AudioLines, count: `${VOICES.length} voices` },
     { key: 'studio', label: 'Generate Speech', icon: Volume2, count: 'TTS' },
     { key: 'clone', label: 'Voice Cloning', icon: Dna, count: clonedVoiceCount > 0 ? `${clonedVoiceCount} cloned` : 'New' },
-    { key: 'train', label: 'Train Custom', icon: Brain, count: trainedModelCount > 0 ? `${trainedModelCount} models` : 'Advanced' },
   ];
 
   return (
@@ -85,7 +77,7 @@ export default function VoiceStudioPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Voice Studio</h1>
-        <p className="text-sm text-slate-500 mt-1">Browse voices, generate speech, and train custom models</p>
+        <p className="text-sm text-slate-500 mt-1">Browse voices, generate speech, and clone custom voices</p>
       </div>
 
       {/* Tabs */}
@@ -117,7 +109,6 @@ export default function VoiceStudioPage() {
       )}
       {activeTab === 'studio' && <GenerateSpeechTab />}
       {activeTab === 'clone' && <VoiceCloningTab onCountChange={setClonedVoiceCount} />}
-      {activeTab === 'train' && <TrainCustomTab onCountChange={setTrainedModelCount} />}
     </div>
   );
 }
@@ -540,7 +531,10 @@ function VoiceCloningTab({ onCountChange }) {
   const [isRecording, setIsRecording] = useState(false);
   const [recorder, setRecorder] = useState(null);
   const [selectedProvider, setSelectedProvider] = useState('xtts_v2');
+  const [synthAudioUrl, setSynthAudioUrl] = useState(null);
+  const [isSynthPlaying, setIsSynthPlaying] = useState(false);
   const fileInputRef = useRef(null);
+  const synthAudioRef = useRef(null);
 
   const CLONING_PROVIDERS = [
     { id: 'xtts_v2', name: 'XTTS v2', desc: 'Self-hosted, free, 17 languages', tier: 'Free', color: 'bg-blue-500' },
@@ -665,10 +659,14 @@ function VoiceCloningTab({ onCountChange }) {
     setIsProcessing(false);
   };
 
-  // Synthesize
+  // Synthesize — speak in the cloned voice
   const handleSynthesize = async () => {
     if (!synthText.trim()) { toast.error('Enter text to speak'); return; }
     setIsSynthesizing(true);
+    setSynthAudioUrl(null);
+    window.speechSynthesis?.cancel();
+
+    // Try backend API
     try {
       const resp = await fetch('/api/v1/voice-clone/synthesize', {
         method: 'POST',
@@ -679,22 +677,39 @@ function VoiceCloningTab({ onCountChange }) {
         const data = await resp.json();
         setSynthResult(data);
         if (data.audio_base64) {
-          const audio = new Audio(`data:audio/wav;base64,${data.audio_base64}`);
-          audio.play();
+          const fmt = data.format || data.audio_format || 'wav';
+          const url = `data:audio/${fmt};base64,${data.audio_base64}`;
+          setSynthAudioUrl(url);
+          if (synthAudioRef.current) {
+            synthAudioRef.current.src = url;
+            synthAudioRef.current.play().catch(() => {});
+            setIsSynthPlaying(true);
+          }
         }
+        toast.success('Speech generated with cloned voice!');
         setIsSynthesizing(false);
         return;
       }
     } catch (_) {}
 
-    // Demo: browser TTS
-    const langMap = { ta: 'ta-IN', hi: 'hi-IN', te: 'te-IN', kn: 'kn-IN', ml: 'ml-IN', bn: 'bn-IN', mr: 'mr-IN' };
-    const utterance = new SpeechSynthesisUtterance(synthText);
-    utterance.lang = langMap[synthLang] || 'en-IN';
-    utterance.pitch = 1.1;
-    window.speechSynthesis.speak(utterance);
-    setSynthResult({ provider_used: 'browser_tts', latency_ms: 100 });
-    toast.success('Playing with browser TTS (demo mode)');
+    // Fallback: browser TTS
+    const langMap = { ta: 'ta-IN', hi: 'hi-IN', te: 'te-IN', kn: 'kn-IN', ml: 'ml-IN', bn: 'bn-IN', mr: 'mr-IN', gu: 'gu-IN', pa: 'pa-IN' };
+    try {
+      setSynthAudioUrl(null);
+      setIsSynthPlaying(true);
+      await browserSpeak(synthText, {
+        lang: langMap[synthLang] || 'en-IN',
+        rate: 0.95,
+        pitch: 1.1,
+        onStart: () => setIsSynthPlaying(true),
+        onEnd: () => setIsSynthPlaying(false),
+      });
+      setSynthResult({ provider_used: 'browser_tts', latency_ms: 0 });
+      toast.success('Speaking with browser TTS (cloned voice unavailable)');
+    } catch (err) {
+      toast.error('Speech synthesis failed');
+      setIsSynthPlaying(false);
+    }
     setIsSynthesizing(false);
   };
 
@@ -995,10 +1010,71 @@ function VoiceCloningTab({ onCountChange }) {
                 </button>
               </div>
 
+              {/* Audio Player for synthesized speech */}
+              {(synthAudioUrl || isSynthPlaying) && (
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200">
+                  {synthAudioUrl ? (
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => {
+                          if (!synthAudioRef.current) return;
+                          if (isSynthPlaying) { synthAudioRef.current.pause(); setIsSynthPlaying(false); }
+                          else { synthAudioRef.current.play().catch(() => {}); setIsSynthPlaying(true); }
+                        }}
+                        className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 transition-colors shrink-0"
+                      >
+                        {isSynthPlaying ? <Square className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+                      </button>
+                      <div className="flex-1">
+                        <audio
+                          ref={synthAudioRef}
+                          src={synthAudioUrl}
+                          onEnded={() => setIsSynthPlaying(false)}
+                          onPause={() => setIsSynthPlaying(false)}
+                          onPlay={() => setIsSynthPlaying(true)}
+                          controls
+                          className="w-full h-8"
+                        />
+                      </div>
+                      <button
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = synthAudioUrl;
+                          a.download = `clone-${voiceRecord?.voice_name || 'voice'}-${Date.now()}.wav`;
+                          a.click();
+                        }}
+                        className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                        title="Download"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : isSynthPlaying ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                        <Volume2 className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Speaking in cloned voice via browser...</p>
+                      </div>
+                      <button
+                        onClick={() => { window.speechSynthesis.cancel(); setIsSynthPlaying(false); }}
+                        className="px-3 py-1.5 text-xs font-medium bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
+                      >
+                        Stop
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {synthResult && (
                 <div className="p-3 bg-gray-50 rounded-xl text-xs text-gray-500">
                   Engine: <span className="font-medium">{synthResult.provider_used}</span>
-                  {synthResult.latency_ms && <> | Latency: <span className="font-medium">{synthResult.latency_ms}ms</span></>}
+                  {synthResult.latency_ms > 0 && <> | Latency: <span className="font-medium">{synthResult.latency_ms}ms</span></>}
                 </div>
               )}
 
@@ -1068,382 +1144,3 @@ function VoiceCloningTab({ onCountChange }) {
   );
 }
 
-
-/* ======================================================================= */
-/*  TRAIN CUSTOM TAB                                                        */
-/* ======================================================================= */
-
-function TrainCustomTab({ onCountChange }) {
-  const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [trainingLanguage, setTrainingLanguage] = useState('Tamil');
-  const [trainingDialect, setTrainingDialect] = useState('General');
-  const [modelName, setModelName] = useState('');
-  const [isTraining, setIsTraining] = useState(false);
-  const [trainingProgress, setTrainingProgress] = useState(null);
-  const [trainedModels, setTrainedModels] = useState([]);
-  const [testText, setTestText] = useState('');
-  const [testingModel, setTestingModel] = useState(null);
-
-  useEffect(() => { onCountChange?.(trainedModels.length); }, [trainedModels.length]);
-
-  const DIALECTS = {
-    Tamil: ['General', 'Kongu', 'Chennai', 'Madurai', 'Tirunelveli'],
-    Hindi: ['General', 'Delhi', 'Mumbai', 'Lucknow'],
-    English: ['General', 'Indian', 'American', 'British'],
-    Telugu: ['General', 'Hyderabad', 'Coastal'],
-    Kannada: ['General', 'Bangalore', 'North Karnataka'],
-    Malayalam: ['General', 'Kochi', 'Trivandrum'],
-    Bengali: ['General', 'Kolkata'],
-    Marathi: ['General', 'Pune', 'Mumbai'],
-  };
-
-  const totalDuration = useMemo(() => {
-    return uploadedFiles.reduce((sum, f) => sum + (f.duration || 0), 0);
-  }, [uploadedFiles]);
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragOver(false);
-    const files = Array.from(e.dataTransfer.files);
-    processFiles(files);
-  };
-
-  const handleFileSelect = (e) => {
-    const files = Array.from(e.target.files);
-    processFiles(files);
-  };
-
-  const processFiles = (files) => {
-    const audioFiles = files.filter(f => f.type.startsWith('audio/') || f.name.endsWith('.wav') || f.name.endsWith('.mp3'));
-    if (audioFiles.length === 0) { toast.error('Please upload audio files (.wav, .mp3)'); return; }
-
-    const newFiles = audioFiles.map(f => ({
-      name: f.name,
-      size: f.size,
-      duration: Math.round((f.size / 1024 / 16) * 10) / 10, // rough estimate: ~16KB/sec for 16kHz mono
-      file: f,
-    }));
-    setUploadedFiles(prev => [...prev, ...newFiles]);
-    toast.success(`${audioFiles.length} file(s) added`);
-  };
-
-  const removeFile = (idx) => {
-    setUploadedFiles(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleStartTraining = async () => {
-    if (uploadedFiles.length === 0) { toast.error('Upload training audio files first'); return; }
-    if (!modelName.trim()) { toast.error('Enter a model name'); return; }
-    if (totalDuration < 30) { toast.error('Need at least 30 seconds of audio'); return; }
-
-    setIsTraining(true);
-    const stages = [
-      { label: 'Uploading audio files', pct: 10 },
-      { label: 'Preprocessing & noise reduction', pct: 25 },
-      { label: 'Extracting features', pct: 45 },
-      { label: 'Training voice model', pct: 70 },
-      { label: 'Validating output quality', pct: 90 },
-      { label: 'Finalizing model', pct: 100 },
-    ];
-
-    for (const stage of stages) {
-      setTrainingProgress(stage);
-      await new Promise(r => setTimeout(r, 1500 + Math.random() * 1500));
-    }
-
-    const newModel = {
-      id: 'tm_' + Date.now(),
-      name: modelName,
-      language: trainingLanguage,
-      dialect: trainingDialect,
-      filesCount: uploadedFiles.length,
-      duration: totalDuration,
-      quality: (3.8 + Math.random() * 0.7).toFixed(1),
-      createdAt: new Date().toLocaleDateString(),
-      status: 'ready',
-    };
-
-    setTrainedModels(prev => [newModel, ...prev]);
-    setIsTraining(false);
-    setTrainingProgress(null);
-    setUploadedFiles([]);
-    setModelName('');
-    toast.success(`Model "${newModel.name}" trained successfully!`);
-  };
-
-  const handleTestModel = (model) => {
-    if (!testText.trim()) { toast.error('Enter text to test'); return; }
-    setTestingModel(model.id);
-
-    // Use browser TTS as demo
-    const langMap = { Tamil: 'ta-IN', Hindi: 'hi-IN', English: 'en-IN', Telugu: 'te-IN', Kannada: 'kn-IN', Malayalam: 'ml-IN', Bengali: 'bn-IN', Marathi: 'mr-IN' };
-    const utterance = new SpeechSynthesisUtterance(testText);
-    utterance.lang = langMap[model.language] || 'en-IN';
-    utterance.rate = 0.9;
-    utterance.onend = () => setTestingModel(null);
-    utterance.onerror = () => setTestingModel(null);
-    window.speechSynthesis.speak(utterance);
-    toast.success(`Testing "${model.name}" (browser TTS demo)`);
-  };
-
-  const deleteModel = (id) => {
-    setTrainedModels(prev => prev.filter(m => m.id !== id));
-    toast.success('Model deleted');
-  };
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left: Upload + Training (2 cols) */}
-      <div className="lg:col-span-2 space-y-5">
-
-        {/* Training in Progress */}
-        {isTraining && trainingProgress ? (
-          <div className="bg-white rounded-2xl border border-gray-200 p-8">
-            <div className="text-center mb-6">
-              <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900">Training "{modelName}"</h3>
-              <p className="text-sm text-gray-500 mt-1">{trainingLanguage} - {trainingDialect} dialect</p>
-            </div>
-
-            <div className="max-w-md mx-auto space-y-4">
-              {/* Progress bar */}
-              <div>
-                <div className="flex justify-between text-xs text-gray-500 mb-1.5">
-                  <span>{trainingProgress.label}</span>
-                  <span>{trainingProgress.pct}%</span>
-                </div>
-                <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-indigo-500 to-violet-500 rounded-full transition-all duration-700"
-                    style={{ width: `${trainingProgress.pct}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-gray-50 rounded-xl text-xs text-gray-500 text-center">
-                {uploadedFiles.length} files | {totalDuration.toFixed(0)}s total audio | {trainingLanguage}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Model Name + Config */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <Brain className="w-4 h-4 text-indigo-500" /> Train Custom Voice Model
-              </h3>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Model Name</label>
-                <input
-                  type="text" value={modelName} onChange={(e) => setModelName(e.target.value)}
-                  placeholder="e.g., Tamil Customer Service, Hindi Sales Agent"
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 focus:outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Language</label>
-                  <select
-                    value={trainingLanguage}
-                    onChange={(e) => { setTrainingLanguage(e.target.value); setTrainingDialect('General'); }}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {TRAINING_LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">Dialect</label>
-                  <select
-                    value={trainingDialect}
-                    onChange={(e) => setTrainingDialect(e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-indigo-500"
-                  >
-                    {(DIALECTS[trainingLanguage] || ['General']).map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Upload Area */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-5 space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                <UploadCloud className="w-4 h-4 text-indigo-500" /> Upload Training Audio
-              </h3>
-
-              <div
-                onDrop={handleDrop}
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={() => setIsDragOver(false)}
-                className={`relative border-2 border-dashed rounded-xl p-8 text-center transition-all cursor-pointer ${
-                  isDragOver ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 hover:border-indigo-400 hover:bg-gray-50'
-                }`}
-              >
-                <input
-                  type="file" accept="audio/*,.wav,.mp3" multiple
-                  onChange={handleFileSelect}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <UploadCloud className={`w-10 h-10 mx-auto mb-3 ${isDragOver ? 'text-indigo-500' : 'text-gray-400'}`} />
-                <p className="text-sm font-medium text-gray-700">
-                  {isDragOver ? 'Drop audio files here' : 'Drag & drop audio files here'}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">or click to browse. Supports .wav, .mp3</p>
-              </div>
-
-              {/* Uploaded Files List */}
-              {uploadedFiles.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-gray-700">{uploadedFiles.length} file(s) - ~{totalDuration.toFixed(0)}s total</p>
-                    <button
-                      onClick={() => setUploadedFiles([])}
-                      className="text-xs text-red-500 hover:text-red-700"
-                    >
-                      Clear all
-                    </button>
-                  </div>
-                  {uploadedFiles.map((file, idx) => (
-                    <div key={idx} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg">
-                      <FileAudio className="w-4 h-4 text-indigo-500 shrink-0" />
-                      <span className="text-sm text-gray-700 truncate flex-1">{file.name}</span>
-                      <span className="text-[10px] text-gray-400">{(file.size / 1024).toFixed(0)} KB</span>
-                      <span className="text-[10px] text-gray-400">~{file.duration}s</span>
-                      <button onClick={() => removeFile(idx)} className="p-0.5 text-gray-400 hover:text-red-500">
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Duration indicator */}
-              {uploadedFiles.length > 0 && (
-                <div className={`p-3 rounded-xl border ${totalDuration >= 30 ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
-                  <div className="flex items-center gap-2">
-                    {totalDuration >= 30 ? (
-                      <CheckCircle className="w-4 h-4 text-emerald-500" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-amber-500" />
-                    )}
-                    <span className={`text-xs font-medium ${totalDuration >= 30 ? 'text-emerald-700' : 'text-amber-700'}`}>
-                      {totalDuration >= 30
-                        ? `${totalDuration.toFixed(0)}s of audio — ready to train`
-                        : `${totalDuration.toFixed(0)}s of audio — need at least 30s`
-                      }
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Start Training Button */}
-              <button
-                onClick={handleStartTraining}
-                disabled={uploadedFiles.length === 0 || !modelName.trim() || totalDuration < 30}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl text-sm font-semibold hover:from-emerald-700 hover:to-teal-700 transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Brain className="w-5 h-5" /> Start Training
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Right: Trained Models + Requirements */}
-      <div className="space-y-4">
-        {/* Trained Models */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-indigo-500" /> Trained Models
-          </h3>
-          {trainedModels.length === 0 ? (
-            <div className="py-8 text-center">
-              <Brain className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-              <p className="text-xs text-gray-400">No trained models yet</p>
-              <p className="text-[10px] text-gray-400 mt-1">Upload audio and train your first model</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {trainedModels.map(model => (
-                <div key={model.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <p className="text-sm font-medium text-gray-900">{model.name}</p>
-                    <div className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                      <button onClick={() => deleteModel(model.id)} className="p-1 text-gray-400 hover:text-red-500">
-                        <TrashIcon className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-gray-500">
-                    {model.language} ({model.dialect}) | {model.filesCount} files | {model.duration.toFixed(0)}s | Quality: {model.quality}
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Trained: {model.createdAt}</p>
-
-                  {/* Test model */}
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="Test text..."
-                      value={testText}
-                      onChange={(e) => setTestText(e.target.value)}
-                      className="flex-1 px-2 py-1 text-[10px] border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-300"
-                    />
-                    <button
-                      onClick={() => handleTestModel(model)}
-                      disabled={testingModel === model.id}
-                      className="px-2 py-1 text-[10px] font-medium bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 disabled:opacity-50"
-                    >
-                      {testingModel === model.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Test'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Training Requirements */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Training Requirements</h3>
-          <ul className="text-xs text-gray-500 space-y-1.5">
-            <li className="flex items-center gap-2">
-              <Clock className="w-3 h-3 text-gray-400" />
-              Minimum 30 seconds of clear audio
-            </li>
-            <li className="flex items-center gap-2">
-              <User className="w-3 h-3 text-gray-400" />
-              Single speaker per training set
-            </li>
-            <li className="flex items-center gap-2">
-              <Volume2 className="w-3 h-3 text-gray-400" />
-              Low background noise recommended
-            </li>
-            <li className="flex items-center gap-2">
-              <Zap className="w-3 h-3 text-gray-400" />
-              3-5 minutes for best quality
-            </li>
-            <li className="flex items-center gap-2">
-              <RefreshCw className="w-3 h-3 text-gray-400" />
-              Training takes ~15-30 minutes
-            </li>
-          </ul>
-        </div>
-
-        {/* Supported Languages */}
-        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Training Languages</h3>
-          <div className="flex flex-wrap gap-1.5">
-            {TRAINING_LANGUAGES.map(lang => (
-              <span key={lang} className="px-2 py-1 text-[10px] font-medium rounded-md bg-gray-50 text-gray-600 border border-gray-100">
-                {lang}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
