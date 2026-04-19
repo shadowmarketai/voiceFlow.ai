@@ -18,17 +18,17 @@ import api from '../../services/api'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_DIRECT_PLANS = [
-  { id: 'free_trial',  name: 'Free Trial',  monthly_fee: 0,    call_rate: 4.50, agents: 1,    calls_mo: 100,  voice_clones: 0,    wallet_min: 500,   is_active: true },
-  { id: 'starter',     name: 'Starter',     monthly_fee: 0,    call_rate: 4.50, agents: 1,    calls_mo: null, voice_clones: 0,    wallet_min: 1000,  is_active: true },
-  { id: 'growth',      name: 'Growth',      monthly_fee: 1500, call_rate: 4.00, agents: 3,    calls_mo: null, voice_clones: 1,    wallet_min: 3000,  is_active: true },
-  { id: 'business',    name: 'Business',    monthly_fee: 3000, call_rate: 3.50, agents: 10,   calls_mo: null, voice_clones: 3,    wallet_min: 5000,  is_active: true },
-  { id: 'enterprise',  name: 'Enterprise',  monthly_fee: 8000, call_rate: 3.00, agents: null, calls_mo: null, voice_clones: null, wallet_min: 10000, is_active: true },
+  { id: 'free_trial',  name: 'Free Trial',  monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    calls_mo: 100,  voice_clones: 0,    wallet_min: 500,   is_active: true },
+  { id: 'starter',     name: 'Starter',     monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    calls_mo: null, voice_clones: 0,    wallet_min: 1000,  is_active: true },
+  { id: 'growth',      name: 'Growth',      monthly_fee: 1500, call_rate: 4.00, profit_margin: 1.50, agents: 3,    calls_mo: null, voice_clones: 1,    wallet_min: 3000,  is_active: true },
+  { id: 'business',    name: 'Business',    monthly_fee: 3000, call_rate: 3.50, profit_margin: 1.00, agents: 10,   calls_mo: null, voice_clones: 3,    wallet_min: 5000,  is_active: true },
+  { id: 'enterprise',  name: 'Enterprise',  monthly_fee: 8000, call_rate: 3.00, profit_margin: 0.50, agents: null, calls_mo: null, voice_clones: null, wallet_min: 10000, is_active: true },
 ]
 
 const DEFAULT_AGENCY_PLANS = [
-  { id: 'agency_starter', name: 'Agency Starter', monthly_fee: 5000,  wholesale_rate: 3.50, sub_clients: 10,   agents_per_client: 2,    voice_clones: 1,    is_active: true },
-  { id: 'agency_growth',  name: 'Agency Growth',  monthly_fee: 10000, wholesale_rate: 3.00, sub_clients: 50,   agents_per_client: 5,    voice_clones: 3,    is_active: true },
-  { id: 'agency_pro',     name: 'Agency Pro',     monthly_fee: 20000, wholesale_rate: 2.50, sub_clients: null, agents_per_client: null, voice_clones: null, is_active: true },
+  { id: 'agency_starter', name: 'Agency Starter', monthly_fee: 5000,  wholesale_rate: 3.50, profit_margin: 1.00, sub_clients: 10,   agents_per_client: 2,    voice_clones: 1,    is_active: true },
+  { id: 'agency_growth',  name: 'Agency Growth',  monthly_fee: 10000, wholesale_rate: 3.00, profit_margin: 0.50, sub_clients: 50,   agents_per_client: 5,    voice_clones: 3,    is_active: true },
+  { id: 'agency_pro',     name: 'Agency Pro',     monthly_fee: 20000, wholesale_rate: 3.00, profit_margin: 0.50, sub_clients: null, agents_per_client: null, voice_clones: null, is_active: true },
 ]
 
 const DEFAULT_PACKS = [
@@ -290,6 +290,11 @@ export default function PlatformPricingPage() {
   const saveBasePlan = async () => {
     if (!basePlan || !adminToken) return
     setBaseSaving(true)
+
+    // Capture old base cost before saving
+    const oldBase = platformCostPerMin
+    const newBase = Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50)
+
     try {
       await api.put(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`, {
         stt: basePlan.stt, llm: basePlan.llm, tts: basePlan.tts, telephony: basePlan.telephony,
@@ -300,7 +305,26 @@ export default function PlatformPricingPage() {
         lock_llm: basePlan.lock_llm,
         lock_tts: basePlan.lock_tts,
       }, { headers: { 'X-Admin-Token': adminToken } })
-      toast.success('Base cost saved — all pricing built on top of this is now updated')
+
+      // ── Cascade base cost change to all plan rates ──────────────────────
+      if (Math.abs(newBase - oldBase) >= 0.01) {
+        try {
+          const cascadeRes = await api.post(
+            '/api/v1/admin/pricing/cascade-base-cost',
+            { old_base_cost: oldBase, new_base_cost: newBase },
+          )
+          const msg = cascadeRes.data?.message || 'Plan rates updated'
+          toast.success(`Base cost saved. ${msg}`)
+        } catch {
+          toast.success('Base cost saved — plan rates update failed, refresh plans manually')
+        }
+        // Reload plans so the tables reflect new rates
+        await load()
+      } else {
+        toast.success('Base cost saved')
+      }
+
+      setPlatformCostPerMin(newBase)
       loadBasePlan()
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to save base cost')
@@ -326,21 +350,23 @@ export default function PlatformPricingPage() {
 
         const normalizePlan = (p) => ({
           ...p,
-          agents:      p.agents      ?? p.agent_limit      ?? null,
-          calls_mo:    p.calls_mo    ?? p.calls_per_month  ?? null,
-          monthly_fee: p.monthly_fee ?? p.price            ?? 0,
-          call_rate:   p.call_rate   ?? 4.50,
-          voice_clones: p.voice_clones ?? null,
-          wallet_min:  p.wallet_min  ?? 0,
+          agents:        p.agents        ?? p.agent_limit      ?? null,
+          calls_mo:      p.calls_mo      ?? p.calls_per_month  ?? null,
+          monthly_fee:   p.monthly_fee   ?? p.price            ?? 0,
+          call_rate:     p.call_rate     ?? 4.50,
+          profit_margin: p.profit_margin ?? null,
+          voice_clones:  p.voice_clones  ?? null,
+          wallet_min:    p.wallet_min    ?? 0,
         })
 
         const normalizeAgency = (p) => ({
           ...p,
           monthly_fee:       p.monthly_fee       ?? p.price             ?? 0,
-          wholesale_rate:    p.wholesale_rate    ?? 3.00,
-          sub_clients:       p.sub_clients       ?? p.sub_client_limit  ?? null,
-          agents_per_client: p.agents_per_client ?? null,
-          voice_clones:      p.voice_clones      ?? null,
+          wholesale_rate:    p.wholesale_rate     ?? 3.00,
+          profit_margin:     p.profit_margin      ?? null,
+          sub_clients:       p.sub_clients        ?? p.sub_client_limit  ?? null,
+          agents_per_client: p.agents_per_client  ?? null,
+          voice_clones:      p.voice_clones       ?? null,
         })
 
         if (Array.isArray(dp) && dp.length > 0) {
@@ -675,6 +701,22 @@ export default function PlatformPricingPage() {
                           ))}
                         </div>
 
+                        {/* Cascade warning */}
+                        {basePlan && Math.abs(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin) >= 0.01 && (
+                          <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+                            <span>
+                              Base cost changed from <strong>₹{platformCostPerMin.toFixed(2)}</strong> to{' '}
+                              <strong>₹{Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50).toFixed(2)}</strong>.
+                              Saving will automatically shift all plan call rates and wholesale rates by{' '}
+                              <strong>
+                                {(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin) >= 0 ? '+' : ''}
+                                {(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin).toFixed(2)}₹/min
+                              </strong> to preserve all profit margins.
+                            </span>
+                          </div>
+                        )}
+
                         <div className="flex justify-end">
                           <button
                             type="button"
@@ -683,7 +725,7 @@ export default function PlatformPricingPage() {
                             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-40"
                           >
                             {baseSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            Save Base Cost
+                            Save &amp; Cascade to All Plans
                           </button>
                         </div>
                       </div>
@@ -752,6 +794,7 @@ export default function PlatformPricingPage() {
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-36">Plan</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Monthly Fee ₹</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Call Rate ₹/min</th>
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-emerald-600 uppercase tracking-wide">Margin ₹/min</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Max Agents</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Calls/Month</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Voice Clones</th>
@@ -761,7 +804,7 @@ export default function PlatformPricingPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={8} />)
+                    Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={9} />)
                   ) : (
                     directPlans.map((plan, idx) => (
                       <tr
@@ -808,6 +851,21 @@ export default function PlatformPricingPage() {
                               className="pl-6"
                             />
                           </div>
+                        </td>
+
+                        {/* Margin (computed read-only: call_rate − base_cost) */}
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const m = Number(plan.call_rate) - platformCostPerMin
+                            return (
+                              <span className={[
+                                'inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-xs font-semibold font-mono',
+                                m > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600',
+                              ].join(' ')}>
+                                {m >= 0 ? '+' : ''}{m.toFixed(2)}
+                              </span>
+                            )
+                          })()}
                         </td>
 
                         {/* Max agents (null = unlimited, 0 = none, n = limit) */}
@@ -1047,6 +1105,7 @@ export default function PlatformPricingPage() {
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-40">Plan</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Platform Fee ₹/mo</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Wholesale Rate ₹/min</th>
+                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-emerald-600 uppercase tracking-wide">Margin ₹/min</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Max Sub-clients</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Agents/Client</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Voice Clones</th>
@@ -1055,7 +1114,7 @@ export default function PlatformPricingPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
+                    Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} cols={8} />)
                   ) : (
                     agencyPlans.map((plan, idx) => (
                       <tr
@@ -1102,6 +1161,21 @@ export default function PlatformPricingPage() {
                               className="pl-6"
                             />
                           </div>
+                        </td>
+
+                        {/* Margin (computed read-only: wholesale_rate − base_cost) */}
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const m = Number(plan.wholesale_rate) - platformCostPerMin
+                            return (
+                              <span className={[
+                                'inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-xs font-semibold font-mono',
+                                m > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600',
+                              ].join(' ')}>
+                                {m >= 0 ? '+' : ''}{m.toFixed(2)}
+                              </span>
+                            )
+                          })()}
                         </td>
 
                         {/* Sub-clients (null = unlimited, 0 = none, n = limit) */}

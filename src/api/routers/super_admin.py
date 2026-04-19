@@ -491,10 +491,10 @@ async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_a
     direct_plans = body.get("direct_plans", [])
     agency_plans = body.get("agency_plans", [])
 
-    _DIRECT_ALLOWED = ["name", "monthly_fee", "price", "call_rate", "agent_limit",
-                       "voice_clones", "calls_per_month", "wallet_min", "is_active"]
-    _AGENCY_ALLOWED = ["name", "monthly_fee", "price", "wholesale_rate", "sub_client_limit",
-                       "agents_per_client", "voice_clones", "is_active"]
+    _DIRECT_ALLOWED = ["name", "monthly_fee", "price", "call_rate", "profit_margin",
+                       "agent_limit", "voice_clones", "calls_per_month", "wallet_min", "is_active"]
+    _AGENCY_ALLOWED = ["name", "monthly_fee", "price", "wholesale_rate", "profit_margin",
+                       "sub_client_limit", "agents_per_client", "voice_clones", "is_active"]
 
     def _upsert_plan(conn, plan: dict, allowed: list, plan_type: str):
         pid = plan.get("id")
@@ -531,6 +531,47 @@ async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_a
     logger.info("Platform pricing updated by %s: %d direct, %d agency plans",
                 user.get("email"), len(direct_plans), len(agency_plans))
     return {"message": "Pricing updated", "direct": len(direct_plans), "agency": len(agency_plans)}
+
+
+@router.post("/pricing/cascade-base-cost")
+async def cascade_base_cost(body: dict, user: dict = Depends(_require_super_admin)):
+    """
+    When base cost changes, shift ALL plan rates by the same delta so every
+    plan preserves its profit margin automatically.
+
+    Body: { old_base_cost: float, new_base_cost: float }
+    - Direct plans:  call_rate      += (new_base - old_base)
+    - Agency plans:  wholesale_rate += (new_base - old_base)
+    - profit_margin column is updated to reflect the new base.
+    """
+    old_base = float(body.get("old_base_cost", 2.50))
+    new_base = float(body.get("new_base_cost", 2.50))
+    delta = round(new_base - old_base, 4)
+
+    if abs(delta) < 0.001:
+        return {"message": "No change — base cost unchanged", "delta": 0}
+
+    with db() as conn:
+        conn.execute(
+            f"UPDATE plans SET call_rate = ROUND(COALESCE(call_rate, {_ph}) + {_ph}, 2) WHERE plan_type = {_ph}",
+            (new_base, delta, "direct"),
+        )
+        conn.execute(
+            f"UPDATE plans SET wholesale_rate = ROUND(COALESCE(wholesale_rate, {_ph}) + {_ph}, 2) WHERE plan_type = {_ph}",
+            (new_base, delta, "agency"),
+        )
+
+    logger.info(
+        "Base cost cascaded by %s: %+.2f₹/min delta (%.2f → %.2f)",
+        user.get("email"), delta, old_base, new_base,
+    )
+    sign = "+" if delta >= 0 else ""
+    return {
+        "message": f"All plan rates shifted {sign}{delta:.2f}₹/min",
+        "delta": delta,
+        "old_base": old_base,
+        "new_base": new_base,
+    }
 
 
 @router.get("/pricing/recharge-packs")

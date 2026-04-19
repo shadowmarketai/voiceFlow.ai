@@ -386,6 +386,7 @@ def _migrate_pricing_schema(engine):
         ("calls_per_month",   "INTEGER"),                        # NULL = unlimited
         ("wallet_min",        "NUMERIC(10,2)"),                  # minimum balance required
         ("sub_client_limit",  "INTEGER"),                        # agency: max sub-clients
+        ("profit_margin",     "NUMERIC(8,2)"),                   # fixed margin above base cost (auto-maintained)
     ]
 
     with engine.begin() as conn:
@@ -408,6 +409,12 @@ def _migrate_pricing_schema(engine):
         """))
         logger.info("recharge_packs table ensured")
 
+        # ── One-time fix: Agency Pro was seeded at ₹2.50 (break-even) — correct to ₹3.00 (₹0.50 margin) ──
+        conn.execute(text(
+            "UPDATE plans SET wholesale_rate = 3.00, profit_margin = 0.50 "
+            "WHERE id = 'agency_pro' AND (wholesale_rate IS NULL OR wholesale_rate <= 2.50)"
+        ))
+
         # ── Seed / upsert pricing data from billing spec ──
         _seed_pricing_data(conn)
 
@@ -415,68 +422,82 @@ def _migrate_pricing_schema(engine):
 def _seed_pricing_data(conn):
     """Upsert default plan pricing + recharge packs from the VoiceFlow AI billing spec.
     Uses SQLAlchemy text() with :param binding — safe from injection.
+
+    Rates policy:
+      - On INSERT: set default call_rate / wholesale_rate and profit_margin.
+      - On UPDATE: NEVER overwrite call_rate / wholesale_rate (cascade changes must survive
+        restarts). Only update structural fields (limits, plan_type, price, sort_order).
+      - profit_margin = default margin above the ₹2.50 base cost floor.
     """
-    # (id, name, slug, price, plan_type, call_rate, agent_limit, voice_clones, calls_per_month, wallet_min, sort_order)
+    # (id, name, slug, price, plan_type, default_call_rate, profit_margin, agent_limit,
+    #  voice_clones, calls_per_month, wallet_min, sort_order)
     direct_plans = [
-        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 1,    0,    100,  500.0,  0),
-        ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 1,    0,    None, 1000.0, 1),
-        ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 3,    1,    None, 3000.0, 2),
-        ("business",   "Business",    "business",   3000, "direct", 3.50, 10,   3,    None, 5000.0, 3),
-        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, None, None, None, 10000.0, 4),
+        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 2.00, 1,    0,    100,  500.0,  0),
+        ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 2.00, 1,    0,    None, 1000.0, 1),
+        ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 1.50, 3,    1,    None, 3000.0, 2),
+        ("business",   "Business",    "business",   3000, "direct", 3.50, 1.00, 10,   3,    None, 5000.0, 3),
+        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, 0.50, None, None, None, 10000.0, 4),
     ]
-    # (id, name, slug, price, plan_type, wholesale_rate, sub_client_limit, agents_per_client, voice_clones, sort_order)
+    # (id, name, slug, price, plan_type, default_wholesale_rate, profit_margin,
+    #  sub_client_limit, agents_per_client, voice_clones, sort_order)
     agency_plans = [
-        ("agency_starter", "Agency Starter", "agency_starter", 5000,  "agency", 3.50, 10,   2,    1,    5),
-        ("agency_growth",  "Agency Growth",  "agency_growth",  10000, "agency", 3.00, 50,   5,    3,    6),
-        ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", 2.50, None, None, None, 7),
+        ("agency_starter", "Agency Starter", "agency_starter", 5000,  "agency", 3.50, 1.00, 10,   2,    1,    5),
+        ("agency_growth",  "Agency Growth",  "agency_growth",  10000, "agency", 3.00, 0.50, 50,   5,    3,    6),
+        ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", 3.00, 0.50, None, None, None, 7),
     ]
 
-    for pid, name, slug, price, ptype, call_rate, agent_limit, vc, cpm, wmin, sord in direct_plans:
+    for pid, name, slug, price, ptype, call_rate, margin, agent_limit, vc, cpm, wmin, sord in direct_plans:
         exists = conn.execute(text("SELECT id FROM plans WHERE id=:pid"), {"pid": pid}).fetchone()
         if not exists:
             conn.execute(text("""
                 INSERT INTO plans
                   (id,name,slug,price,currency,interval,max_users,description,
-                   is_active,sort_order,plan_type,call_rate,agent_limit,
+                   is_active,sort_order,plan_type,call_rate,profit_margin,agent_limit,
                    voice_clones,calls_per_month,wallet_min)
                 VALUES
                   (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
-                   :ptype,:call_rate,:agent_limit,:vc,:cpm,:wmin)
+                   :ptype,:call_rate,:margin,:agent_limit,:vc,:cpm,:wmin)
             """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
-                       ptype=ptype, call_rate=call_rate, agent_limit=agent_limit,
-                       vc=vc, cpm=cpm, wmin=wmin))
+                       ptype=ptype, call_rate=call_rate, margin=margin,
+                       agent_limit=agent_limit, vc=vc, cpm=cpm, wmin=wmin))
         else:
+            # Do NOT overwrite call_rate — preserve any cascade-updated value.
+            # Set profit_margin only if not already set.
             conn.execute(text("""
                 UPDATE plans
-                SET plan_type=:ptype, call_rate=:call_rate, agent_limit=:agent_limit,
+                SET plan_type=:ptype, agent_limit=:agent_limit,
                     voice_clones=:vc, calls_per_month=:cpm, wallet_min=:wmin,
-                    price=:price, sort_order=:sord
+                    price=:price, sort_order=:sord,
+                    profit_margin = CASE WHEN profit_margin IS NULL THEN :margin ELSE profit_margin END
                 WHERE id=:pid
-            """), dict(ptype=ptype, call_rate=call_rate, agent_limit=agent_limit,
-                       vc=vc, cpm=cpm, wmin=wmin, price=price, sord=sord, pid=pid))
+            """), dict(ptype=ptype, agent_limit=agent_limit,
+                       vc=vc, cpm=cpm, wmin=wmin, price=price, sord=sord,
+                       margin=margin, pid=pid))
 
-    for pid, name, slug, price, ptype, wrate, sub_limit, apc, vc, sord in agency_plans:
+    for pid, name, slug, price, ptype, wrate, margin, sub_limit, apc, vc, sord in agency_plans:
         exists = conn.execute(text("SELECT id FROM plans WHERE id=:pid"), {"pid": pid}).fetchone()
         if not exists:
             conn.execute(text("""
                 INSERT INTO plans
                   (id,name,slug,price,currency,interval,max_users,description,
-                   is_active,sort_order,plan_type,wholesale_rate,
+                   is_active,sort_order,plan_type,wholesale_rate,profit_margin,
                    sub_client_limit,agents_per_client,voice_clones)
                 VALUES
                   (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
-                   :ptype,:wrate,:sub_limit,:apc,:vc)
+                   :ptype,:wrate,:margin,:sub_limit,:apc,:vc)
             """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
-                       ptype=ptype, wrate=wrate, sub_limit=sub_limit, apc=apc, vc=vc))
+                       ptype=ptype, wrate=wrate, margin=margin,
+                       sub_limit=sub_limit, apc=apc, vc=vc))
         else:
+            # Do NOT overwrite wholesale_rate — preserve cascade-updated value.
             conn.execute(text("""
                 UPDATE plans
-                SET plan_type=:ptype, wholesale_rate=:wrate,
-                    sub_client_limit=:sub_limit, agents_per_client=:apc,
-                    voice_clones=:vc, price=:price, sort_order=:sord
+                SET plan_type=:ptype, sub_client_limit=:sub_limit, agents_per_client=:apc,
+                    voice_clones=:vc, price=:price, sort_order=:sord,
+                    profit_margin = CASE WHEN profit_margin IS NULL THEN :margin ELSE profit_margin END
                 WHERE id=:pid
-            """), dict(ptype=ptype, wrate=wrate, sub_limit=sub_limit, apc=apc,
-                       vc=vc, price=price, sord=sord, pid=pid))
+            """), dict(ptype=ptype, sub_limit=sub_limit, apc=apc,
+                       vc=vc, price=price, sord=sord, margin=margin, pid=pid))
 
     # Upsert recharge packs
     packs = [
