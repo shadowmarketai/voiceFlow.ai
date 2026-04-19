@@ -261,7 +261,7 @@ export default function RecordingsPage() {
  return () => { cancelled = true; };
  }, []);
 
- const allRecordings = useMemo(() => [...apiRecordings, ...mockRecordings], [apiRecordings]);
+ const allRecordings = useMemo(() => [...apiRecordings], [apiRecordings]);
 
  // ── Filtering ──────────────────────────────────────────────────────────
  const filtered = useMemo(() => {
@@ -286,7 +286,7 @@ export default function RecordingsPage() {
  // ── Play toggle ────────────────────────────────────────────────────────
  const togglePlay = useCallback(async (rec) => {
  const id = typeof rec === 'string' ? rec : rec.id;
- const recording = allRecordings.find(r => r.id === id) || mockRecordings.find(r => r.id === id);
+ const recording = allRecordings.find(r => r.id === id);
  if (!recording) return;
 
  // If currently playing this recording, pause/stop it

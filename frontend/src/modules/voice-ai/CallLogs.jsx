@@ -269,7 +269,7 @@ export default function CallLogsPage() {
  return () => { cancelled = true; };
  }, [agentFilter, agents]);
 
- const allCalls = useMemo(() => [...apiCalls, ...mockCalls], [apiCalls]);
+ const allCalls = useMemo(() => [...apiCalls], [apiCalls]);
 
  // ── Filtering ────────────────────────────────────────────────────────────
  const filtered = useMemo(() => {

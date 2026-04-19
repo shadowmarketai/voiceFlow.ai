@@ -75,6 +75,8 @@ export default function Testing() {
   const [conversation, setConversation] = useState([])
   const [sending, setSending] = useState(false)
   const chatEndRef = useRef(null)
+  const sessionStartRef = useRef(null)
+  const savedRef = useRef(false)
 
   /* ── Voice call state ────────────────────────────────────────── */
   const [voiceCallActive, setVoiceCallActive] = useState(false)
@@ -136,6 +138,66 @@ export default function Testing() {
       .finally(() => setAgentsLoading(false))
   }, [])
 
+  /* ── Save conversation to DB ──────────────────────────────────── */
+  const saveConversationToDB = useCallback(async (conv, agent) => {
+    if (!agent || !conv || conv.length < 2 || savedRef.current) return
+    savedRef.current = true
+    const userMsgs = conv.filter(m => m.role === 'user')
+    if (userMsgs.length === 0) return // no user interaction to save
+
+    const transcript = conv
+      .filter(m => !m.pending)
+      .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`)
+      .join('\n')
+
+    const lastEmotion = conv.filter(m => m.emotion).slice(-1)[0]?.emotion || 'neutral'
+    const now = new Date().toISOString()
+    const startedAt = sessionStartRef.current || now
+    const durationSec = sessionStartRef.current
+      ? Math.round((Date.now() - new Date(sessionStartRef.current).getTime()) / 1000)
+      : 0
+
+    try {
+      await agentsAPI.logCall({
+        agent_id: String(agent.id),
+        direction: 'test',
+        channel: 'testing_playground',
+        from_addr: 'test-user',
+        to_addr: agent.name || 'AI Agent',
+        started_at: startedAt,
+        ended_at: now,
+        duration_sec: durationSec,
+        outcome: 'completed',
+        sentiment: lastEmotion === 'happy' ? 'positive' : lastEmotion === 'angry' ? 'negative' : 'neutral',
+        emotion: lastEmotion,
+        transcript,
+        meta: {
+          message_count: conv.length,
+          user_messages: userMsgs.length,
+          agent_name: agent.name,
+          language: agentConfig.langCode || 'en',
+        },
+      })
+    } catch (e) {
+      // Silent fail — don't block UX
+    }
+  }, [agentConfig])
+
+  // Save on page unmount
+  useEffect(() => {
+    return () => {
+      saveConversationToDB(conversation, currentAgent)
+    }
+  }, []) // intentionally empty — uses refs on unmount
+
+  // Track session start when first user message is sent
+  useEffect(() => {
+    const hasUser = conversation.some(m => m.role === 'user')
+    if (hasUser && !sessionStartRef.current) {
+      sessionStartRef.current = new Date().toISOString()
+    }
+  }, [conversation])
+
   /* ── Show agent's first message when selected ─────────────────── */
   const firstMsgShownRef = useRef('')
   useEffect(() => {
@@ -152,9 +214,15 @@ export default function Testing() {
 
   /* ── Sync currentAgent when dropdown changes ─────────────────── */
   const handleSelectAgent = (id) => {
+    // Save current conversation before switching
+    if (conversation.length >= 2 && currentAgent) {
+      saveConversationToDB(conversation, currentAgent)
+    }
     setSelectedId(id)
     setConversation([])
     firstMsgShownRef.current = ''
+    sessionStartRef.current = null
+    savedRef.current = false
     if (voiceCallActive) endVoiceCall()
     if (!id) { setCurrentAgent(null); return }
     const found = agents.find(a => a.id === id) ||
@@ -257,7 +325,11 @@ export default function Testing() {
     setVoiceCallActive(false)
     stop() // stop Deepgram STT
     if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio = null }
-  }, [stop])
+    // Save conversation when voice call ends
+    if (conversation.length >= 2 && currentAgent) {
+      saveConversationToDB(conversation, currentAgent)
+    }
+  }, [stop, conversation, currentAgent, saveConversationToDB])
 
   const toggleMic = useCallback(() => {
     if (voiceCallActive) {
