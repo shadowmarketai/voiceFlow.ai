@@ -105,6 +105,8 @@ def _to_dict(r: VoiceCloneRecord) -> dict[str, Any]:
         "tenant_id": r.tenant_id,
         "provider": r.provider,
         "provider_voice_id": r.provider_voice_id,
+        "sample_path": r.sample_path,
+        "embedding_path": r.embedding_path,
         "language": r.language,
         "quality_snr_db": r.quality_snr_db,
         "quality_duration_s": r.quality_duration_s,

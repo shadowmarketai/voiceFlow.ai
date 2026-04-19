@@ -46,8 +46,30 @@ class VoiceCloner:
             for tenant_voices in [list_voices("")]:
                 for v in tenant_voices:
                     vid = v.get("voice_id", "")
-                    if vid:
-                        self._voice_registry[vid] = v
+                    if not vid:
+                        continue
+                    # Reconstruct file paths if not present in DB record
+                    if not v.get("sample_path"):
+                        for ext in (".wav", ".mp3", ".ogg", ".webm", ".m4a", ".flac"):
+                            candidate = os.path.join(SAMPLES_DIR, f"{vid}{ext}")
+                            if os.path.exists(candidate):
+                                v["sample_path"] = candidate
+                                break
+                    if not v.get("processed_path"):
+                        processed = os.path.join(SAMPLES_DIR, f"{vid}_processed.wav")
+                        if os.path.exists(processed):
+                            v["processed_path"] = processed
+                    if not v.get("embedding_path"):
+                        emb = os.path.join("data/voice_embeddings", f"{vid}.json")
+                        if os.path.exists(emb):
+                            v["embedding_path"] = emb
+                    # Set defaults for fields the frontend expects
+                    v.setdefault("voice_name", vid)
+                    v.setdefault("status", "ready")
+                    v.setdefault("languages", ["en", "hi", "ta"])
+                    v.setdefault("embedding_provider", v.get("provider", "unknown"))
+                    v.setdefault("created_at", 0)
+                    self._voice_registry[vid] = v
             if self._voice_registry:
                 logger.info("Reloaded %d voices from voice_library DB", len(self._voice_registry))
         except Exception as exc:
@@ -72,8 +94,8 @@ class VoiceCloner:
         with open(sample_path, "wb") as f:
             f.write(audio_bytes)
 
-        # Preprocess
-        result = self.preprocessor.process(sample_path)
+        # Preprocess — pass voice_id so processed file is saved persistently
+        result = self.preprocessor.process(sample_path, voice_id=voice_id)
         quality = result["quality"]
         processed_path = result["processed_path"]
 
@@ -130,14 +152,27 @@ class VoiceCloner:
         if provider == "auto":
             provider = self._select_provider(language)
 
-        if provider == "xtts":
-            self._synthesize_xtts(voice, text, language, speed, output_path)
-        elif provider == "elevenlabs":
-            self._synthesize_elevenlabs(voice, text, language, output_path)
-        elif provider == "edge_tts":
-            self._synthesize_edge_tts(voice, text, language, speed, output_path)
+        # Try the selected provider; on failure, cascade to next available
+        synth_errors = []
+        providers_to_try = [provider]
+        if provider != "edge_tts":
+            providers_to_try.append("edge_tts")  # always have a fallback
+
+        for p in providers_to_try:
+            try:
+                if p == "xtts":
+                    self._synthesize_xtts(voice, text, language, speed, output_path)
+                elif p == "elevenlabs":
+                    self._synthesize_elevenlabs(voice, text, language, output_path)
+                else:
+                    self._synthesize_edge_tts(voice, text, language, speed, output_path)
+                provider = p
+                break
+            except Exception as exc:
+                synth_errors.append(f"{p}: {exc}")
+                logger.warning("Synthesis with %s failed, trying next: %s", p, exc)
         else:
-            self._synthesize_edge_tts(voice, text, language, speed, output_path)
+            raise RuntimeError(f"All synthesis providers failed: {'; '.join(synth_errors)}")
 
         # Read output and encode
         with open(output_path, "rb") as f:
@@ -163,15 +198,57 @@ class VoiceCloner:
         }
 
     def _select_provider(self, language: str) -> str:
-        """Auto-select best provider for language."""
+        """Auto-select best available provider for language."""
+        # 1. Try XTTS v2 (self-hosted, free, best for Indian languages)
         try:
             from TTS.api import TTS
             return "xtts"
         except ImportError:
             pass
+        # 2. Try ElevenLabs (paid, highest quality)
         if os.getenv("ELEVENLABS_API_KEY"):
             return "elevenlabs"
+        # 3. Fallback to Edge TTS (free, no real cloning but works)
         return "edge_tts"
+
+    def _get_speaker_wav(self, voice: dict) -> str:
+        """Find the best available reference audio for a cloned voice.
+
+        Checks processed path first, then raw sample, then embedding reference.
+        Raises ValueError if no audio is available.
+        """
+        # 1. Processed audio (best quality — noise-reduced, normalized)
+        processed = voice.get("processed_path", "")
+        if processed and os.path.exists(processed):
+            return processed
+
+        # 2. Raw sample (original upload)
+        sample = voice.get("sample_path", "")
+        if sample and os.path.exists(sample):
+            return sample
+
+        # 3. Reconstruct path from voice_id
+        voice_id = voice.get("voice_id", "")
+        if voice_id:
+            for ext in (".wav", ".mp3", ".ogg", ".webm", ".m4a", ".flac"):
+                candidate = os.path.join(SAMPLES_DIR, f"{voice_id}{ext}")
+                if os.path.exists(candidate):
+                    return candidate
+            processed_candidate = os.path.join(SAMPLES_DIR, f"{voice_id}_processed.wav")
+            if os.path.exists(processed_candidate):
+                return processed_candidate
+
+        # 4. Check embedding for reference_audio path
+        embedding = self.encoder.load_embedding(voice_id) if voice_id else None
+        if embedding and embedding.get("reference_audio"):
+            ref = embedding["reference_audio"]
+            if os.path.exists(ref):
+                return ref
+
+        raise ValueError(
+            f"No reference audio found for voice {voice.get('voice_name', voice_id)}. "
+            f"Checked: processed_path={processed}, sample_path={sample}"
+        )
 
     def _synthesize_xtts(
         self, voice: dict, text: str, language: str,
@@ -184,13 +261,17 @@ class VoiceCloner:
             logger.info("Loading XTTS v2 for synthesis...")
             self._xtts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
 
+        speaker_wav = self._get_speaker_wav(voice)
+        logger.info("XTTS synthesis using speaker_wav: %s", speaker_wav)
+
         # XTTS language codes
-        lang_map = {"en": "en", "hi": "hi", "ta": "ta", "te": "te", "mr": "mr"}
+        lang_map = {"en": "en", "hi": "hi", "ta": "ta", "te": "te", "mr": "mr",
+                     "kn": "kn", "ml": "ml", "bn": "bn", "gu": "gu", "pa": "pa"}
         xtts_lang = lang_map.get(language, "en")
 
         self._xtts.tts_to_file(
             text=text,
-            speaker_wav=voice["processed_path"],
+            speaker_wav=speaker_wav,
             language=xtts_lang,
             file_path=output_path,
         )
@@ -210,7 +291,8 @@ class VoiceCloner:
 
         if not el_voice_id:
             # Upload sample to ElevenLabs first
-            with open(voice["processed_path"], "rb") as f:
+            speaker_wav = self._get_speaker_wav(voice)
+            with open(speaker_wav, "rb") as f:
                 resp = httpx.post(
                     "https://api.elevenlabs.io/v1/voices/add",
                     headers={"xi-api-key": api_key},

@@ -5,6 +5,7 @@ Cleans and validates audio samples before embedding extraction.
 """
 
 import logging
+import os
 import tempfile
 
 try:
@@ -100,8 +101,12 @@ class AudioPreprocessor:
             issues.append(f"For best quality, record 30s-5min (currently {duration:.1f}s)")
         return issues
 
-    def process(self, file_path: str) -> dict:
-        """Full preprocessing pipeline. Returns processed audio + quality report."""
+    def process(self, file_path: str, voice_id: str = "") -> dict:
+        """Full preprocessing pipeline. Returns processed audio + quality report.
+
+        When voice_id is provided, saves processed audio to a persistent path
+        alongside the raw sample so it survives restarts.
+        """
         audio, sr = self.load_and_normalize(file_path)
         audio = self.remove_noise(audio, sr)
         audio = self.normalize_volume(audio)
@@ -109,9 +114,14 @@ class AudioPreprocessor:
 
         quality = self.quality_check(audio, sr)
 
-        # Save processed audio to temp file
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as _tmp:
-            processed_path = _tmp.name
+        # Save processed audio to persistent path next to the raw sample
+        if voice_id:
+            samples_dir = os.path.dirname(file_path) or os.getenv("VOICE_SAMPLES_DIR", "data/voice_samples")
+            processed_path = os.path.join(samples_dir, f"{voice_id}_processed.wav")
+        else:
+            # Fallback for quality-check-only calls (no voice_id yet)
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as _tmp:
+                processed_path = _tmp.name
         sf.write(processed_path, audio, sr)
 
         return {

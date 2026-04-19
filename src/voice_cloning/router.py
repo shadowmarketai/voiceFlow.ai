@@ -94,7 +94,7 @@ async def register_voice(
             voice_id=result.get("voice_id", ""),
             voice_name=voice_name,
             tenant_id=tenant_id,
-            provider=result.get("provider", "local"),
+            provider=result.get("embedding_provider", "local"),
             sample_path=result.get("sample_path"),
             embedding_path=result.get("embedding_path"),
             language=language,
@@ -102,8 +102,9 @@ async def register_voice(
             quality_duration_s=result.get("quality", {}).get("duration_seconds"),
             description=description,
         )
+        logger.info("Voice %s saved to DB for tenant %s", result.get("voice_id"), tenant_id)
     except Exception as exc:
-        logger.warning("voice_library save failed (voice still usable): %s", exc)
+        logger.warning("voice_library save failed (voice still usable in-memory): %s", exc)
 
     return result
 
