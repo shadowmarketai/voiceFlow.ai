@@ -10,7 +10,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Building2, Save, Plus, Trash2, RefreshCw, Loader2, TrendingUp,
   Users, Zap, Package, Edit2, Check, X, ChevronDown, IndianRupee, Settings,
-  Lock, Unlock, AlertTriangle, Info,
+  Lock, Unlock, AlertTriangle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../../services/api'
@@ -640,47 +640,28 @@ export default function PlatformPricingPage() {
 
                         {/* Pricing controls */}
                         <div>
-                          <h3 className="text-sm font-semibold text-slate-900 mb-1">Platform Fee &amp; Markup</h3>
+                          <h3 className="text-sm font-semibold text-slate-900 mb-1">Platform Fee</h3>
                           <p className="text-xs text-slate-400 mb-3">
-                            Platform fee and min floor cascade to plan rates. AI/telephony markup % only affect real-time billing.
+                            These values cascade to all plan call rates when you save.
                           </p>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="grid grid-cols-2 gap-3">
                             {[
                               {
                                 key: 'platform_fee_inr', label: 'Platform fee ₹/min', step: 0.25,
                                 hint: 'Flat fee added to every call. Cascades to all plan call rates on save.',
-                                cascades: true,
-                              },
-                              {
-                                key: 'ai_markup_pct', label: 'AI markup %', step: 1,
-                                hint: '% added on top of provider AI cost (STT+LLM+TTS) at call billing time. Does NOT change plan display rates.',
-                                cascades: false,
-                              },
-                              {
-                                key: 'telephony_markup_pct', label: 'Telephony markup %', step: 1,
-                                hint: '% added on top of telephony provider cost at call billing time. Does NOT change plan display rates.',
-                                cascades: false,
                               },
                               {
                                 key: 'min_floor_inr', label: 'Min floor ₹/min', step: 0.25,
-                                hint: 'Minimum charge per minute regardless of provider cost. Cascades to plan rates when higher than platform fee.',
-                                cascades: true,
+                                hint: 'Minimum charge per minute. Cascades to plan rates when higher than platform fee.',
                               },
-                            ].map(({ key, label, step, hint, cascades }) => (
+                            ].map(({ key, label, step, hint }) => (
                               <div key={key}>
-                                <div className="flex items-center gap-1 mb-1">
-                                  <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</label>
-                                  {cascades ? (
-                                    <span className="text-[9px] font-semibold bg-indigo-100 text-indigo-600 px-1 py-0.5 rounded uppercase tracking-wide">cascades</span>
-                                  ) : (
-                                    <span className="text-[9px] font-semibold bg-amber-100 text-amber-600 px-1 py-0.5 rounded uppercase tracking-wide">billing only</span>
-                                  )}
-                                </div>
+                                <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</label>
                                 <input
                                   type="number" step={step} min={0}
                                   value={basePlan[key] ?? ''}
                                   onChange={(e) => setBasePlan(p => ({ ...p, [key]: Number(e.target.value) }))}
-                                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                                  className="mt-1 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
                                 />
                                 <p className="text-[10px] text-slate-400 mt-1 leading-snug">{hint}</p>
                               </div>
@@ -739,88 +720,28 @@ export default function PlatformPricingPage() {
                         </div>
                       </div>
 
-                      {/* Cost breakdown card */}
-                      <div className="space-y-3">
-                        {/* Plan rate floor */}
-                        <div className="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100">
-                          <h3 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
-                            <TrendingUp className="w-4 h-4" /> Plan Rate Floor
-                          </h3>
-                          <div className="space-y-1.5 text-sm">
-                            <div className="flex justify-between text-emerald-800">
-                              <span>Platform fee</span>
-                              <span className="font-mono">₹{Number(basePlan.platform_fee_inr || 0).toFixed(2)}/min</span>
-                            </div>
-                            <div className="flex justify-between text-emerald-800">
-                              <span>Min floor</span>
-                              <span className="font-mono">₹{Number(basePlan.min_floor_inr || 0).toFixed(2)}/min</span>
-                            </div>
-                            <div className="pt-2 border-t border-emerald-200 flex justify-between font-semibold text-emerald-900">
-                              <span>Cascades to plans as</span>
-                              <span className="font-mono">₹{_effectiveCost(basePlan).toFixed(2)}/min</span>
-                            </div>
+                      {/* Cost summary card */}
+                      <div className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-2xl border border-emerald-100">
+                        <h3 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4" /> Plan Rate Floor
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between text-emerald-800">
+                            <span>Platform fee</span>
+                            <span className="font-mono">₹{Number(basePlan.platform_fee_inr || 0).toFixed(2)}/min</span>
                           </div>
-                          <p className="text-[10px] text-emerald-700 mt-2">
-                            Plan call rates and wholesale rates cascade to this value when you save.
-                          </p>
+                          <div className="flex justify-between text-emerald-800">
+                            <span>Min floor</span>
+                            <span className="font-mono">₹{Number(basePlan.min_floor_inr || 0).toFixed(2)}/min</span>
+                          </div>
+                          <div className="pt-2 border-t border-emerald-200 flex justify-between font-semibold text-emerald-900">
+                            <span>Effective base</span>
+                            <span className="font-mono">₹{_effectiveCost(basePlan).toFixed(2)}/min</span>
+                          </div>
                         </div>
-
-                        {/* Billing-only preview */}
-                        <div className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                          <h3 className="text-sm font-semibold text-amber-900 mb-1 flex items-center gap-2">
-                            <Info className="w-4 h-4" /> Billing-only Markups
-                          </h3>
-                          <p className="text-[10px] text-amber-700 mb-3">
-                            AI &amp; Telephony markup % are applied at call settlement time — they do <strong>not</strong> update plan display rates.
-                          </p>
-                          {(() => {
-                            // Approximate provider costs from catalog
-                            const getCost = (cat) => {
-                              const selected = basePlan[cat]
-                              const entry = baseCatalog?.[cat]?.[selected]
-                              return entry ? Number(entry.cost) : 0
-                            }
-                            const sttCost = getCost('stt')
-                            const llmCost = getCost('llm')
-                            const ttsCost = getCost('tts')
-                            const telCost = getCost('telephony')
-                            const aiRaw = sttCost + llmCost + ttsCost
-                            const aiMarkup = basePlan.ai_markup_pct || 0
-                            const telMarkup = basePlan.telephony_markup_pct || 0
-                            const aiAfter = aiRaw * (1 + aiMarkup / 100)
-                            const telAfter = telCost * (1 + telMarkup / 100)
-                            const platformFee = _effectiveCost(basePlan)
-                            const totalBilled = Math.max(platformFee + aiAfter + telAfter, platformFee)
-                            return (
-                              <div className="space-y-1 text-xs">
-                                <div className="flex justify-between text-amber-800">
-                                  <span>AI providers (STT+LLM+TTS)</span>
-                                  <span className="font-mono">₹{aiRaw.toFixed(4)}/min</span>
-                                </div>
-                                <div className="flex justify-between text-amber-800">
-                                  <span>+ AI markup ({aiMarkup}%)</span>
-                                  <span className="font-mono text-amber-600">+₹{(aiAfter - aiRaw).toFixed(4)}</span>
-                                </div>
-                                <div className="flex justify-between text-amber-800">
-                                  <span>Telephony</span>
-                                  <span className="font-mono">₹{telCost.toFixed(4)}/min</span>
-                                </div>
-                                <div className="flex justify-between text-amber-800">
-                                  <span>+ Tel markup ({telMarkup}%)</span>
-                                  <span className="font-mono text-amber-600">+₹{(telAfter - telCost).toFixed(4)}</span>
-                                </div>
-                                <div className="flex justify-between text-amber-800">
-                                  <span>Platform fee</span>
-                                  <span className="font-mono">₹{platformFee.toFixed(2)}</span>
-                                </div>
-                                <div className="pt-1.5 border-t border-amber-200 flex justify-between font-semibold text-amber-900">
-                                  <span>Your cost per min billed</span>
-                                  <span className="font-mono">≈ ₹{totalBilled.toFixed(4)}</span>
-                                </div>
-                              </div>
-                            )
-                          })()}
-                        </div>
+                        <p className="text-[10px] text-emerald-700 mt-3">
+                          All plan call rates and agency wholesale rates cascade to this value when you save.
+                        </p>
                       </div>
                     </div>
               ) : (
