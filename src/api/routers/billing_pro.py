@@ -370,6 +370,70 @@ def wallet_debit(req: DebitRequest, tenant_id: str = Depends(_current_tenant)) -
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(e))
 
 
+# ═══ SUBSCRIPTION PLAN SELECTION (user-facing) ════════════════════════════
+
+@router.get("/subscription-plans")
+def get_subscription_plans() -> list[dict[str, Any]]:
+    """
+    Return all active direct plans from the DB.
+    Public endpoint — no auth required.
+    Used by the plan-selection UI shown to every logged-in user.
+    """
+    try:
+        with db() as conn:
+            rows = conn.execute(
+                "SELECT id, name, price, call_rate, agent_limit, voice_clones, "
+                "wallet_min, calls_per_month, sort_order "
+                "FROM plans "
+                "WHERE plan_type='direct' AND is_active=1 "
+                "ORDER BY sort_order"
+            ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        logger.warning("get_subscription_plans error: %s", exc)
+        return []
+
+
+@router.post("/select-plan")
+def select_plan(
+    body: dict,
+    tenant_id: str = Depends(_current_tenant),
+) -> dict[str, Any]:
+    """
+    Set the active plan for the current tenant / user.
+    Updates platform_tenants.plan_id so the call_rate updates immediately.
+    """
+    plan_id = str(body.get("plan_id", "")).strip()
+    valid = {"free_trial", "starter", "growth", "business", "enterprise"}
+    if plan_id not in valid:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid plan_id. Choose from: {', '.join(sorted(valid))}")
+
+    try:
+        with db() as conn:
+            plan_row = conn.execute(
+                f"SELECT id, name, call_rate FROM plans WHERE id={_bp}", (plan_id,)
+            ).fetchone()
+            if not plan_row:
+                raise HTTPException(404, "Plan not found in DB")
+
+            conn.execute(
+                f"UPDATE platform_tenants SET plan_id={_bp} WHERE id={_bp}",
+                (plan_id, tenant_id)
+            )
+        return {
+            "success": True,
+            "plan_id": plan_id,
+            "plan_name": plan_row["name"],
+            "call_rate": float(plan_row["call_rate"] or 4.50),
+            "message": f"Switched to {plan_row['name']}",
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("select_plan error: %s", exc)
+        raise HTTPException(500, "Could not update plan")
+
+
 # ═══ AGENCY (ADMIN) ENDPOINTS ══════════════════════════════════════════════
 
 # ═══ TENANT (WHITE-LABEL) ENDPOINTS ═══════════════════════════════════════

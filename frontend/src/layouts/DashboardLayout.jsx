@@ -69,6 +69,7 @@ const navSections = [
   {
     label: 'ACCOUNT',
     items: [
+      { icon: CreditCard, name: 'Plans',      path: '/voice/billing' },
       { icon: Wallet,     name: 'Wallet',     path: '/voice/wallet' },
       { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing', tenantOnly: true },
       { icon: Users,      name: 'Team',       path: '/voice/team',           tenantOnly: true },
