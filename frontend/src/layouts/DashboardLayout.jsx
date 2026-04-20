@@ -26,7 +26,8 @@ import {
 
 /* ─── Navigation definition ─────────────────────────────────────────── */
 
-const navSections = [
+/** Regular (non-agency) nav */
+const userNavSections = [
   {
     label: 'MAIN',
     items: [
@@ -38,56 +39,74 @@ const navSections = [
   {
     label: 'BUILD',
     items: [
-      { icon: BookOpen, name: 'Knowledge Base',       path: '/voice/knowledge' },
+      { icon: BookOpen, name: 'Knowledge Base',         path: '/voice/knowledge' },
       { icon: Mic,      name: 'Voice Library & Studio', path: '/voice/studio' },
     ],
   },
   {
     label: 'DEPLOY',
     items: [
-      { icon: Globe,         name: 'Channels',       path: '/voice/channels' },
-      { icon: PhoneOutgoing, name: 'Campaigns',      path: '/voice/campaigns' },
+      { icon: Globe,         name: 'Channels',   path: '/voice/channels' },
+      { icon: PhoneOutgoing, name: 'Campaigns',  path: '/voice/campaigns' },
     ],
   },
   {
     label: 'MONITOR',
     items: [
       { icon: MessageSquare, name: 'Conversations', path: '/voice/call-logs' },
-      { icon: FileAudio,     name: 'Recordings',     path: '/voice/recordings' },
-      { icon: FlaskConical,  name: 'Testing',        path: '/voice/testing' },
-      { icon: Gauge,         name: 'Quality',          path: '/voice/quality', superAdminOnly: true },
-      { icon: BarChart3,     name: 'Combo Benchmark',  path: '/voice/combo-benchmark', superAdminOnly: true },
+      { icon: FileAudio,     name: 'Recordings',    path: '/voice/recordings' },
+      { icon: FlaskConical,  name: 'Testing',       path: '/voice/testing' },
+      { icon: Gauge,         name: 'Quality',         path: '/voice/quality',         superAdminOnly: true },
+      { icon: BarChart3,     name: 'Combo Benchmark', path: '/voice/combo-benchmark', superAdminOnly: true },
     ],
   },
   {
     label: 'CONNECT',
     items: [
-      { icon: Puzzle, name: 'Integrations',    path: '/voice/integrations' },
-      // API & Developer merged into Channels page — user menu link below still works via redirect.
-    ],
-  },
-  {
-    label: 'AGENCY',
-    agencySection: true,
-    items: [
-      { icon: Network,    name: 'Sub-clients',     path: '/voice/sub-clients',      agencyOnly: true },
-      { icon: DollarSign, name: 'My Pricing',      path: '/voice/tenant-pricing',   agencyOnly: true },
-      { icon: Wallet,     name: 'Agency Wallet',   path: '/voice/wallet',           agencyOnly: true },
-      { icon: Building2,  name: 'Agency Settings', path: '/voice/agency-settings',  agencyOnly: true },
+      { icon: Puzzle, name: 'Integrations', path: '/voice/integrations' },
     ],
   },
   {
     label: 'ACCOUNT',
     items: [
-      { icon: CreditCard, name: 'Plans',      path: '/voice/billing' },
-      { icon: Wallet,     name: 'Wallet',     path: '/voice/wallet',  hideForAgency: true },
-      { icon: Users,      name: 'Team',       path: '/voice/team',    tenantOnly: true },
+      { icon: CreditCard, name: 'Plans',  path: '/voice/billing' },
+      { icon: Wallet,     name: 'Wallet', path: '/voice/wallet' },
+      { icon: Users,      name: 'Team',   path: '/voice/team',    tenantOnly: true },
     ],
   },
 ];
 
-/** Flat list for breadcrumb / title lookup */
-const allNavItems = navSections.flatMap((s) => s.items);
+/** Agency-only nav — resellers don't need voice AI build/deploy features */
+const agencyNavSections = [
+  {
+    label: 'OVERVIEW',
+    items: [
+      { icon: LayoutDashboard, name: 'Dashboard', path: '/voice/dashboard-v2' },
+    ],
+  },
+  {
+    label: 'AGENCY',
+    items: [
+      { icon: Network,    name: 'Sub-clients',     path: '/voice/sub-clients' },
+      { icon: DollarSign, name: 'My Pricing',      path: '/voice/tenant-pricing' },
+      { icon: Wallet,     name: 'Agency Wallet',   path: '/voice/wallet' },
+      { icon: Building2,  name: 'Agency Settings', path: '/voice/agency-settings' },
+    ],
+  },
+  {
+    label: 'ACCOUNT',
+    items: [
+      { icon: Users,      name: 'Team',    path: '/voice/team', tenantOnly: true },
+      { icon: CreditCard, name: 'My Plan', path: '/voice/billing' },
+    ],
+  },
+];
+
+/** Flat list of ALL items (both nav configs) for breadcrumb / title lookup */
+const allNavItems = [
+  ...userNavSections.flatMap((s) => s.items),
+  ...agencyNavSections.flatMap((s) => s.items),
+];
 
 /* ─── Context ────────────────────────────────────────────────────────── */
 
@@ -358,15 +377,10 @@ export default function DashboardLayout() {
             isCollapsedDesktop ? 'px-2' : 'px-3'
           )}
         >
-          {navSections.map((section) => {
-            // Hide entire AGENCY section for non-agency users
-            if (section.agencySection && !isAgency) return null;
-
+          {(isAgency ? agencyNavSections : userNavSections).map((section) => {
             const visibleItems = section.items.filter((item) => {
               if (item.tenantOnly && !user?.tenant_id) return false;
               if (item.superAdminOnly && !user?.is_super_admin) return false;
-              if (item.agencyOnly && !isAgency) return false;
-              if (item.hideForAgency && isAgency) return false;
               return true;
             });
 
@@ -378,7 +392,7 @@ export default function DashboardLayout() {
                 {!isCollapsedDesktop && (
                   <div
                     className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest select-none"
-                    style={section.agencySection ? { color: brandPrimary, opacity: 0.7 } : { color: '#cbd5e1' }}
+                    style={{ color: '#cbd5e1' }}
                   >
                     {section.label}
                   </div>
