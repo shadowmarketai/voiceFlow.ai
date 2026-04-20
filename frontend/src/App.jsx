@@ -45,6 +45,7 @@ const AgencyPricingPage = lazy(() => import('./modules/admin/AgencyPricingPage')
 const AgencyOnboardingPage = lazy(() => import('./modules/voice-ai/pages/AgencyOnboarding'))
 const AgencyDashboardPage = lazy(() => import('./modules/voice-ai/pages/AgencyDashboard'))
 const AgencyWalletPage = lazy(() => import('./modules/voice-ai/pages/AgencyWalletPage'))
+const AgencySettingsPage = lazy(() => import('./modules/voice-ai/pages/AgencySettings'))
 const WithdrawalRequestsPage = lazy(() => import('./modules/admin/WithdrawalRequestsPage'))
 
 // ── Settings ──
@@ -183,6 +184,7 @@ function App() {
           <Route path="voice/sub-clients" element={<S><TenantSubclientsPage /></S>} />
           <Route path="voice/team" element={<S><TeamPage /></S>} />
           <Route path="voice/onboarding" element={<S><AgencyOnboardingPage /></S>} />
+          <Route path="voice/agency-settings" element={<S><AgencySettingsPage /></S>} />
 
           {/* Settings & Support */}
           <Route path="settings" element={<S><Settings /></S>} />

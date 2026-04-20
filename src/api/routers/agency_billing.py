@@ -48,13 +48,35 @@ def _ensure_agency_wallet(conn, tenant_id: str):
 
 
 def _require_agency(user: dict):
-    plan = user.get("plan", "") or ""
+    """Return tenant_id for agency users. Checks platform_tenants.plan_id (not users.plan)."""
     tenant_id = user.get("tenant_id", "")
-    if not (plan.startswith("agency") or tenant_id):
-        raise HTTPException(status_code=403, detail="Agency plan required")
     if not tenant_id:
-        raise HTTPException(status_code=403, detail="No tenant associated")
+        raise HTTPException(status_code=403, detail="No tenant associated with this account")
+    # Verify agency plan via platform_tenants — the authoritative source
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT plan_id FROM platform_tenants WHERE id={_PH}", (tenant_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(status_code=403, detail="Tenant not found")
+    plan_id = row["plan_id"] or ""
+    # Also accept if users.plan starts with agency (legacy / dev accounts)
+    user_plan = user.get("plan", "") or ""
+    if not (plan_id.startswith("agency") or user_plan.startswith("agency")):
+        raise HTTPException(status_code=403, detail="Agency plan required")
     return tenant_id
+
+
+def _get_tenant_plan(conn, tenant_id: str) -> dict:
+    """Return (plan_id, plan_row) for a tenant from platform_tenants + plans tables."""
+    pt = conn.execute(
+        f"SELECT plan_id FROM platform_tenants WHERE id={_PH}", (tenant_id,)
+    ).fetchone()
+    plan_id = (pt["plan_id"] if pt else None) or "agency_starter"
+    plan_row = conn.execute(
+        f"SELECT * FROM plans WHERE id={_PH}", (plan_id,)
+    ).fetchone()
+    return plan_id, (dict(plan_row) if plan_row else {})
 
 
 def _require_super_admin(user: dict):
@@ -104,6 +126,25 @@ async def agency_dashboard(
         ).fetchall()
         recent_txns = [dict(r) for r in recent] if recent else []
 
+        # Plan info from platform_tenants (authoritative)
+        plan_id, plan_row = _get_tenant_plan(conn, tenant_id)
+
+        # Tenant branding
+        tenant_row = conn.execute(
+            f"SELECT * FROM platform_tenants WHERE id={_PH}", (tenant_id,)
+        ).fetchone()
+        tenant_info = dict(tenant_row) if tenant_row else {}
+
+        # Quick stats: agents count
+        try:
+            agents_count = conn.execute(
+                f"SELECT COUNT(*) as cnt FROM voice_agents WHERE tenant_id={_PH}",
+                (tenant_id,),
+            ).fetchone()
+            agents_count = agents_count["cnt"] if agents_count else 0
+        except Exception:
+            agents_count = 0
+
         return {
             "tenant_id": tenant_id,
             "wallet": {
@@ -113,12 +154,30 @@ async def agency_dashboard(
                 "platform_fees_deducted": float(wallet.get("platform_fees_deducted", 0)),
                 "pending_withdrawal": float(wallet.get("pending_withdrawal", 0)),
             },
+            "plan": {
+                "id": plan_id,
+                "name": plan_row.get("name", plan_id),
+                "monthly_fee": float(plan_row.get("price") or 0),
+                "wholesale_rate": float(plan_row.get("wholesale_rate") or 0),
+                "sub_client_limit": plan_row.get("sub_client_limit"),
+                "agents_per_client": plan_row.get("agents_per_client"),
+            },
             "sub_clients": {
                 "total": sub_client_count,
                 "active": sub_client_count,
             },
+            "agents_count": agents_count,
             "pending_withdrawal_requests": pending_count,
             "recent_transactions": recent_txns,
+            "tenant": {
+                "name": tenant_info.get("name", ""),
+                "app_name": tenant_info.get("app_name", ""),
+                "logo_url": tenant_info.get("logo_url", ""),
+                "slug": tenant_info.get("slug", ""),
+                "support_email": tenant_info.get("support_email", ""),
+                "support_phone": tenant_info.get("support_phone", ""),
+                "website": tenant_info.get("website", ""),
+            },
         }
 
 
@@ -151,19 +210,20 @@ async def get_agency_wallet(
             (tenant_id,),
         ).fetchall()
 
-        # Get monthly plan fee from plans table
-        plan_id = current_user.get("plan", "agency_starter")
-        plan_row = conn.execute(
-            f"SELECT * FROM plans WHERE id={_PH}", (plan_id,)
-        ).fetchone()
-        monthly_fee = float(plan_row["price"]) if plan_row else 0.0
+        # Get monthly plan fee from plans table via platform_tenants.plan_id
+        plan_id, plan_row = _get_tenant_plan(conn, tenant_id)
+        monthly_fee = float(plan_row.get("price") or 0)
+        wholesale_rate = float(plan_row.get("wholesale_rate") or 0)
+        plan_name = plan_row.get("name", plan_id)
 
         return {
             "wallet": dict(wallet),
             "transactions": [dict(t) for t in transactions],
             "withdrawal_requests": [dict(r) for r in withdrawal_requests],
             "monthly_plan_fee": monthly_fee,
+            "wholesale_rate": wholesale_rate,
             "plan_id": plan_id,
+            "plan_name": plan_name,
         }
 
 

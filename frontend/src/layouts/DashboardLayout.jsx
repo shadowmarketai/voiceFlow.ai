@@ -70,9 +70,10 @@ const navSections = [
     label: 'AGENCY',
     agencySection: true,
     items: [
-      { icon: Network,    name: 'Sub-clients',  path: '/voice/sub-clients',     agencyOnly: true },
-      { icon: DollarSign, name: 'My Pricing',   path: '/voice/tenant-pricing',  agencyOnly: true },
-      { icon: Wallet,     name: 'Agency Wallet', path: '/voice/wallet',          agencyOnly: true },
+      { icon: Network,    name: 'Sub-clients',     path: '/voice/sub-clients',      agencyOnly: true },
+      { icon: DollarSign, name: 'My Pricing',      path: '/voice/tenant-pricing',   agencyOnly: true },
+      { icon: Wallet,     name: 'Agency Wallet',   path: '/voice/wallet',           agencyOnly: true },
+      { icon: Building2,  name: 'Agency Settings', path: '/voice/agency-settings',  agencyOnly: true },
     ],
   },
   {

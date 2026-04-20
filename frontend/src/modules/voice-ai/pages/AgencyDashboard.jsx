@@ -3,18 +3,33 @@ import { useNavigate } from 'react-router-dom'
 import {
   Building2, DollarSign, Users, Clock, TrendingUp,
   ArrowUpRight, Wallet, AlertCircle, ChevronRight,
-  RefreshCw, Plus,
+  RefreshCw, Plus, Bot, Globe, BookOpen, Mic,
+  Settings, ExternalLink, Copy, CheckCircle2,
+  Network, PhoneCall, Shield,
 } from 'lucide-react'
 import { agencyAPI } from '../../../services/api'
 import { useAuth } from '../../../contexts/AuthContext'
 
-function StatCard({ icon: Icon, label, value, sub, color = 'blue', onClick }) {
+/* ─── helpers ─────────────────────────────────────────────────── */
+
+function fmt(v) {
+  return `₹${(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function copy(text) {
+  navigator.clipboard.writeText(text).catch(() => {})
+}
+
+/* ─── stat card ───────────────────────────────────────────────── */
+
+function StatCard({ icon: Icon, label, value, sub, color = 'blue', onClick, loading }) {
   const colors = {
     blue:   'bg-blue-50 text-blue-600',
     green:  'bg-green-50 text-green-600',
     violet: 'bg-violet-50 text-violet-600',
     amber:  'bg-amber-50 text-amber-600',
     rose:   'bg-rose-50 text-rose-600',
+    indigo: 'bg-indigo-50 text-indigo-600',
   }
   return (
     <div
@@ -28,13 +43,42 @@ function StatCard({ icon: Icon, label, value, sub, color = 'blue', onClick }) {
         {onClick && <ChevronRight className="w-4 h-4 text-gray-400 mt-1" />}
       </div>
       <div className="mt-3">
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
+        <p className="text-2xl font-bold text-gray-900">{loading ? <span className="inline-block w-16 h-6 bg-gray-100 animate-pulse rounded" /> : value}</p>
         <p className="text-sm text-gray-500 mt-0.5">{label}</p>
         {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
       </div>
     </div>
   )
 }
+
+/* ─── quick action button ─────────────────────────────────────── */
+
+function QuickAction({ icon: Icon, label, desc, color, to, navigate }) {
+  const colors = {
+    blue:   'bg-blue-50 text-blue-600 group-hover:text-blue-700',
+    violet: 'bg-violet-50 text-violet-600 group-hover:text-violet-700',
+    green:  'bg-green-50 text-green-600 group-hover:text-green-700',
+    indigo: 'bg-indigo-50 text-indigo-600 group-hover:text-indigo-700',
+    amber:  'bg-amber-50 text-amber-600 group-hover:text-amber-700',
+  }
+  return (
+    <button
+      onClick={() => navigate(to)}
+      className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group text-left w-full"
+    >
+      <div className={`p-2.5 rounded-lg flex-shrink-0 ${colors[color]?.split(' ')[0]} ${colors[color]?.split(' ')[1]}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="min-w-0">
+        <p className="font-semibold text-gray-800 text-sm truncate">{label}</p>
+        <p className="text-xs text-gray-400 truncate">{desc}</p>
+      </div>
+      <ArrowUpRight className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0 group-hover:text-gray-500 transition-colors" />
+    </button>
+  )
+}
+
+/* ─── transaction row ─────────────────────────────────────────── */
 
 function TxnRow({ txn }) {
   const isCredit = txn.amount > 0
@@ -54,12 +98,15 @@ function TxnRow({ txn }) {
   )
 }
 
+/* ─── main dashboard ──────────────────────────────────────────── */
+
 export default function AgencyDashboard() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -72,25 +119,59 @@ export default function AgencyDashboard() {
   useEffect(() => { load() }, [])
 
   const w = data?.wallet || {}
-  const fmt = (v) => `₹${(v || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const plan = data?.plan || {}
+  const tenant = data?.tenant || {}
+
+  const loginUrl = `${window.location.origin}/login${tenant.slug ? `?t=${tenant.slug}` : ''}`
+
+  const handleCopy = () => {
+    copy(loginUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
-      {/* Header */}
+
+      {/* ── Header ──────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agency Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Welcome back, {user?.full_name || user?.name || 'Agency Admin'}
-          </p>
+        <div className="flex items-center gap-3">
+          {tenant.logo_url ? (
+            <img src={tenant.logo_url} alt="logo" className="w-9 h-9 rounded-lg object-contain border border-gray-100" />
+          ) : (
+            <div className="w-9 h-9 rounded-lg bg-violet-100 flex items-center justify-center">
+              <Building2 className="w-5 h-5 text-violet-600" />
+            </div>
+          )}
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">{tenant.app_name || tenant.name || 'Agency Dashboard'}</h1>
+            <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5">
+              <Shield className="w-3 h-3 text-violet-500" />
+              {plan.name || 'Agency Plan'}
+              {plan.monthly_fee > 0 && (
+                <span className="text-gray-300">· ₹{plan.monthly_fee?.toLocaleString('en-IN')}/mo</span>
+              )}
+              {plan.wholesale_rate > 0 && (
+                <span className="text-gray-300">· ₹{plan.wholesale_rate}/min wholesale</span>
+              )}
+            </p>
+          </div>
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate('/voice/agency-settings')}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-gray-600"
+          >
+            <Settings className="w-4 h-4" />
+            Settings
+          </button>
+          <button
+            onClick={load}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -100,19 +181,24 @@ export default function AgencyDashboard() {
         </div>
       )}
 
-      {/* Wallet summary banner */}
+      {/* ── Wallet Banner ─────────────────────────────────────────── */}
       <div className="bg-gradient-to-r from-violet-600 to-indigo-600 rounded-2xl p-6 text-white">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <p className="text-violet-200 text-sm font-medium">Available Balance</p>
             <p className="text-4xl font-bold mt-1">
-              {loading ? '—' : fmt(w.available_balance)}
+              {loading ? <span className="inline-block w-32 h-8 bg-white/20 animate-pulse rounded" /> : fmt(w.available_balance)}
             </p>
-            <p className="text-violet-200 text-xs mt-1">
-              Total earned: {fmt(w.total_earned)} &nbsp;·&nbsp; Withdrawn: {fmt(w.total_withdrawn)}
+            <p className="text-violet-200 text-xs mt-1.5 space-x-2">
+              <span>Earned: {fmt(w.total_earned)}</span>
+              <span>·</span>
+              <span>Withdrawn: {fmt(w.total_withdrawn)}</span>
+              {w.platform_fees_deducted > 0 && (
+                <><span>·</span><span>Fees deducted: {fmt(w.platform_fees_deducted)}</span></>
+              )}
             </p>
           </div>
-          <div className="flex flex-col gap-3 items-end">
+          <div className="flex flex-col gap-2 items-end">
             <button
               onClick={() => navigate('/voice/wallet')}
               className="flex items-center gap-2 bg-white text-violet-700 text-sm font-semibold px-4 py-2 rounded-lg hover:bg-violet-50 transition-colors"
@@ -130,84 +216,76 @@ export default function AgencyDashboard() {
         </div>
       </div>
 
-      {/* Stat cards */}
+      {/* ── Agency Stats ──────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard
-          icon={Users}
-          label="Sub-clients"
-          value={loading ? '—' : (data?.sub_clients?.total ?? 0)}
-          color="blue"
-          onClick={() => navigate('/voice/sub-clients')}
+        <StatCard loading={loading}
+          icon={Users} label="Sub-clients" value={data?.sub_clients?.total ?? 0}
+          color="blue" onClick={() => navigate('/voice/sub-clients')}
         />
-        <StatCard
-          icon={TrendingUp}
-          label="Total Earned"
-          value={loading ? '—' : fmt(w.total_earned)}
+        <StatCard loading={loading}
+          icon={Bot} label="Voice Agents" value={data?.agents_count ?? 0}
+          color="indigo" onClick={() => navigate('/voice/agents-list')}
+        />
+        <StatCard loading={loading}
+          icon={TrendingUp} label="Total Earned" value={fmt(w.total_earned)}
           color="green"
         />
-        <StatCard
-          icon={DollarSign}
-          label="Platform Fees"
-          value={loading ? '—' : fmt(w.platform_fees_deducted)}
-          sub="deducted from payouts"
-          color="amber"
-        />
-        <StatCard
-          icon={Clock}
-          label="Pending Requests"
-          value={loading ? '—' : (data?.pending_withdrawal_requests ?? 0)}
+        <StatCard loading={loading}
+          icon={Clock} label="Pending Requests" value={data?.pending_withdrawal_requests ?? 0}
           color={data?.pending_withdrawal_requests > 0 ? 'rose' : 'violet'}
           onClick={() => navigate('/voice/wallet')}
         />
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <button
-          onClick={() => navigate('/voice/sub-clients')}
-          className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group text-left"
-        >
-          <div className="bg-blue-50 p-2 rounded-lg">
-            <Plus className="w-5 h-5 text-blue-600" />
+      {/* ── Plan Details ──────────────────────────────────────────── */}
+      {plan.id && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-violet-50 p-2 rounded-lg">
+                <Shield className="w-5 h-5 text-violet-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-gray-800">{plan.name}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {plan.monthly_fee > 0 ? `₹${plan.monthly_fee?.toLocaleString('en-IN')}/month` : 'No monthly fee'}
+                  {plan.wholesale_rate > 0 && ` · ₹${plan.wholesale_rate}/min wholesale rate`}
+                  {plan.sub_client_limit ? ` · Up to ${plan.sub_client_limit} sub-clients` : ' · Unlimited sub-clients'}
+                  {plan.agents_per_client ? ` · ${plan.agents_per_client} agents/client` : ''}
+                </p>
+              </div>
+            </div>
+            <div className="text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-2 flex items-center gap-2">
+              <span className="text-gray-500 font-medium">Your login URL:</span>
+              <span className="font-mono text-gray-600 truncate max-w-48">{loginUrl}</span>
+              <button onClick={handleCopy} className="text-indigo-500 hover:text-indigo-700 flex-shrink-0">
+                {copied ? <CheckCircle2 className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+              <a href={loginUrl} target="_blank" rel="noreferrer" className="text-indigo-500 hover:text-indigo-700 flex-shrink-0">
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </div>
           </div>
-          <div>
-            <p className="font-semibold text-gray-800 text-sm">Add Sub-client</p>
-            <p className="text-xs text-gray-400">Onboard a new client</p>
-          </div>
-          <ArrowUpRight className="w-4 h-4 text-gray-300 ml-auto group-hover:text-blue-500 transition-colors" />
-        </button>
+        </div>
+      )}
 
-        <button
-          onClick={() => navigate('/voice/wallet')}
-          className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group text-left"
-        >
-          <div className="bg-violet-50 p-2 rounded-lg">
-            <Wallet className="w-5 h-5 text-violet-600" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-800 text-sm">Request Withdrawal</p>
-            <p className="text-xs text-gray-400">Withdraw your earnings</p>
-          </div>
-          <ArrowUpRight className="w-4 h-4 text-gray-300 ml-auto group-hover:text-violet-500 transition-colors" />
-        </button>
-
-        <button
-          onClick={() => navigate('/voice/tenant-pricing')}
-          className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group text-left"
-        >
-          <div className="bg-green-50 p-2 rounded-lg">
-            <Building2 className="w-5 h-5 text-green-600" />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-800 text-sm">My Pricing</p>
-            <p className="text-xs text-gray-400">Manage client pricing</p>
-          </div>
-          <ArrowUpRight className="w-4 h-4 text-gray-300 ml-auto group-hover:text-green-500 transition-colors" />
-        </button>
+      {/* ── Quick Actions ─────────────────────────────────────────── */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Quick Actions</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <QuickAction icon={Plus}      label="Add Sub-client"    desc="Onboard a new client"      color="blue"   to="/voice/sub-clients"      navigate={navigate} />
+          <QuickAction icon={Bot}       label="Build Agent"       desc="Create a voice AI agent"   color="indigo" to="/voice/agent-builder"    navigate={navigate} />
+          <QuickAction icon={BookOpen}  label="Knowledge Base"    desc="Manage documents & FAQs"   color="green"  to="/voice/knowledge"        navigate={navigate} />
+          <QuickAction icon={Mic}       label="Voice Library"     desc="Clone & manage voices"     color="amber"  to="/voice/studio"           navigate={navigate} />
+          <QuickAction icon={Globe}     label="Channels"          desc="Web, phone & WhatsApp"     color="blue"   to="/voice/channels"         navigate={navigate} />
+          <QuickAction icon={Wallet}    label="Withdraw Earnings" desc="Request payout from admin" color="violet" to="/voice/wallet"           navigate={navigate} />
+          <QuickAction icon={DollarSign} label="Client Pricing"  desc="Set markup & rates"        color="green"  to="/voice/tenant-pricing"   navigate={navigate} />
+          <QuickAction icon={Settings}  label="Agency Settings"  desc="Logo, domain & profile"    color="indigo" to="/voice/agency-settings"  navigate={navigate} />
+        </div>
       </div>
 
-      {/* Recent transactions */}
-      {data?.recent_transactions?.length > 0 && (
+      {/* ── Recent Transactions ───────────────────────────────────── */}
+      {(data?.recent_transactions?.length > 0) && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-50">
             <h2 className="font-semibold text-gray-800">Recent Transactions</h2>
@@ -215,7 +293,7 @@ export default function AgencyDashboard() {
               onClick={() => navigate('/voice/wallet')}
               className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
             >
-              View all
+              View all →
             </button>
           </div>
           <div className="px-5">
@@ -226,11 +304,19 @@ export default function AgencyDashboard() {
         </div>
       )}
 
-      {loading && !data && (
-        <div className="space-y-4">
-          {[...Array(3)].map((_, i) => (
-            <div key={i} className="h-20 bg-gray-100 rounded-xl animate-pulse" />
-          ))}
+      {/* ── No transactions yet ───────────────────────────────────── */}
+      {!loading && !error && data && !data.recent_transactions?.length && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-10 text-center">
+          <Network className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+          <p className="text-gray-500 font-medium">No earnings yet</p>
+          <p className="text-gray-400 text-sm mt-1">Add sub-clients and start earning commissions</p>
+          <button
+            onClick={() => navigate('/voice/sub-clients')}
+            className="mt-4 inline-flex items-center gap-2 bg-violet-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Add your first sub-client
+          </button>
         </div>
       )}
     </div>

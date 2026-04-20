@@ -206,10 +206,14 @@ export default function AgencyWalletPage() {
       </div>
 
       {/* Monthly plan fee info */}
-      {data?.monthly_plan_fee > 0 && (
+      {(data?.monthly_plan_fee > 0 || data?.wholesale_rate > 0) && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 text-sm text-amber-700 flex items-center gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          Your plan fee of <strong>₹{data.monthly_plan_fee.toFixed(2)}/month</strong> will be deducted from each withdrawal by the super admin.
+          <span>
+            {data?.plan_name && <strong>{data.plan_name}: </strong>}
+            {data?.monthly_plan_fee > 0 && <>Monthly plan fee <strong>₹{data.monthly_plan_fee.toFixed(2)}</strong> will be deducted from each withdrawal.</>}
+            {data?.wholesale_rate > 0 && <> Your wholesale rate is <strong>₹{data.wholesale_rate}/min</strong>.</>}
+          </span>
         </div>
       )}
 
