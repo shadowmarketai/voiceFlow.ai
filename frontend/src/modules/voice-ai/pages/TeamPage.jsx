@@ -71,9 +71,9 @@ export default function TeamPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Team</h1>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Agency Team</h1>
           <p className="text-gray-500 mt-1">
-            {info?.name ? `Manage members of ${info.name}` : 'Your tenant team'}
+            {info?.name ? `Manage your team members who help run ${info.name}` : 'Invite colleagues to help manage your agency account'}
           </p>
         </div>
         <div className="flex gap-2">
@@ -119,7 +119,7 @@ export default function TeamPage() {
       {!isOwner && (
         <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div>You can see your teammates but only the tenant owner can add or remove members.</div>
+          <div>You can see your teammates but only the agency owner can add or remove members.</div>
         </div>
       )}
 

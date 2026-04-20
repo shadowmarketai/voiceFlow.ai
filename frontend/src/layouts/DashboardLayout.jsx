@@ -96,8 +96,7 @@ const agencyNavSections = [
   {
     label: 'ACCOUNT',
     items: [
-      { icon: Users,      name: 'Team',    path: '/voice/team', tenantOnly: true },
-      { icon: CreditCard, name: 'My Plan', path: '/voice/billing' },
+      { icon: Users, name: 'Team', path: '/voice/team', tenantOnly: true },
     ],
   },
 ];

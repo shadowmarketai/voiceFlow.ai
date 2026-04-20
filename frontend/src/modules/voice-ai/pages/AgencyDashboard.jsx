@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Building2, DollarSign, Users, Clock, TrendingUp,
-  ArrowUpRight, Wallet, AlertCircle, ChevronRight,
-  RefreshCw, Plus, Bot, Globe, BookOpen, Mic,
+  Wallet, AlertCircle, ChevronRight,
+  RefreshCw, Plus, Bot,
   Settings, ExternalLink, Copy, CheckCircle2,
-  Network, PhoneCall, Shield,
+  Network, Shield,
 } from 'lucide-react'
 import { agencyAPI } from '../../../services/api'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -48,33 +48,6 @@ function StatCard({ icon: Icon, label, value, sub, color = 'blue', onClick, load
         {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
       </div>
     </div>
-  )
-}
-
-/* ─── quick action button ─────────────────────────────────────── */
-
-function QuickAction({ icon: Icon, label, desc, color, to, navigate }) {
-  const colors = {
-    blue:   'bg-blue-50 text-blue-600 group-hover:text-blue-700',
-    violet: 'bg-violet-50 text-violet-600 group-hover:text-violet-700',
-    green:  'bg-green-50 text-green-600 group-hover:text-green-700',
-    indigo: 'bg-indigo-50 text-indigo-600 group-hover:text-indigo-700',
-    amber:  'bg-amber-50 text-amber-600 group-hover:text-amber-700',
-  }
-  return (
-    <button
-      onClick={() => navigate(to)}
-      className="flex items-center gap-3 bg-white border border-gray-100 rounded-xl p-4 shadow-sm hover:shadow-md transition-all group text-left w-full"
-    >
-      <div className={`p-2.5 rounded-lg flex-shrink-0 ${colors[color]?.split(' ')[0]} ${colors[color]?.split(' ')[1]}`}>
-        <Icon className="w-4 h-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="font-semibold text-gray-800 text-sm truncate">{label}</p>
-        <p className="text-xs text-gray-400 truncate">{desc}</p>
-      </div>
-      <ArrowUpRight className="w-4 h-4 text-gray-300 ml-auto flex-shrink-0 group-hover:text-gray-500 transition-colors" />
-    </button>
   )
 }
 
@@ -268,21 +241,6 @@ export default function AgencyDashboard() {
           </div>
         </div>
       )}
-
-      {/* ── Quick Actions ─────────────────────────────────────────── */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-          <QuickAction icon={Plus}      label="Add Sub-client"    desc="Onboard a new client"      color="blue"   to="/voice/sub-clients"      navigate={navigate} />
-          <QuickAction icon={Bot}       label="Build Agent"       desc="Create a voice AI agent"   color="indigo" to="/voice/agent-builder"    navigate={navigate} />
-          <QuickAction icon={BookOpen}  label="Knowledge Base"    desc="Manage documents & FAQs"   color="green"  to="/voice/knowledge"        navigate={navigate} />
-          <QuickAction icon={Mic}       label="Voice Library"     desc="Clone & manage voices"     color="amber"  to="/voice/studio"           navigate={navigate} />
-          <QuickAction icon={Globe}     label="Channels"          desc="Web, phone & WhatsApp"     color="blue"   to="/voice/channels"         navigate={navigate} />
-          <QuickAction icon={Wallet}    label="Withdraw Earnings" desc="Request payout from admin" color="violet" to="/voice/wallet"           navigate={navigate} />
-          <QuickAction icon={DollarSign} label="Client Pricing"  desc="Set markup & rates"        color="green"  to="/voice/tenant-pricing"   navigate={navigate} />
-          <QuickAction icon={Settings}  label="Agency Settings"  desc="Logo, domain & profile"    color="indigo" to="/voice/agency-settings"  navigate={navigate} />
-        </div>
-      </div>
 
       {/* ── Recent Transactions ───────────────────────────────────── */}
       {(data?.recent_transactions?.length > 0) && (
