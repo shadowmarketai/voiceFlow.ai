@@ -1051,7 +1051,48 @@ if not USE_POSTGRES:
     );
 
     CREATE INDEX IF NOT EXISTS idx_ui_user_id ON user_integrations(user_id);
-    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id)
+    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id);
+
+    CREATE TABLE IF NOT EXISTS agency_wallet (
+        id                      TEXT PRIMARY KEY,
+        tenant_id               TEXT UNIQUE NOT NULL,
+        total_earned            REAL DEFAULT 0,
+        total_withdrawn         REAL DEFAULT 0,
+        platform_fees_deducted  REAL DEFAULT 0,
+        available_balance       REAL DEFAULT 0,
+        pending_withdrawal      REAL DEFAULT 0,
+        updated_at              TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS withdrawal_requests (
+        id                    TEXT PRIMARY KEY,
+        tenant_id             TEXT NOT NULL,
+        amount                REAL NOT NULL,
+        status                TEXT DEFAULT 'pending',
+        payment_method        TEXT DEFAULT 'bank_transfer',
+        payment_details       TEXT,
+        notes                 TEXT,
+        admin_notes           TEXT,
+        monthly_fee_deducted  REAL DEFAULT 0,
+        platform_fee_deducted REAL DEFAULT 0,
+        net_paid              REAL DEFAULT 0,
+        requested_at          TEXT,
+        processed_at          TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agency_transactions (
+        id          TEXT PRIMARY KEY,
+        tenant_id   TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        amount      REAL NOT NULL,
+        description TEXT,
+        created_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_aw_tenant  ON agency_wallet(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_wr_tenant  ON withdrawal_requests(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_wr_status  ON withdrawal_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_at_tenant  ON agency_transactions(tenant_id)
     """
 
 else:
@@ -1476,7 +1517,48 @@ else:
     CREATE INDEX IF NOT EXISTS idx_tc_tenant_id ON tenant_contacts(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role);
     CREATE INDEX IF NOT EXISTS idx_ui_user_id ON user_integrations(user_id);
-    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id)
+    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id);
+
+    CREATE TABLE IF NOT EXISTS agency_wallet (
+        id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        tenant_id               TEXT UNIQUE NOT NULL,
+        total_earned            NUMERIC(14,2) DEFAULT 0,
+        total_withdrawn         NUMERIC(14,2) DEFAULT 0,
+        platform_fees_deducted  NUMERIC(14,2) DEFAULT 0,
+        available_balance       NUMERIC(14,2) DEFAULT 0,
+        pending_withdrawal      NUMERIC(14,2) DEFAULT 0,
+        updated_at              TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS withdrawal_requests (
+        id                    TEXT PRIMARY KEY,
+        tenant_id             TEXT NOT NULL,
+        amount                NUMERIC(14,2) NOT NULL,
+        status                TEXT DEFAULT 'pending',
+        payment_method        TEXT DEFAULT 'bank_transfer',
+        payment_details       TEXT,
+        notes                 TEXT,
+        admin_notes           TEXT,
+        monthly_fee_deducted  NUMERIC(14,2) DEFAULT 0,
+        platform_fee_deducted NUMERIC(14,2) DEFAULT 0,
+        net_paid              NUMERIC(14,2) DEFAULT 0,
+        requested_at          TEXT,
+        processed_at          TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS agency_transactions (
+        id          TEXT PRIMARY KEY,
+        tenant_id   TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        amount      NUMERIC(14,2) NOT NULL,
+        description TEXT,
+        created_at  TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_aw_tenant ON agency_wallet(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_wr_tenant ON withdrawal_requests(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_wr_status ON withdrawal_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_at_tenant ON agency_transactions(tenant_id)
     """
 
 
