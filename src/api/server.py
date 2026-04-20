@@ -561,6 +561,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("API Keys router not available: %s", exc)
 
+    # ── Dashboard Stats ─────────────────────────────────────
+    try:
+        from api.routers.dashboard import router as dashboard_router
+        application.include_router(dashboard_router)
+        logger.info("Dashboard router loaded")
+    except Exception as exc:
+        logger.warning("Dashboard router not available: %s", exc)
+
     # ── Contact Lists (Campaign phone numbers) ────────────
     try:
         from api.routers.contact_lists import router as contact_lists_router

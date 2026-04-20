@@ -306,45 +306,51 @@ export default function LiveCallsPage() {
  /* ── Poll live calls from API every 5 seconds ──────────────── */
  useEffect(() => {
  let active = true;
- const fetchLive = () => {
- callsAPI.getLiveCalls()
- .then(({ data }) => {
- if (!active || !Array.isArray(data)) return;
- const mapped = data.map(c => ({
- id: `api-${c.id || c.request_id}`,
- name: c.phone_number || `Call #${c.id}`,
- phone: c.phone_number || '',
- duration: '0:00',
- sentiment: c.sentiment > 0 ? 'positive' : c.sentiment < 0 ? 'negative' : 'neutral',
- agent: 'AI Agent',
- status: 'active',
- topic: c.intent || 'Call',
- dialect: c.dialect || 'Unknown',
- dialectConfidence: c.confidence || 0,
- dialectPatterns: [],
- language: c.language || 'Unknown',
- emotion: c.emotion || 'neutral',
- emotionConfidence: c.emotion_confidence || 0,
- emotionTrend: [],
- genZScore: c.gen_z_score || 0,
- genZTerms: [],
- codeMixLanguages: '',
- codeMixRatio: 0,
- direction: c.source === 'inbound' ? 'inbound' : 'outbound',
- campaign: '',
- startTime: c.created_at ? new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
- transcript: c.transcription ? [{ speaker: 'customer', text: c.transcription, time: '0:00', emotion: c.emotion || 'neutral' }] : [],
- }));
- setApiCalls(mapped);
- })
- .catch(() => {}); // silently use mock data only
+ const fetchLive = async () => {
+   // Try dashboard/live first (new endpoint), fallback to calls/live
+   for (const url of ['/api/v1/dashboard/live', '/api/v1/calls/live']) {
+     try {
+       const resp = await fetch(url);
+       if (!resp.ok) continue;
+       const data = await resp.json();
+       const calls = data.calls || data || [];
+       if (!active || !Array.isArray(calls)) continue;
+       const mapped = calls.map(c => ({
+         id: c.id || `live-${Math.random()}`,
+         name: c.phone || `Call #${c.id}`,
+         phone: c.phone || '',
+         duration: c.duration || '0:00',
+         sentiment: c.sentiment || 'neutral',
+         agent: c.agent || 'AI Agent',
+         status: c.status || 'active',
+         topic: c.direction || 'Call',
+         dialect: 'General',
+         dialectConfidence: 0,
+         dialectPatterns: [],
+         language: c.language || 'en',
+         emotion: c.emotion || 'neutral',
+         emotionConfidence: 0.7,
+         emotionTrend: [],
+         genZScore: 0,
+         genZTerms: [],
+         codeMixLanguages: '',
+         codeMixRatio: 0,
+         direction: c.direction || 'test',
+         campaign: '',
+         startTime: c.started_at ? new Date(c.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+         transcript: c.transcript_preview ? [{ speaker: 'agent', text: c.transcript_preview, time: '0:00', emotion: c.emotion || 'neutral' }] : [],
+       }));
+       setApiCalls(mapped);
+       return; // success — stop trying
+     } catch {}
+   }
  };
  fetchLive();
  const interval = setInterval(fetchLive, 5000);
  return () => { active = false; clearInterval(interval); };
  }, []);
 
- const allCalls = useMemo(() => [...apiCalls, ...MOCK_CALLS], [apiCalls]);
+ const allCalls = useMemo(() => [...apiCalls], [apiCalls]);
 
  /* ── Filtered calls ───────────────────────────────────────── */
  const filteredCalls = useMemo(() => {

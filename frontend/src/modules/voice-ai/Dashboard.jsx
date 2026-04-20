@@ -233,15 +233,56 @@ export default function VoiceAIDashboard() {
  name: '', agent: 'Sales Bot', contactList: '', schedule: '',
  });
 
- /* ── Stat Data (API-backed when available) ────────────────── */
+ /* ── Real Dashboard Stats from DB ────────────────────────── */
+ const [dbStats, setDbStats] = useState(null);
+ const [recentCalls, setRecentCalls] = useState([]);
+ const [hourlyVolume, setHourlyVolume] = useState([]);
+
+ useEffect(() => {
+ // Fetch real stats
+ fetch('/api/v1/dashboard/stats')
+   .then(r => r.json())
+   .then(data => setDbStats(data))
+   .catch(() => {});
+ // Fetch recent activity
+ fetch('/api/v1/dashboard/recent-activity?limit=8')
+   .then(r => r.json())
+   .then(data => setRecentCalls(data.calls || []))
+   .catch(() => {});
+ // Fetch hourly volume
+ fetch('/api/v1/dashboard/hourly-volume')
+   .then(r => r.json())
+   .then(data => setHourlyVolume(data.data || []))
+   .catch(() => {});
+ }, []);
+
  const realStats = apiStats?.data;
  const stats = [
- { label: 'Total Analyses', value: realStats?.total_analyses?.toLocaleString() || '1,247', change: '+18%', changeType: 'up', icon: Phone, color: 'bg-indigo-100 text-indigo-600' },
- { label: 'Avg Lead Score', value: realStats?.avg_lead_score?.toFixed(1) || '23', icon: Target, color: 'bg-emerald-100 text-emerald-600', subtext: realStats ? 'From voice AI' : 'Active now' },
- { label: 'Avg Confidence', value: realStats ? `${(realStats.avg_confidence * 100).toFixed(1)}%` : '68.4%', change: '+5%', changeType: 'up', icon: Zap, color: 'bg-purple-100 text-purple-600' },
- { label: 'Audio Duration', value: realStats ? `${Math.round(realStats.total_audio_duration_s / 60)}m` : '4:32', icon: Clock, color: 'bg-amber-100 text-amber-600' },
- { label: 'Avg Sentiment', value: realStats ? realStats.avg_sentiment.toFixed(3) : '0.42', icon: Activity, color: 'bg-blue-100 text-blue-600' },
- { label: 'Avg Processing', value: realStats ? `${realStats.avg_processing_time_ms.toFixed(0)}ms` : '850ms', icon: TrendingUp, color: 'bg-red-100 text-red-600' },
+ {
+   label: 'Total Conversations',
+   value: dbStats ? dbStats.total_conversations.toLocaleString() : (realStats?.total_analyses?.toLocaleString() || '0'),
+   change: dbStats?.trend_pct ? `${dbStats.trend_pct > 0 ? '+' : ''}${dbStats.trend_pct}%` : undefined,
+   changeType: (dbStats?.trend_pct || 0) >= 0 ? 'up' : 'down',
+   icon: Phone, color: 'bg-indigo-100 text-indigo-600',
+ },
+ {
+   label: 'Active Agents',
+   value: dbStats ? `${dbStats.active_agents} / ${dbStats.total_agents}` : '0',
+   icon: Users, color: 'bg-emerald-100 text-emerald-600',
+   subtext: dbStats?.active_agents ? 'In last 24h' : undefined,
+ },
+ {
+   label: 'Minutes Used',
+   value: dbStats ? dbStats.total_minutes.toLocaleString() : '0',
+   icon: Clock, color: 'bg-purple-100 text-purple-600',
+   subtext: 'Total talk time',
+ },
+ {
+   label: 'Satisfaction Score',
+   value: dbStats?.satisfaction_score ? `${dbStats.satisfaction_score}` : '0',
+   icon: Activity, color: 'bg-amber-100 text-amber-600',
+   subtext: dbStats?.satisfaction_score ? '/ 5.0' : undefined,
+ },
  ];
 
  /* ── Dialect / Emotion / GenZ / Code-Mix Data ─────────────── */
@@ -296,47 +337,29 @@ export default function VoiceAIDashboard() {
  ],
  };
 
- /* ── Live Calls Mock Data (enhanced) ─────────────────────── */
- const liveCalls = [
- {
- id: 1, name: 'Rajesh Kumar', phone: '+91 98765 43210', duration: '3:45',
- sentiment: 'positive', agent: 'Sales Bot',
- dialect: 'Kongu', dialectConfidence: 0.89,
- emotion: 'happy', emotionConfidence: 0.82,
- genZScore: 0.2, genZTerms: ['vibe'],
- lastMessage: 'Yes, I would like to schedule a demo for next week...',
- },
- {
- id: 2, name: 'Priya Sharma', phone: '+91 87654 32109', duration: '1:22',
- sentiment: 'neutral', agent: 'Support Bot',
- dialect: 'Chennai', dialectConfidence: 0.94,
- emotion: 'neutral', emotionConfidence: 0.71,
- genZScore: 0.65, genZTerms: ['no cap','slay'],
- lastMessage: 'Can you tell me more about the pricing plans? ',
- },
- {
- id: 3, name: 'Vikram Patel', phone: '+91 76543 21098', duration: '5:18',
- sentiment: 'positive', agent: 'Sales Bot',
- dialect: 'Madurai', dialectConfidence: 0.77,
- emotion: 'excited', emotionConfidence: 0.91,
- genZScore: 0.0, genZTerms: [],
- lastMessage: 'That sounds exactly what we need for our business!',
- },
- ];
+ /* ── Live Calls — from DB recent activity ─────────────────── */
+ const liveCalls = recentCalls.map(c => ({
+ id: c.id,
+ name: c.phone || 'Unknown',
+ phone: c.phone,
+ duration: c.duration,
+ sentiment: c.sentiment,
+ agent: c.agent,
+ dialect: 'General',
+ dialectConfidence: 0,
+ emotion: c.emotion || 'neutral',
+ emotionConfidence: 0.7,
+ genZScore: 0,
+ genZTerms: [],
+ lastMessage: c.transcript_preview || 'No transcript available',
+ status: c.status,
+ language: c.language,
+ }));
 
- /* ── Chart Data ───────────────────────────────────────────── */
- const hourlyData = [
- { hour: '9AM', calls: 45, connected: 32 },
- { hour: '10AM', calls: 89, connected: 61 },
- { hour: '11AM', calls: 124, connected: 87 },
- { hour: '12PM', calls: 98, connected: 65 },
- { hour: '1PM', calls: 76, connected: 48 },
- { hour: '2PM', calls: 134, connected: 98 },
- { hour: '3PM', calls: 156, connected: 112 },
- { hour: '4PM', calls: 143, connected: 95 },
- { hour: '5PM', calls: 118, connected: 78 },
- { hour: '6PM', calls: 87, connected: 56 },
- ];
+ /* ── Chart Data — from DB hourly volume ──────────────────── */
+ const hourlyData = hourlyVolume.length > 0
+ ? hourlyVolume.filter(h => h.calls > 0 || hourlyVolume.some(x => x.calls > 0))
+ : [{ hour: 'No data', calls: 0 }];
 
  const sentimentData = [
  { name: 'Positive', value: 58, color: '#22c55e' },
