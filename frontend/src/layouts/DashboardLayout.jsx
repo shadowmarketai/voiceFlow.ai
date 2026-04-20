@@ -543,8 +543,8 @@ export default function DashboardLayout() {
                       <Search className="w-5 h-5" />
                     </button>
 
-                    {/* Wallet pill — balance + minutes remaining */}
-                    <HeaderWalletPill />
+                    {/* Wallet pill — balance + minutes remaining (not for agency resellers) */}
+                    {!isAgency && <HeaderWalletPill />}
 
                     {/* Notifications */}
                     <NotificationsPanel />

@@ -1962,11 +1962,11 @@ def _seed_platform_tickets(conn, _ph):
 def _migrate_agency_billing_schema(engine):
     """Create agency_wallet, withdrawal_requests, agency_transactions tables and
     add parent_agency_id to platform_tenants (for sub-client linking)."""
-    _ph = "%s" if USE_POSTGRES else "?"
+    from sqlalchemy import text as _text
 
-    with engine.connect() as conn:
+    with engine.begin() as conn:
         if USE_POSTGRES:
-            conn.execute("""
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS agency_wallet (
                     id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
                     tenant_id               TEXT UNIQUE NOT NULL,
@@ -1977,25 +1977,25 @@ def _migrate_agency_billing_schema(engine):
                     pending_withdrawal      NUMERIC(14,2) DEFAULT 0,
                     updated_at              TEXT
                 )
-            """)
-            conn.execute("""
+            """))
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS withdrawal_requests (
-                    id                  TEXT PRIMARY KEY,
-                    tenant_id           TEXT NOT NULL,
-                    amount              NUMERIC(14,2) NOT NULL,
-                    status              TEXT DEFAULT 'pending',
-                    payment_method      TEXT DEFAULT 'bank_transfer',
-                    payment_details     TEXT,
-                    notes               TEXT,
-                    admin_notes         TEXT,
-                    monthly_fee_deducted NUMERIC(14,2) DEFAULT 0,
+                    id                    TEXT PRIMARY KEY,
+                    tenant_id             TEXT NOT NULL,
+                    amount                NUMERIC(14,2) NOT NULL,
+                    status                TEXT DEFAULT 'pending',
+                    payment_method        TEXT DEFAULT 'bank_transfer',
+                    payment_details       TEXT,
+                    notes                 TEXT,
+                    admin_notes           TEXT,
+                    monthly_fee_deducted  NUMERIC(14,2) DEFAULT 0,
                     platform_fee_deducted NUMERIC(14,2) DEFAULT 0,
-                    net_paid            NUMERIC(14,2) DEFAULT 0,
-                    requested_at        TEXT,
-                    processed_at        TEXT
+                    net_paid              NUMERIC(14,2) DEFAULT 0,
+                    requested_at          TEXT,
+                    processed_at          TEXT
                 )
-            """)
-            conn.execute("""
+            """))
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS agency_transactions (
                     id          TEXT PRIMARY KEY,
                     tenant_id   TEXT NOT NULL,
@@ -2004,12 +2004,12 @@ def _migrate_agency_billing_schema(engine):
                     description TEXT,
                     created_at  TEXT
                 )
-            """)
-            conn.execute(
+            """))
+            conn.execute(_text(
                 "ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS parent_agency_id TEXT"
-            )
+            ))
         else:
-            conn.execute("""
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS agency_wallet (
                     id                      TEXT PRIMARY KEY,
                     tenant_id               TEXT UNIQUE NOT NULL,
@@ -2020,25 +2020,25 @@ def _migrate_agency_billing_schema(engine):
                     pending_withdrawal      REAL DEFAULT 0,
                     updated_at              TEXT
                 )
-            """)
-            conn.execute("""
+            """))
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS withdrawal_requests (
-                    id                   TEXT PRIMARY KEY,
-                    tenant_id            TEXT NOT NULL,
-                    amount               REAL NOT NULL,
-                    status               TEXT DEFAULT 'pending',
-                    payment_method       TEXT DEFAULT 'bank_transfer',
-                    payment_details      TEXT,
-                    notes                TEXT,
-                    admin_notes          TEXT,
-                    monthly_fee_deducted REAL DEFAULT 0,
+                    id                    TEXT PRIMARY KEY,
+                    tenant_id             TEXT NOT NULL,
+                    amount                REAL NOT NULL,
+                    status                TEXT DEFAULT 'pending',
+                    payment_method        TEXT DEFAULT 'bank_transfer',
+                    payment_details       TEXT,
+                    notes                 TEXT,
+                    admin_notes           TEXT,
+                    monthly_fee_deducted  REAL DEFAULT 0,
                     platform_fee_deducted REAL DEFAULT 0,
-                    net_paid             REAL DEFAULT 0,
-                    requested_at         TEXT,
-                    processed_at         TEXT
+                    net_paid              REAL DEFAULT 0,
+                    requested_at          TEXT,
+                    processed_at          TEXT
                 )
-            """)
-            conn.execute("""
+            """))
+            conn.execute(_text("""
                 CREATE TABLE IF NOT EXISTS agency_transactions (
                     id          TEXT PRIMARY KEY,
                     tenant_id   TEXT NOT NULL,
@@ -2047,32 +2047,32 @@ def _migrate_agency_billing_schema(engine):
                     description TEXT,
                     created_at  TEXT
                 )
-            """)
+            """))
             # Add parent_agency_id to platform_tenants if not exists
             try:
-                existing = {c[1] for c in conn.execute(
-                    "PRAGMA table_info(platform_tenants)"
+                existing = {r[1] for r in conn.execute(
+                    _text("PRAGMA table_info(platform_tenants)")
                 ).fetchall()}
                 if "parent_agency_id" not in existing:
-                    conn.execute(
+                    conn.execute(_text(
                         "ALTER TABLE platform_tenants ADD COLUMN parent_agency_id TEXT"
-                    )
+                    ))
             except Exception as e:
                 logger.debug("parent_agency_id column: %s", e)
 
         try:
-            conn.execute(
+            conn.execute(_text(
                 "CREATE INDEX IF NOT EXISTS idx_aw_tenant ON agency_wallet(tenant_id)"
-            )
-            conn.execute(
+            ))
+            conn.execute(_text(
                 "CREATE INDEX IF NOT EXISTS idx_wr_tenant ON withdrawal_requests(tenant_id)"
-            )
-            conn.execute(
+            ))
+            conn.execute(_text(
                 "CREATE INDEX IF NOT EXISTS idx_wr_status ON withdrawal_requests(status)"
-            )
-            conn.execute(
+            ))
+            conn.execute(_text(
                 "CREATE INDEX IF NOT EXISTS idx_at_tenant ON agency_transactions(tenant_id)"
-            )
+            ))
         except Exception as e:
             logger.debug("Agency billing indexes: %s", e)
 
