@@ -70,6 +70,7 @@ async def register(request: Request, body: RegisterRequest) -> TokenResponse:
         full_name=body.full_name,
         company=body.company,
         phone=body.phone,
+        agency_id=body.agency_id,
     )
     return TokenResponse(**result)
 

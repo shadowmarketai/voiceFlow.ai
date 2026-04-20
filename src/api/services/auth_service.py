@@ -157,6 +157,7 @@ class AuthService:
         full_name: str,
         company: str | None = None,
         phone: str | None = None,
+        agency_id: str | None = None,
     ) -> dict:
         """Register a new user account.
 
@@ -211,7 +212,45 @@ class AuthService:
                 "SELECT * FROM users WHERE id=?", (user_id,)
             ).fetchone()
 
+            # Link to agency: create / update a platform_tenants row with parent_agency_id
+            if agency_id:
+                tenant_id = f"tenant-{uuid.uuid4().hex[:8]}"
+                try:
+                    # Check if agency exists
+                    agency_row = conn.execute(
+                        "SELECT id FROM platform_tenants WHERE id=?", (agency_id,)
+                    ).fetchone()
+                    if agency_row:
+                        # Create tenant for this sub-client linked to the agency
+                        conn.execute(
+                            """INSERT OR IGNORE INTO platform_tenants
+                               (id, name, slug, plan_id, parent_agency_id, created_at)
+                               VALUES (?, ?, ?, ?, ?, ?)""",
+                            (
+                                tenant_id,
+                                company or full_name,
+                                tenant_id,
+                                "starter",
+                                agency_id,
+                                created_at,
+                            ),
+                        )
+                        # Link the user to their new tenant
+                        conn.execute(
+                            "UPDATE users SET tenant_id=? WHERE id=?",
+                            (tenant_id, user_id),
+                        )
+                        logger.info("Sub-client %s linked to agency %s", user_id, agency_id)
+                except Exception as _e:
+                    logger.warning("Could not link user to agency %s: %s", agency_id, _e)
+
         user_dict = dict(row)
+        # Re-fetch to capture tenant_id if set above
+        if agency_id:
+            with db() as conn2:
+                updated = conn2.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+                if updated:
+                    user_dict = dict(updated)
         safe_user = _safe_user(user_dict)
 
         token_data = {"sub": email, "role": "user", "user_id": user_id}

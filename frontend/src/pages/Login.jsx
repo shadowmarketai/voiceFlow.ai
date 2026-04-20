@@ -108,6 +108,7 @@ export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState('')
+  const [agencyId, setAgencyId] = useState('')
 
   // White-label tenant branding
   const [tenantBranding, setTenantBranding] = useState(null)
@@ -121,6 +122,14 @@ export default function Login() {
 
   const { login, register, verify2FALogin, googleLogin } = useAuth()
   const navigate = useNavigate()
+
+  // Detect agency invite params (?signup=1&agency=xxx)
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('signup') === '1') setIsRegister(true)
+    const aid = urlParams.get('agency')
+    if (aid) setAgencyId(aid)
+  }, [])
 
   // Detect tenant slug from URL ?t=slug or subdomain
   useEffect(() => {
@@ -146,7 +155,7 @@ export default function Login() {
     try {
       let result
       if (isRegister) {
-        result = await register({ name, email, password })
+        result = await register({ name, email, password, ...(agencyId ? { agency_id: agencyId } : {}) })
       } else {
         result = await login(email, password)
       }

@@ -94,6 +94,7 @@ export function AuthProvider({ children }) {
       full_name: data.full_name || data.name || data.email.split('@')[0],
       company: data.company,
       phone: data.phone,
+      ...(data.agency_id ? { agency_id: data.agency_id } : {}),
     }
     const res = await authAPI.register(payload)
     const respData = res.data

@@ -19,6 +19,7 @@ class RegisterRequest(BaseModel):
     full_name: str = Field(..., min_length=1, max_length=200)
     company: str | None = Field(default=None, max_length=200)
     phone: str | None = Field(default=None, max_length=20)
+    agency_id: str | None = Field(default=None, max_length=100, description="Agency tenant ID — set parent_agency_id on the new tenant")
 
     @field_validator("password")
     @classmethod

@@ -5,7 +5,7 @@ import {
   Wallet, AlertCircle, ChevronRight,
   RefreshCw, Plus, Bot,
   Settings, ExternalLink, Copy, CheckCircle2,
-  Network, Shield,
+  Network, Shield, Link2, Hash,
 } from 'lucide-react'
 import { agencyAPI } from '../../../services/api'
 import { useAuth } from '../../../contexts/AuthContext'
@@ -80,6 +80,7 @@ export default function AgencyDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [copiedInvite, setCopiedInvite] = useState(false)
 
   const load = () => {
     setLoading(true)
@@ -103,12 +104,22 @@ export default function AgencyDashboard() {
   const plan = data?.plan || {}
   const tenant = data?.tenant || {}
 
+  const agencyId = data?.tenant_id || ''
   const loginUrl = `${window.location.origin}/login${tenant.slug ? `?t=${tenant.slug}` : ''}`
+  const inviteUrl = agencyId
+    ? `${window.location.origin}/login?signup=1&agency=${agencyId}${tenant.slug ? `&t=${tenant.slug}` : ''}`
+    : ''
 
   const handleCopy = () => {
     copy(loginUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleCopyInvite = () => {
+    copy(inviteUrl)
+    setCopiedInvite(true)
+    setTimeout(() => setCopiedInvite(false), 2000)
   }
 
   return (
@@ -217,6 +228,62 @@ export default function AgencyDashboard() {
           onClick={() => navigate('/voice/wallet')}
         />
       </div>
+
+      {/* ── Agency ID & Invite Link ───────────────────────────────── */}
+      {agencyId && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-4">
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+            <Hash className="w-4 h-4 text-violet-500" />
+            Agency ID &amp; Client Invite
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Agency ID */}
+            <div className="bg-gray-50 rounded-lg px-3 py-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] text-gray-400 font-medium mb-0.5">Your Agency ID</p>
+                <p className="font-mono text-sm text-gray-800 truncate">{agencyId}</p>
+              </div>
+              <button
+                onClick={() => { copy(agencyId); }}
+                className="flex-shrink-0 text-gray-400 hover:text-violet-600 transition-colors"
+                title="Copy Agency ID"
+              >
+                <Copy className="w-4 h-4" />
+              </button>
+            </div>
+            {/* Client Invite Link */}
+            <div className="bg-violet-50 rounded-lg px-3 py-2.5 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] text-violet-500 font-medium mb-0.5">Client Invite Link</p>
+                <p className="font-mono text-xs text-violet-800 truncate">{inviteUrl}</p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  onClick={handleCopyInvite}
+                  className="text-violet-400 hover:text-violet-700 transition-colors"
+                  title="Copy invite link"
+                >
+                  {copiedInvite
+                    ? <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    : <Copy className="w-4 h-4" />}
+                </button>
+                <a
+                  href={inviteUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-violet-400 hover:text-violet-700 transition-colors"
+                  title="Open invite link"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2.5">
+            Share the invite link with clients — when they register, they are automatically linked to your agency.
+          </p>
+        </div>
+      )}
 
       {/* ── Plan Details ──────────────────────────────────────────── */}
       {plan.id && (
