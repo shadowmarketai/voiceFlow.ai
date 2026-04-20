@@ -1767,7 +1767,90 @@ def _seed_saas_control_layer():
         # ── Platform Support Tickets (tenant → super admin) ──
         _seed_platform_tickets(conn, _ph)
 
+        # ── Demo Agency Tenant + User (idempotent) ──
+        _seed_demo_agency(conn, _ph)
+
     logger.info("SaaS control layer seeded successfully")
+
+
+def _seed_demo_agency(conn, _ph):
+    """Create a demo agency tenant + admin user for testing agency features.
+
+    Credentials:
+        email:    agency@voiceflow.ai
+        password: Agency@123
+
+    Tenant: tenant-agency-demo  (plan: agency_starter)
+    """
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+
+    AGENCY_TENANT_ID   = "tenant-agency-demo"
+    AGENCY_USER_ID     = "u-agency-demo-001"
+    AGENCY_EMAIL       = "agency@voiceflow.ai"
+    AGENCY_NAME        = "Agency Demo"
+    AGENCY_PASSWORD    = "Agency@123"
+    AGENCY_HASH        = pwd_context.hash(AGENCY_PASSWORD)
+
+    # ── 1. Ensure the tenant exists ──
+    existing_tenant = conn.execute(
+        f"SELECT id FROM platform_tenants WHERE id={_ph}", (AGENCY_TENANT_ID,)
+    ).fetchone()
+
+    if not existing_tenant:
+        conn.execute(f"""
+            INSERT INTO platform_tenants
+              (id, name, slug, plan_id, is_active, max_users,
+               primary_color, app_name, onboarding_status)
+            VALUES
+              ({_ph},{_ph},{_ph},{_ph},1,0,{_ph},{_ph},{_ph})
+        """, (
+            AGENCY_TENANT_ID,
+            "Agency Demo",
+            "agency-demo",
+            "agency_starter",
+            "#6366f1",
+            "Agency Demo",
+            "active",
+        ))
+        logger.info("Demo agency tenant created: %s", AGENCY_TENANT_ID)
+    else:
+        # Keep plan in sync
+        conn.execute(
+            f"UPDATE platform_tenants SET plan_id={_ph} WHERE id={_ph}",
+            ("agency_starter", AGENCY_TENANT_ID),
+        )
+
+    # ── 2. Ensure the user exists ──
+    existing_user = conn.execute(
+        f"SELECT id FROM users WHERE email={_ph}", (AGENCY_EMAIL,)
+    ).fetchone()
+
+    if existing_user:
+        conn.execute(
+            f"UPDATE users SET hashed_password={_ph}, role={_ph}, is_active=1, "
+            f"tenant_id={_ph}, is_tenant_owner=1 WHERE email={_ph}",
+            (AGENCY_HASH, "admin", AGENCY_TENANT_ID, AGENCY_EMAIL),
+        )
+        logger.info("Demo agency user password re-synced: %s", AGENCY_EMAIL)
+    else:
+        conn.execute(f"""
+            INSERT INTO users
+              (id, email, name, hashed_password, role, plan, company,
+               is_active, is_super_admin, is_tenant_owner, tenant_id)
+            VALUES
+              ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},1,0,1,{_ph})
+        """, (
+            AGENCY_USER_ID,
+            AGENCY_EMAIL,
+            AGENCY_NAME,
+            AGENCY_HASH,
+            "admin",
+            "agency_starter",
+            "Agency Demo Co",
+            AGENCY_TENANT_ID,
+        ))
+        logger.info("Demo agency user created: %s", AGENCY_EMAIL)
 
 
 def _migrate_tenant_branding(conn):
