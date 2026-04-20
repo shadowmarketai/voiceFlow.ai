@@ -30,6 +30,116 @@ admin_router = APIRouter(prefix="/api/v1/admin/withdrawals", tags=["Admin Withdr
 _PH = "%s" if USE_POSTGRES else "?"
 
 
+def _bootstrap_tables():
+    """Create agency billing tables if they don't exist yet.
+
+    Called once at module import so the tables are always present regardless
+    of whether init_db() ran the schema migration successfully.
+    """
+    try:
+        with db() as conn:
+            if USE_POSTGRES:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agency_wallet (
+                        id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                        tenant_id               TEXT UNIQUE NOT NULL,
+                        total_earned            NUMERIC(14,2) DEFAULT 0,
+                        total_withdrawn         NUMERIC(14,2) DEFAULT 0,
+                        platform_fees_deducted  NUMERIC(14,2) DEFAULT 0,
+                        available_balance       NUMERIC(14,2) DEFAULT 0,
+                        pending_withdrawal      NUMERIC(14,2) DEFAULT 0,
+                        updated_at              TEXT
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS withdrawal_requests (
+                        id                    TEXT PRIMARY KEY,
+                        tenant_id             TEXT NOT NULL,
+                        amount                NUMERIC(14,2) NOT NULL,
+                        status                TEXT DEFAULT 'pending',
+                        payment_method        TEXT DEFAULT 'bank_transfer',
+                        payment_details       TEXT,
+                        notes                 TEXT,
+                        admin_notes           TEXT,
+                        monthly_fee_deducted  NUMERIC(14,2) DEFAULT 0,
+                        platform_fee_deducted NUMERIC(14,2) DEFAULT 0,
+                        net_paid              NUMERIC(14,2) DEFAULT 0,
+                        requested_at          TEXT,
+                        processed_at          TEXT
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agency_transactions (
+                        id          TEXT PRIMARY KEY,
+                        tenant_id   TEXT NOT NULL,
+                        type        TEXT NOT NULL,
+                        amount      NUMERIC(14,2) NOT NULL,
+                        description TEXT,
+                        created_at  TEXT
+                    )
+                """)
+                conn.execute(
+                    "ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS parent_agency_id TEXT"
+                )
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agency_wallet (
+                        id                      TEXT PRIMARY KEY,
+                        tenant_id               TEXT UNIQUE NOT NULL,
+                        total_earned            REAL DEFAULT 0,
+                        total_withdrawn         REAL DEFAULT 0,
+                        platform_fees_deducted  REAL DEFAULT 0,
+                        available_balance       REAL DEFAULT 0,
+                        pending_withdrawal      REAL DEFAULT 0,
+                        updated_at              TEXT
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS withdrawal_requests (
+                        id                    TEXT PRIMARY KEY,
+                        tenant_id             TEXT NOT NULL,
+                        amount                REAL NOT NULL,
+                        status                TEXT DEFAULT 'pending',
+                        payment_method        TEXT DEFAULT 'bank_transfer',
+                        payment_details       TEXT,
+                        notes                 TEXT,
+                        admin_notes           TEXT,
+                        monthly_fee_deducted  REAL DEFAULT 0,
+                        platform_fee_deducted REAL DEFAULT 0,
+                        net_paid              REAL DEFAULT 0,
+                        requested_at          TEXT,
+                        processed_at          TEXT
+                    )
+                """)
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS agency_transactions (
+                        id          TEXT PRIMARY KEY,
+                        tenant_id   TEXT NOT NULL,
+                        type        TEXT NOT NULL,
+                        amount      REAL NOT NULL,
+                        description TEXT,
+                        created_at  TEXT
+                    )
+                """)
+                try:
+                    existing = {r[1] for r in conn.execute(
+                        "PRAGMA table_info(platform_tenants)"
+                    ).fetchall()}
+                    if "parent_agency_id" not in existing:
+                        conn.execute(
+                            "ALTER TABLE platform_tenants ADD COLUMN parent_agency_id TEXT"
+                        )
+                except Exception:
+                    pass
+        logger.info("Agency billing tables bootstrapped.")
+    except Exception as e:
+        logger.warning("Agency billing bootstrap failed (will retry on next request): %s", e)
+
+
+# Run once at import time
+_bootstrap_tables()
+
+
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _ensure_agency_wallet(conn, tenant_id: str):
