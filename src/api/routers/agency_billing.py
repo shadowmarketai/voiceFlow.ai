@@ -125,12 +125,17 @@ def _bootstrap_tables():
                     existing = {r[1] for r in conn.execute(
                         "PRAGMA table_info(platform_tenants)"
                     ).fetchall()}
-                    if "parent_agency_id" not in existing:
+                except Exception as _e:
+                    logger.warning("Could not read platform_tenants schema: %s", _e)
+                    existing = set()
+                if "parent_agency_id" not in existing:
+                    try:
                         conn.execute(
                             "ALTER TABLE platform_tenants ADD COLUMN parent_agency_id TEXT"
                         )
-                except Exception:
-                    pass
+                        logger.info("Added parent_agency_id column to platform_tenants")
+                    except Exception as _e:
+                        logger.warning("Could not add parent_agency_id column: %s", _e)
         logger.info("Agency billing tables bootstrapped.")
     except Exception as e:
         logger.warning("Agency billing bootstrap failed (will retry on next request): %s", e)
@@ -213,11 +218,32 @@ async def agency_dashboard(
         wallet = dict(wallet) if wallet else {}
 
         # Sub-client counts (platform_tenants with parent_agency_id)
-        sub_clients = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM platform_tenants WHERE parent_agency_id={_PH}",
-            (tenant_id,),
-        ).fetchone()
-        sub_client_count = sub_clients["cnt"] if sub_clients else 0
+        try:
+            sub_clients = conn.execute(
+                f"SELECT COUNT(*) as cnt FROM platform_tenants WHERE parent_agency_id={_PH}",
+                (tenant_id,),
+            ).fetchone()
+            sub_client_count = sub_clients["cnt"] if sub_clients else 0
+        except Exception as _e:
+            logger.warning("sub_client query failed (%s) — attempting column migration", _e)
+            sub_client_count = 0
+            # Column missing: add it now so the next request succeeds
+            try:
+                if USE_POSTGRES:
+                    conn.execute(
+                        "ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS parent_agency_id TEXT"
+                    )
+                else:
+                    existing = {r[1] for r in conn.execute(
+                        "PRAGMA table_info(platform_tenants)"
+                    ).fetchall()}
+                    if "parent_agency_id" not in existing:
+                        conn.execute(
+                            "ALTER TABLE platform_tenants ADD COLUMN parent_agency_id TEXT"
+                        )
+                logger.info("parent_agency_id column added via self-heal in agency_dashboard")
+            except Exception as _e2:
+                logger.warning("Self-heal migration also failed: %s", _e2)
 
         # Active withdrawal requests
         pending_requests = conn.execute(
