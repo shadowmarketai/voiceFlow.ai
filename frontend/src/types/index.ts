@@ -1,5 +1,5 @@
 /**
- * Core TypeScript Interfaces for Swetha Structures CRM
+ * Core TypeScript Interfaces for VoiceFlow AI
  *
  * KB-008: NO 'any' type — every field is explicitly typed.
  * These interfaces match the FastAPI backend Pydantic models.

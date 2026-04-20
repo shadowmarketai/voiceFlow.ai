@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Search, X, Phone, Users, Bot, Megaphone, FileText, Headphones, ArrowRight, Clock } from 'lucide-react'
 import { leadsAPI, callsAPI, assistantsAPI, campaignsAPI } from '../services/api'
 
-const RECENT_KEY = 'swetha_recent_searches'
+const RECENT_KEY = 'voiceflow_recent_searches'
 
 function getRecent() {
   try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') } catch { return [] }

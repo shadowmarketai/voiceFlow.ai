@@ -64,17 +64,15 @@ export default function TenantDetail() {
  useEffect(() => { loadData() }, [tenantId])
 
  const loadData = async () => {
- const token = localStorage.getItem('swetha_token')
+ const token = localStorage.getItem('voiceflow_token')
  if (token === 'demo-token-123') {
  setTenant({
- id: tenantId, name: 'Swetha Structures PVT LTD', slug: 'swetha',
+ id: tenantId, name: 'Demo Tenant', slug: 'demo',
  plan_id: 'professional', is_active: 1, max_users: 25,
- primary_color: '#f59e0b', secondary_color: '#1e293b', accent_color: '#8b5cf6',
- app_name: 'Swetha Structures CRM', font_family: 'Inter',
+ primary_color: '#6366f1', secondary_color: '#1e293b', accent_color: '#8b5cf6',
+ app_name: 'VoiceFlow AI', font_family: 'Inter',
  users: [
- { id: 'sw-admin', email: 'admin@swetha.in', name: 'Swetha Kumar', role: 'admin', is_active: 1, phone: '+91 98765 43210' },
- { id: 'sw-manager', email: 'manager@swetha.in', name: 'Priya Sharma', role: 'manager', is_active: 1, phone: '+91 98765 43211' },
- { id: 'sw-agent', email: 'agent@swetha.in', name: 'Rajesh Nair', role: 'agent', is_active: 1, phone: '+91 98765 43212' },
+ { id: 'demo-admin', email: 'admin@voiceflow.ai', name: 'Demo Admin', role: 'admin', is_active: 1, phone: '' },
  ],
  })
  setFeatures(DEMO_FEATURES)
@@ -113,7 +111,7 @@ export default function TenantDetail() {
  })
  setFeatures(updatedFeatures)
 
- const token = localStorage.getItem('swetha_token')
+ const token = localStorage.getItem('voiceflow_token')
  if (token !== 'demo-token-123') {
  await api.put(`/api/v1/admin/tenants/${tenantId}/features/${featureKey}`, { enabled: newEnabled })
  if (isParent) {
@@ -324,7 +322,7 @@ function UsersManager({ tenantId, users, onRefresh }) {
  const [message, setMessage] = useState('')
  const [createOpen, setCreateOpen] = useState(false)
 
- const isDemo = localStorage.getItem('swetha_token') === 'demo-token-123'
+ const isDemo = localStorage.getItem('voiceflow_token') === 'demo-token-123'
 
  const roleColors = {
  admin: 'bg-purple-50 text-purple-700 border border-purple-200',
@@ -718,7 +716,7 @@ function CreateUserModal({ tenantId, onClose, onCreated }) {
  type="email"
  value={form.email}
  onChange={(e) => setForm({ ...form, email: e.target.value })}
- placeholder="jane@swetha.in"
+ placeholder="jane@company.com"
  className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-900 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
  />
  </Field>

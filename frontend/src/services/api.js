@@ -12,7 +12,7 @@ const api = axios.create({
 
 // Add auth token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('swetha_token');
+  const token = localStorage.getItem('voiceflow_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -30,11 +30,11 @@ api.interceptors.response.use(
     const isAuthCall = url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh');
 
     if (error.response?.status === 401 && !isAuthCall && !error.config._retried) {
-      const refreshToken = localStorage.getItem('swetha_refresh_token');
+      const refreshToken = localStorage.getItem('voiceflow_refresh_token');
 
       if (!refreshToken) {
-        localStorage.removeItem('swetha_token');
-        localStorage.removeItem('swetha_user');
+        localStorage.removeItem('voiceflow_token');
+        localStorage.removeItem('voiceflow_user');
         window.location.href = '/login';
         return Promise.reject(error);
       }
@@ -55,16 +55,16 @@ api.interceptors.response.use(
       try {
         const res = await api.post('/api/v1/auth/refresh', { refresh_token: refreshToken });
         const { access_token, refresh_token: newRefresh } = res.data;
-        localStorage.setItem('swetha_token', access_token);
-        if (newRefresh) localStorage.setItem('swetha_refresh_token', newRefresh);
+        localStorage.setItem('voiceflow_token', access_token);
+        if (newRefresh) localStorage.setItem('voiceflow_refresh_token', newRefresh);
         _refreshQueue.forEach(p => p.resolve(access_token));
         _refreshQueue = [];
         error.config.headers.Authorization = `Bearer ${access_token}`;
         return api(error.config);
       } catch {
-        localStorage.removeItem('swetha_token');
-        localStorage.removeItem('swetha_refresh_token');
-        localStorage.removeItem('swetha_user');
+        localStorage.removeItem('voiceflow_token');
+        localStorage.removeItem('voiceflow_refresh_token');
+        localStorage.removeItem('voiceflow_user');
         _refreshQueue.forEach(p => p.reject(error));
         _refreshQueue = [];
         window.location.href = '/login';

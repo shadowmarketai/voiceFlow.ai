@@ -50,7 +50,7 @@ export function RealtimeProvider({ children }) {
   }, [])
 
   const connect = useCallback(() => {
-    const token = localStorage.getItem('swetha_token')
+    const token = localStorage.getItem('voiceflow_token')
     if (!token || token === 'demo-token-123') {
       // No real JWT — skip WS
       return

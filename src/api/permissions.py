@@ -1,6 +1,6 @@
 """
-Swetha Structures CRM - Permission System
-===========================================
+VoiceFlow AI - Permission System
+==================================
 Module-level + action-level RBAC with a centralized permission matrix.
 
 Roles: admin, manager, agent, user, viewer

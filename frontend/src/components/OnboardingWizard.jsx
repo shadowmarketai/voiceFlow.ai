@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle, X, ArrowRight, Zap, Users, Bot, Megaphone, ChevronRight } from 'lucide-react'
 
-const ONBOARDING_KEY = 'swetha_onboarding_done'
+const ONBOARDING_KEY = 'voiceflow_onboarding_done'
 
 const STEPS = [
   {

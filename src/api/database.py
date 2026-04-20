@@ -1063,7 +1063,12 @@ else:
 
         # ── Core execute ──────────────────────────────────────────
         def execute(self, sql, params=None):
-            """Execute one SQL statement; return self for .fetchone()/.fetchall() chaining."""
+            """Execute one SQL statement; return self for .fetchone()/.fetchall() chaining.
+
+            Automatically translates SQLite-style '?' placeholders to psycopg2's
+            '%s' so all legacy service code works on PostgreSQL unchanged.
+            """
+            sql = sql.replace("?", "%s")
             self._cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             if params is not None:
                 self._cur.execute(sql, params)
@@ -1417,10 +1422,7 @@ def _seed_defaults():
 
     Creates:
     1. Super Admin (platform owner — no tenant)
-    2. Swetha Structures PVT LTD tenant
-    3. Swetha users (admin, manager, agent)
-    4. Demo leads and calls for Swetha
-    5. Plans, system features
+    2. Plans, system features
     """
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
@@ -1491,95 +1493,6 @@ def _seed_defaults():
                     "admin", "enterprise", "VoiceFlow Platform", "+91 90000 00000", 1, 1,
                 ))
                 logger.info("Super Admin created: %s", SUPER_EMAIL)
-
-        # ── Step 3: Swetha Structures tenant ──
-        tenant_exists = conn.execute(f"SELECT id FROM platform_tenants WHERE id={_ph}", ("tenant-swetha",)).fetchone()
-        if not tenant_exists:
-            conn.execute(f"""
-                INSERT INTO platform_tenants (id,name,slug,plan_id,is_active,max_users,app_name,primary_color,secondary_color,accent_color)
-                VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-            """, (
-                "tenant-swetha",
-                "Swetha Structures PVT LTD",
-                "swetha",
-                "professional",
-                1, 0,    # max_users = 0 → unlimited (agency can grow)
-                "Swetha Structures CRM",
-                "#f59e0b", "#1e293b", "#8b5cf6",
-            ))
-            logger.info("Tenant created: Swetha Structures PVT LTD")
-
-        # ── Step 4: Swetha demo tenant users ──
-        # Single role within a tenant: the first user is the tenant owner,
-        # everyone else is a plain user. Owner can add/remove team members.
-        swetha_users = [
-            ("sw-admin",  "admin@swetha.in",  "Swetha Kumar", "user", "+91 98765 43210", 1),
-            ("sw-user-1", "staff1@swetha.in", "Priya Sharma", "user", "+91 98765 43211", 0),
-            ("sw-user-2", "staff2@swetha.in", "Rajesh Nair",  "user", "+91 98765 43212", 0),
-        ]
-        for uid, email, name, role, phone, is_owner in swetha_users:
-            existing = conn.execute(f"SELECT id FROM users WHERE email={_ph}", (email,)).fetchone()
-            if not existing:
-                conn.execute(f"""
-                    INSERT INTO users (id,email,name,hashed_password,role,plan,company,phone,is_active,is_super_admin,tenant_id,is_tenant_owner)
-                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-                """, (
-                    uid, email, name,
-                    pwd_context.hash("Swetha123!"),
-                    role, "starter", "Swetha Structures PVT LTD", phone,
-                    1, 0, "tenant-swetha", is_owner,
-                ))
-            else:
-                # Re-sync role + owner flag for existing rows
-                conn.execute(
-                    f"UPDATE users SET role={_ph}, is_tenant_owner={_ph} WHERE email={_ph}",
-                    (role, is_owner, email),
-                )
-        logger.info("Swetha tenant users synced: admin@swetha.in is owner")
-
-        # ── Step 5: Demo leads for Swetha ──
-        lead_count = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
-        if lead_count == 0:
-            leads = [
-                ("lead-001", "Kumar Industries", "9876543210", "kumar@industries.in", "Kumar Industries", "Meta Ads", "hot", 92),
-                ("lead-002", "Rajan Builders", "9845123456", "rajan@builders.com", "Rajan Builders", "Google Ads", "warm", 78),
-                ("lead-003", "Patel Steel Works", "9001234567", "patel@steelworks.in", "Patel Steel Works", "LinkedIn", "cold", 45),
-                ("lead-004", "Mohammed Enterprises", "9123456789", "ali@enterprises.in", "Mohammed Enterprises", "WhatsApp", "hot", 88),
-                ("lead-005", "Sunita Textiles", "9234567890", "sunita@textiles.in", "Sunita Textiles Pvt Ltd", "Referral", "warm", 65),
-                ("lead-006", "Arun Warehousing", "9345678901", "arun@warehouse.in", "Arun Warehousing", "IndiaMART", "hot", 95),
-                ("lead-007", "Lakshmi Foods", "9456789012", "lakshmi@foods.in", "Lakshmi Foods Pvt Ltd", "JustDial", "cold", 30),
-                ("lead-008", "Venkat Logistics", "9567890123", "venkat@logistics.in", "Venkat Logistics", "Website", "warm", 70),
-            ]
-            for l in leads:
-                conn.execute(f"""
-                    INSERT INTO leads (id,name,phone,email,company,source,status,score)
-                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-                """, l)
-
-        # ── Step 6: Demo calls ──
-        call_count = conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
-        if call_count == 0:
-            import datetime
-            import random
-            now = datetime.datetime.utcnow()
-            statuses = ["completed", "completed", "completed", "no_answer", "busy", "failed"]
-            sentiments = ["positive", "neutral", "negative", "positive", "positive", "neutral"]
-            languages = ["Tamil", "English", "Hindi", "Tamil", "English", "Telugu"]
-            for i in range(20):
-                ts = (now - datetime.timedelta(hours=i * 4)).isoformat()
-                conn.execute(f"""
-                    INSERT INTO calls (id,phone,duration,status,direction,sentiment,language,created_at)
-                    VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-                """, (
-                    f"call-{i+1:03d}",
-                    f"+91 9{random.randint(100000000, 999999999)}",
-                    random.randint(30, 480),
-                    statuses[i % len(statuses)],
-                    "outbound" if i % 3 != 0 else "inbound",
-                    sentiments[i % len(sentiments)],
-                    languages[i % len(languages)],
-                    ts,
-                ))
 
     _seed_saas_control_layer()
 
@@ -1678,12 +1591,8 @@ def _seed_saas_control_layer():
                     VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
                 """, f)
 
-        # Tenant and super admin already created in _seed_defaults()
-        # Just assign any orphan users to the swetha tenant
-        conn.execute("""
-            UPDATE users SET tenant_id='tenant-swetha'
-            WHERE tenant_id IS NULL AND (is_super_admin=0 OR is_super_admin IS NULL)
-        """)
+        # No automatic tenant assignment — new users register without a tenant
+        # and are assigned to one explicitly by the tenant owner or admin.
 
         # ── Tenant branding columns (additive migration) ──
         _migrate_tenant_branding(conn)
@@ -1791,63 +1700,4 @@ def _seed_platform_tickets(conn, _ph):
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ptr_ticket ON platform_ticket_replies(ticket_id)")
 
-    # Seed 3 demo tickets so the inbox isn't empty on first login
-    existing = conn.execute("SELECT COUNT(*) FROM platform_tickets").fetchone()[0]
-    if existing == 0:
-        now = datetime.datetime.utcnow()
-        demo = [
-            (
-                "pt-demo-001", "tenant-swetha", "sw-admin",
-                "Razorpay payment failing for monthly invoice",
-                "Hi team, we tried to pay our March invoice via Razorpay but the transaction "
-                "keeps failing with error 'BAD_REQUEST_ERROR'. Card is valid. Could you check "
-                "the payment gateway logs from your end? — Swetha Kumar",
-                "billing", "high", "open", None,
-                (now - datetime.timedelta(hours=4)).isoformat(),
-            ),
-            (
-                "pt-demo-002", "tenant-swetha", "sw-manager",
-                "Voice agent transcription returns empty for Tamil calls",
-                "Since yesterday all calls in Tamil are returning empty transcription text. "
-                "English calls are working fine. Looks like the Whisper model isn't picking up "
-                "the dialect. We have ~30 affected calls. Please investigate.",
-                "bug", "urgent", "in_progress", "sa-001",
-                (now - datetime.timedelta(days=1)).isoformat(),
-            ),
-            (
-                "pt-demo-003", "tenant-swetha", "sw-admin",
-                "Feature request: Bulk lead import via CSV",
-                "Currently we have to add leads one by one. Would be great to upload a CSV "
-                "with 500-1000 rows in one go. We have a backlog of 2000 leads from a trade "
-                "show waiting to be imported.",
-                "feature_request", "low", "open", None,
-                (now - datetime.timedelta(days=3)).isoformat(),
-            ),
-        ]
-        for t in demo:
-            conn.execute(f"""
-                INSERT INTO platform_tickets
-                (id, tenant_id, raised_by, subject, body, category, priority, status, assigned_to, created_at)
-                VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-            """, t)
-
-        # Seed a couple of replies on the in-progress ticket
-        conn.execute(f"""
-            INSERT INTO platform_ticket_replies (id, ticket_id, author_id, is_super_admin, body, created_at)
-            VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-        """, (
-            "ptr-demo-001", "pt-demo-002", "sa-001", 1,
-            "Thanks for reporting. We've reproduced this on our staging — looks like the dialect "
-            "model fell back to base after a recent deploy. Hot-fix going out today.",
-            (now - datetime.timedelta(hours=18)).isoformat(),
-        ))
-        conn.execute(f"""
-            INSERT INTO platform_ticket_replies (id, ticket_id, author_id, is_super_admin, body, created_at)
-            VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
-        """, (
-            "ptr-demo-002", "pt-demo-002", "sw-manager", 0,
-            "Thank you! Will wait for the fix and re-run the affected calls through the new model.",
-            (now - datetime.timedelta(hours=12)).isoformat(),
-        ))
-
-        logger.info("Seeded 3 demo platform tickets for tenant-swetha")
+    # Ticket inbox starts empty — real tenants will open tickets once they sign up.

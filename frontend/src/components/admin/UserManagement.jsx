@@ -16,7 +16,7 @@ const ROLE_COLORS = {
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 function getToken() {
-  return localStorage.getItem('swetha_token') || localStorage.getItem('voiceflow_token');
+  return localStorage.getItem('voiceflow_token');
 }
 
 function authHeaders() {

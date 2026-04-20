@@ -1,16 +1,15 @@
 /**
- * Swetha Structures CRM - Theme Configuration
- * Amber/Orange branding for PEB/Steel company
+ * VoiceFlow AI - Theme Configuration
  */
 
 export const defaultTheme = {
   brand: {
-    name: 'Swetha Structures CRM',
-    tagline: 'CRM + Voice AI + PEB Quotation',
+    name: 'VoiceFlow AI',
+    tagline: 'Voice AI Platform',
     logo: null,
   },
   colors: {
-    primary: { 50: '#fffbeb', 100: '#fef3c7', 500: '#D97706', 600: '#B45309', 700: '#92400E' },
+    primary: { 50: '#eef2ff', 100: '#e0e7ff', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' },
     secondary: { 50: '#f0fdf4', 500: '#22c55e', 600: '#16a34a' },
   },
 }

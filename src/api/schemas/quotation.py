@@ -1,6 +1,6 @@
 """
-Swetha Structures CRM - Quotation Schemas
-===========================================
+VoiceFlow AI - Quotation Schemas
+===================================
 Pydantic v2 schemas for PEB quotation system.
 """
 

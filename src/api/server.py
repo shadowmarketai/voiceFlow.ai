@@ -5,7 +5,7 @@ Standalone Voice AI platform with:
 - Multi-dialect ASR, Emotion Detection, TTS
 - AI Assistant management
 - White-label multi-tenancy
-- API integrations for external CRMs (Swetha CRM, Zoho, HubSpot, etc.)
+- API integrations for external CRMs (Zoho, HubSpot, etc.)
 """
 
 import logging
@@ -687,7 +687,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
 def _register_crm_integration_api(application: FastAPI) -> None:
     """Register CRM integration endpoints for external systems.
 
-    These endpoints allow external CRMs (Swetha CRM, Zoho, HubSpot, etc.)
+    These endpoints allow external CRMs (Zoho, HubSpot, etc.)
     to integrate with VoiceFlow AI via API keys and webhooks.
     """
     from fastapi import Header, HTTPException, status

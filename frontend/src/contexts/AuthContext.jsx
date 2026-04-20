@@ -8,14 +8,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = localStorage.getItem('swetha_token')
+    const token = localStorage.getItem('voiceflow_token')
     if (token && token !== 'demo-token-123') {
       authAPI.getProfile()
         .then(res => setUser(res.data))
-        .catch(() => localStorage.removeItem('swetha_token'))
+        .catch(() => localStorage.removeItem('voiceflow_token'))
         .finally(() => setLoading(false))
     } else if (token === 'demo-token-123') {
-      const savedUser = localStorage.getItem('swetha_user')
+      const savedUser = localStorage.getItem('voiceflow_user')
       if (savedUser) {
         setUser(JSON.parse(savedUser))
       }
@@ -26,8 +26,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = async (email, password) => {
-    localStorage.removeItem('swetha_token')
-    localStorage.removeItem('swetha_user')
+    localStorage.removeItem('voiceflow_token')
+    localStorage.removeItem('voiceflow_user')
 
     const res = await authAPI.login({ email, password })
     const data = res.data
@@ -46,8 +46,8 @@ export function AuthProvider({ children }) {
   }
 
   const googleLogin = async (code) => {
-    localStorage.removeItem('swetha_token')
-    localStorage.removeItem('swetha_user')
+    localStorage.removeItem('voiceflow_token')
+    localStorage.removeItem('voiceflow_user')
 
     const redirectUri = `${window.location.origin}/auth/google/callback`
     const res = await authAPI.googleLogin({ code, redirect_uri: redirectUri })
@@ -62,9 +62,9 @@ export function AuthProvider({ children }) {
       throw new Error('No token received')
     }
 
-    localStorage.setItem('swetha_token', token)
+    localStorage.setItem('voiceflow_token', token)
     if (data.refresh_token) {
-      localStorage.setItem('swetha_refresh_token', data.refresh_token)
+      localStorage.setItem('voiceflow_refresh_token', data.refresh_token)
     }
 
     try {
@@ -74,7 +74,7 @@ export function AuthProvider({ children }) {
       // Fallback to login response data
     }
 
-    localStorage.setItem('swetha_user', JSON.stringify(userData))
+    localStorage.setItem('voiceflow_user', JSON.stringify(userData))
     setUser(userData)
     return userData
   }
@@ -91,16 +91,16 @@ export function AuthProvider({ children }) {
     const respData = res.data
     const token = respData.access_token || respData.token
     const userData = respData.user || respData
-    localStorage.setItem('swetha_token', token)
-    localStorage.setItem('swetha_user', JSON.stringify(userData))
+    localStorage.setItem('voiceflow_token', token)
+    localStorage.setItem('voiceflow_user', JSON.stringify(userData))
     setUser(userData)
     return userData
   }
 
   const logout = () => {
-    localStorage.removeItem('swetha_token')
-    localStorage.removeItem('swetha_refresh_token')
-    localStorage.removeItem('swetha_user')
+    localStorage.removeItem('voiceflow_token')
+    localStorage.removeItem('voiceflow_refresh_token')
+    localStorage.removeItem('voiceflow_user')
     setUser(null)
   }
 
@@ -108,41 +108,41 @@ export function AuthProvider({ children }) {
     const demoUser = {
       id: 'demo-001',
       name: 'Demo User',
-      email: 'demo@swetha.in',
+      email: 'demo@voiceflow.ai',
       role: 'admin',
-      company: 'Swetha Structures PVT LTD',
+      company: 'VoiceFlow AI',
       plan: 'professional',
       is_super_admin: false,
-      tenant_id: 'tenant-swetha',
+      tenant_id: 'tenant-demo',
     }
-    localStorage.setItem('swetha_token', 'demo-token-123')
-    localStorage.setItem('swetha_user', JSON.stringify(demoUser))
+    localStorage.setItem('voiceflow_token', 'demo-token-123')
+    localStorage.setItem('voiceflow_user', JSON.stringify(demoUser))
     setUser(demoUser)
     return demoUser
   }
 
   const demoLoginAs = (role) => {
     const roleNames = {
-      admin: 'Swetha Admin',
-      manager: 'Swetha Manager',
-      agent: 'Swetha Agent',
-      user: 'Swetha User',
-      viewer: 'Swetha Viewer',
+      admin: 'Demo Admin',
+      manager: 'Demo Manager',
+      agent: 'Demo Agent',
+      user: 'Demo User',
+      viewer: 'Demo Viewer',
       super_admin: 'Super Admin',
     }
     const isSuperAdmin = role === 'super_admin'
     const demoUser = {
       id: `demo-${role}-001`,
-      name: roleNames[role] || 'Swetha User',
-      email: `${role}@swetha.in`,
+      name: roleNames[role] || 'Demo User',
+      email: `${role}@voiceflow.ai`,
       role: isSuperAdmin ? 'admin' : role,
-      company: isSuperAdmin ? 'VoiceFlow Platform' : 'Swetha Structures',
+      company: isSuperAdmin ? 'VoiceFlow Platform' : 'VoiceFlow AI',
       plan: role === 'admin' || isSuperAdmin ? 'pro' : 'starter',
       is_super_admin: isSuperAdmin,
-      tenant_id: isSuperAdmin ? '' : 'tenant-001',
+      tenant_id: isSuperAdmin ? '' : 'tenant-demo',
     }
-    localStorage.setItem('swetha_token', 'demo-token-123')
-    localStorage.setItem('swetha_user', JSON.stringify(demoUser))
+    localStorage.setItem('voiceflow_token', 'demo-token-123')
+    localStorage.setItem('voiceflow_user', JSON.stringify(demoUser))
     setUser(demoUser)
     return demoUser
   }
