@@ -874,4 +874,19 @@ export const qualityAPI = {
   runBenchmark: (language = '') => api.post('/api/v1/quality/run-benchmark', null, { params: language ? { language } : {}, timeout: 120000 }),
 };
 
+export const agencyAPI = {
+  dashboard: () => api.get('/api/v1/agency/dashboard'),
+  wallet: () => api.get('/api/v1/agency/wallet'),
+  requestWithdrawal: (body) => api.post('/api/v1/agency/withdrawal/request', body),
+  listWithdrawals: () => api.get('/api/v1/agency/withdrawal/requests'),
+};
+
+export const adminWithdrawalsAPI = {
+  list: (status) => api.get('/api/v1/admin/withdrawals/', { params: status ? { status } : {} }),
+  approve: (id, body) => api.post(`/api/v1/admin/withdrawals/${id}/approve`, body),
+  reject: (id, body) => api.post(`/api/v1/admin/withdrawals/${id}/reject`, body),
+  markPaid: (id, body) => api.post(`/api/v1/admin/withdrawals/${id}/mark-paid`, body),
+  creditAgency: (body) => api.post('/api/v1/admin/withdrawals/credit-agency', body),
+};
+
 export default api;

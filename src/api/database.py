@@ -301,6 +301,11 @@ def init_models():
     except Exception as e:
         logger.warning(f"Integrations/channels schema migration skipped: {e}")
 
+    try:
+        _migrate_agency_billing_schema(engine)
+    except Exception as e:
+        logger.warning(f"Agency billing schema migration skipped: {e}")
+
 
 def _migrate_knowledge_schema(engine):
     """Add campaign_id + scope columns to knowledge_documents if missing."""
@@ -1952,3 +1957,123 @@ def _seed_platform_tickets(conn, _ph):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_ptr_ticket ON platform_ticket_replies(ticket_id)")
 
     # Ticket inbox starts empty — real tenants will open tickets once they sign up.
+
+
+def _migrate_agency_billing_schema(engine):
+    """Create agency_wallet, withdrawal_requests, agency_transactions tables and
+    add parent_agency_id to platform_tenants (for sub-client linking)."""
+    _ph = "%s" if USE_POSTGRES else "?"
+
+    with engine.connect() as conn:
+        if USE_POSTGRES:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agency_wallet (
+                    id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+                    tenant_id               TEXT UNIQUE NOT NULL,
+                    total_earned            NUMERIC(14,2) DEFAULT 0,
+                    total_withdrawn         NUMERIC(14,2) DEFAULT 0,
+                    platform_fees_deducted  NUMERIC(14,2) DEFAULT 0,
+                    available_balance       NUMERIC(14,2) DEFAULT 0,
+                    pending_withdrawal      NUMERIC(14,2) DEFAULT 0,
+                    updated_at              TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS withdrawal_requests (
+                    id                  TEXT PRIMARY KEY,
+                    tenant_id           TEXT NOT NULL,
+                    amount              NUMERIC(14,2) NOT NULL,
+                    status              TEXT DEFAULT 'pending',
+                    payment_method      TEXT DEFAULT 'bank_transfer',
+                    payment_details     TEXT,
+                    notes               TEXT,
+                    admin_notes         TEXT,
+                    monthly_fee_deducted NUMERIC(14,2) DEFAULT 0,
+                    platform_fee_deducted NUMERIC(14,2) DEFAULT 0,
+                    net_paid            NUMERIC(14,2) DEFAULT 0,
+                    requested_at        TEXT,
+                    processed_at        TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agency_transactions (
+                    id          TEXT PRIMARY KEY,
+                    tenant_id   TEXT NOT NULL,
+                    type        TEXT NOT NULL,
+                    amount      NUMERIC(14,2) NOT NULL,
+                    description TEXT,
+                    created_at  TEXT
+                )
+            """)
+            conn.execute(
+                "ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS parent_agency_id TEXT"
+            )
+        else:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agency_wallet (
+                    id                      TEXT PRIMARY KEY,
+                    tenant_id               TEXT UNIQUE NOT NULL,
+                    total_earned            REAL DEFAULT 0,
+                    total_withdrawn         REAL DEFAULT 0,
+                    platform_fees_deducted  REAL DEFAULT 0,
+                    available_balance       REAL DEFAULT 0,
+                    pending_withdrawal      REAL DEFAULT 0,
+                    updated_at              TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS withdrawal_requests (
+                    id                   TEXT PRIMARY KEY,
+                    tenant_id            TEXT NOT NULL,
+                    amount               REAL NOT NULL,
+                    status               TEXT DEFAULT 'pending',
+                    payment_method       TEXT DEFAULT 'bank_transfer',
+                    payment_details      TEXT,
+                    notes                TEXT,
+                    admin_notes          TEXT,
+                    monthly_fee_deducted REAL DEFAULT 0,
+                    platform_fee_deducted REAL DEFAULT 0,
+                    net_paid             REAL DEFAULT 0,
+                    requested_at         TEXT,
+                    processed_at         TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agency_transactions (
+                    id          TEXT PRIMARY KEY,
+                    tenant_id   TEXT NOT NULL,
+                    type        TEXT NOT NULL,
+                    amount      REAL NOT NULL,
+                    description TEXT,
+                    created_at  TEXT
+                )
+            """)
+            # Add parent_agency_id to platform_tenants if not exists
+            try:
+                existing = {c[1] for c in conn.execute(
+                    "PRAGMA table_info(platform_tenants)"
+                ).fetchall()}
+                if "parent_agency_id" not in existing:
+                    conn.execute(
+                        "ALTER TABLE platform_tenants ADD COLUMN parent_agency_id TEXT"
+                    )
+            except Exception as e:
+                logger.debug("parent_agency_id column: %s", e)
+
+        try:
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_aw_tenant ON agency_wallet(tenant_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wr_tenant ON withdrawal_requests(tenant_id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wr_status ON withdrawal_requests(status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_at_tenant ON agency_transactions(tenant_id)"
+            )
+        except Exception as e:
+            logger.debug("Agency billing indexes: %s", e)
+
+    logger.info("Agency billing schema migration complete.")

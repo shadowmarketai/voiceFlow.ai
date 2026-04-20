@@ -11,6 +11,7 @@ import { Toaster } from 'react-hot-toast'
 import DashboardLayout from './layouts/DashboardLayout'
 import SuperAdminLayout from './layouts/SuperAdminLayout'
 import ProtectedRoute, { SuperAdminRoute, TenantRoute } from './components/ProtectedRoute'
+import { useAuth } from './contexts/AuthContext'
 
 // Eager-load Login
 import Login from './pages/Login'
@@ -42,6 +43,9 @@ const TenantSubclientsPage = lazy(() => import('./modules/voice-ai/pages/TenantS
 const TeamPage = lazy(() => import('./modules/voice-ai/pages/TeamPage'))
 const AgencyPricingPage = lazy(() => import('./modules/admin/AgencyPricingPage'))
 const AgencyOnboardingPage = lazy(() => import('./modules/voice-ai/pages/AgencyOnboarding'))
+const AgencyDashboardPage = lazy(() => import('./modules/voice-ai/pages/AgencyDashboard'))
+const AgencyWalletPage = lazy(() => import('./modules/voice-ai/pages/AgencyWalletPage'))
+const WithdrawalRequestsPage = lazy(() => import('./modules/admin/WithdrawalRequestsPage'))
 
 // ── Settings ──
 const Settings = lazy(() => import('./pages/Settings'))
@@ -69,6 +73,32 @@ function PageLoader() {
 }
 
 const S = ({ children }) => <Suspense fallback={<PageLoader />}>{children}</Suspense>
+
+/** Route to AgencyDashboard for agency users, regular dashboard otherwise. */
+function SmartDashboard() {
+  const { user } = useAuth()
+  const isAgency = Boolean(
+    user?.plan?.startsWith?.('agency') ||
+    user?.plan_id?.startsWith?.('agency') ||
+    user?.tenant?.plan_id?.startsWith?.('agency')
+  )
+  return isAgency
+    ? <S><AgencyDashboardPage /></S>
+    : <S><VoiceDashboardV2Page /></S>
+}
+
+/** Route to AgencyWalletPage for agency users, regular wallet otherwise. */
+function SmartWallet() {
+  const { user } = useAuth()
+  const isAgency = Boolean(
+    user?.plan?.startsWith?.('agency') ||
+    user?.plan_id?.startsWith?.('agency') ||
+    user?.tenant?.plan_id?.startsWith?.('agency')
+  )
+  return isAgency
+    ? <S><AgencyWalletPage /></S>
+    : <S><WalletBillingPage /></S>
+}
 
 function App() {
   return (
@@ -112,6 +142,7 @@ function App() {
           <Route path="platform-pricing" element={<Navigate to="/admin/pricing" replace />} />
           <Route path="quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
+          <Route path="withdrawals" element={<S><WithdrawalRequestsPage /></S>} />
         </Route>
 
         {/* ═══════════════════════════════════════════════════
@@ -128,7 +159,7 @@ function App() {
           <Route index element={<Navigate to="/voice/dashboard-v2" replace />} />
 
           {/* Voice AI Pages */}
-          <Route path="voice/dashboard-v2" element={<S><VoiceDashboardV2Page /></S>} />
+          <Route path="voice/dashboard-v2" element={<SmartDashboard />} />
           <Route path="voice/agents-list" element={<S><VoiceAgentsListPage /></S>} />
           <Route path="voice/agent-builder" element={<S><VoiceAgentBuilderPage /></S>} />
           <Route path="voice/agent-builder/:agentId" element={<S><VoiceAgentBuilderPage /></S>} />
@@ -147,7 +178,7 @@ function App() {
           {/* /voice/api → redirect to the Channels page's Developer tab */}
           <Route path="voice/api" element={<Navigate to="/voice/channels?view=developer" replace />} />
           <Route path="voice/billing" element={<S><VoiceBillingPage /></S>} />
-          <Route path="voice/wallet" element={<S><WalletBillingPage /></S>} />
+          <Route path="voice/wallet" element={<SmartWallet />} />
           <Route path="voice/tenant-pricing" element={<S><TenantPricingPage /></S>} />
           <Route path="voice/sub-clients" element={<S><TenantSubclientsPage /></S>} />
           <Route path="voice/team" element={<S><TeamPage /></S>} />

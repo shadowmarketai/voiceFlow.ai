@@ -593,6 +593,16 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Channel Config router not available: %s", exc)
 
+    # ── Agency Billing (agency wallet + withdrawal requests) ──
+    try:
+        from api.routers.agency_billing import router as agency_billing_router
+        from api.routers.agency_billing import admin_router as agency_admin_router
+        application.include_router(agency_billing_router)
+        application.include_router(agency_admin_router)
+        logger.info("Agency billing routers loaded")
+    except Exception as exc:
+        logger.warning("Agency billing routers not available: %s", exc)
+
     # ── CRM Integration API ──────────────────────────────────
     _register_crm_integration_api(application)
 

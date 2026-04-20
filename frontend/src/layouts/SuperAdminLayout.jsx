@@ -29,6 +29,7 @@ import {
  Search,
  Gauge,
  BarChart3,
+ Wallet,
 } from 'lucide-react'
 
 const NAV_GROUPS = [
@@ -44,6 +45,7 @@ const NAV_GROUPS = [
  { path: '/admin/tenants', label: 'Agencies', icon: Building2 },
  { path: '/admin/users', label: 'Users', icon: Users },
  { path: '/admin/tickets', label: 'Support Tickets', icon: Ticket },
+ { path: '/admin/withdrawals', label: 'Withdrawals', icon: Wallet },
  ],
  },
  {
