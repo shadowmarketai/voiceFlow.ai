@@ -151,7 +151,8 @@ export default function DashboardLayout() {
 
   const currentSection = useMemo(() => {
     if (!currentNavItem) return null;
-    return navSections.find((s) => s.items.includes(currentNavItem));
+    const allSections = [...userNavSections, ...agencyNavSections];
+    return allSections.find((s) => s.items.includes(currentNavItem));
   }, [currentNavItem]);
 
   /* ── Agency detection ──────────────────────────────────────── */
