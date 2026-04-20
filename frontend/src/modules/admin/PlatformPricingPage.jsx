@@ -264,6 +264,14 @@ export default function PlatformPricingPage() {
 
   // ── Base cost handlers ────────────────────────────────────────────────────
 
+  /** Derive the effective base cost from a loaded rate plan object */
+  function _effectiveCost(p) {
+    // platform_fee_inr is the primary source — always use it when set
+    const fee = Number(p.platform_fee_inr ?? 0)
+    const floor = Number(p.min_floor_inr ?? 0)
+    return Math.max(fee, floor) || 2.50
+  }
+
   const loadBasePlan = useCallback(async () => {
     try {
       const [planRes, catRes] = await Promise.allSettled([
@@ -271,9 +279,9 @@ export default function PlatformPricingPage() {
         api.get('/api/v1/billing/catalog'),
       ])
       if (planRes.status === 'fulfilled') {
-        setBasePlan(planRes.value.data)
         const p = planRes.value.data
-        setPlatformCostPerMin(p.min_floor_inr || p.platform_fee_inr || 2.50)
+        setBasePlan(p)
+        setPlatformCostPerMin(_effectiveCost(p))
       } else {
         toast.error('Failed to load base plan — check your super admin login')
       }
@@ -294,7 +302,7 @@ export default function PlatformPricingPage() {
 
     // Capture old base cost before saving
     const oldBase = platformCostPerMin
-    const newBase = Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50)
+    const newBase = _effectiveCost(basePlan)
 
     try {
       await api.put(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`, {
@@ -306,6 +314,9 @@ export default function PlatformPricingPage() {
         lock_llm: basePlan.lock_llm,
         lock_tts: basePlan.lock_tts,
       })
+
+      // Update margin display immediately — don't wait for async reloads
+      setPlatformCostPerMin(newBase)
 
       // ── Cascade base cost change to all plan rates ──────────────────────
       if (Math.abs(newBase - oldBase) >= 0.01) {
@@ -319,14 +330,14 @@ export default function PlatformPricingPage() {
         } catch {
           toast.success('Base cost saved — plan rates update failed, refresh plans manually')
         }
-        // Reload plans so the tables reflect new rates
+        // Reload plans so the tables reflect new cascaded rates
         await load()
       } else {
         toast.success('Base cost saved')
       }
 
-      setPlatformCostPerMin(newBase)
-      loadBasePlan()
+      // Re-sync base plan state from server (confirms the save)
+      await loadBasePlan()
     } catch (e) {
       toast.error(e.response?.data?.detail || 'Failed to save base cost')
     } finally {
@@ -339,9 +350,10 @@ export default function PlatformPricingPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [plansRes, packsRes] = await Promise.allSettled([
+      const [plansRes, packsRes, baseRes] = await Promise.allSettled([
         api.get('/api/v1/admin/pricing/plans'),
         api.get('/api/v1/admin/pricing/recharge-packs'),
+        api.get('/api/v1/billing/admin/rate-plan/default'),
       ])
 
       if (plansRes.status === 'fulfilled') {
@@ -387,6 +399,11 @@ export default function PlatformPricingPage() {
           setPacks(p)
           savedPacksRef.current = snapshot(p)
         }
+      }
+
+      // Always sync platformCostPerMin from server so margin cards are accurate
+      if (baseRes.status === 'fulfilled') {
+        setPlatformCostPerMin(_effectiveCost(baseRes.value.data))
       }
     } catch {
       // Fall through — defaults already set
@@ -667,16 +684,16 @@ export default function PlatformPricingPage() {
                         </div>
 
                         {/* Cascade warning */}
-                        {basePlan && Math.abs(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin) >= 0.01 && (
+                        {basePlan && Math.abs(_effectiveCost(basePlan) - platformCostPerMin) >= 0.01 && (
                           <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
                             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
                             <span>
                               Base cost changed from <strong>₹{platformCostPerMin.toFixed(2)}</strong> to{' '}
-                              <strong>₹{Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50).toFixed(2)}</strong>.
+                              <strong>₹{_effectiveCost(basePlan).toFixed(2)}</strong>.
                               Saving will automatically shift all plan call rates and wholesale rates by{' '}
                               <strong>
-                                {(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin) >= 0 ? '+' : ''}
-                                {(Number(basePlan.min_floor_inr || basePlan.platform_fee_inr || 2.50) - platformCostPerMin).toFixed(2)}₹/min
+                                {(_effectiveCost(basePlan) - platformCostPerMin) >= 0 ? '+' : ''}
+                                {(_effectiveCost(basePlan) - platformCostPerMin).toFixed(2)}₹/min
                               </strong> to preserve all profit margins.
                             </span>
                           </div>
