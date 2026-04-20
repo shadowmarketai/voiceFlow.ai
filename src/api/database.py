@@ -61,9 +61,24 @@ def _get_database_url() -> str:
     return f"sqlite:///{db_path}"
 
 
+def _get_sync_database_url() -> str:
+    """Return a synchronous-driver URL suitable for SQLAlchemy's sync engine.
+
+    The app's DATABASE_URL may use the asyncpg or aiosqlite async drivers
+    (e.g. postgresql+asyncpg://...) which cannot be used with sync create_engine().
+    Swap them to their sync equivalents so the migration / seed engine works.
+    """
+    url = _get_database_url()
+    # asyncpg → psycopg2  (PostgreSQL async → sync)
+    url = url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    # aiosqlite → plain sqlite  (async SQLite → sync)
+    url = url.replace("sqlite+aiosqlite://", "sqlite:///")
+    return url
+
+
 def _create_engine():
     """Create the SQLAlchemy engine with appropriate settings."""
-    url = _get_database_url()
+    url = _get_sync_database_url()
 
     if url.startswith("sqlite"):
         # SQLite: use StaticPool for thread safety with check_same_thread=False
@@ -360,6 +375,138 @@ def _migrate_tenant_business_profile(engine):
             "CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role)"
         ))
         logger.info("tenant_contacts table ensured")
+
+
+def _ensure_plans_via_raw_db():
+    """Seed all canonical plans using the raw db() context manager.
+
+    This is the guaranteed path — it runs on EVERY startup and uses the
+    same raw psycopg2 / sqlite3 connection that the rest of the app uses,
+    bypassing SQLAlchemy entirely.  _migrate_pricing_schema() does the same
+    work via SQLAlchemy but silently fails in production when DATABASE_URL
+    uses the async +asyncpg driver.  This function is the safety net.
+    """
+    # Canonical plans: (id, name, slug, price, plan_type, rate_col, rate_val,
+    #                   margin, agent_col, agent_val, vc, wmin, sort_order)
+    # rate_col  = 'call_rate' for direct plans, 'wholesale_rate' for agency
+    # agent_col = 'agent_limit' for direct plans, 'sub_client_limit' for agency
+    CANONICAL_IDS = (
+        "'free_trial','starter','growth','business','enterprise',"
+        "'agency_starter','agency_growth','agency_pro'"
+    )
+
+    PLANS = [
+        # direct plans
+        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", "call_rate",     4.50, 2.00, "agent_limit",     1,    0,    None, 500.0,  0),
+        ("starter",    "Starter",     "starter",    0,    "direct", "call_rate",     4.50, 2.00, "agent_limit",     1,    0,    None, 1000.0, 1),
+        ("growth",     "Growth",      "growth",     1500, "direct", "call_rate",     4.00, 1.50, "agent_limit",     3,    1,    None, 3000.0, 2),
+        ("business",   "Business",    "business",   3000, "direct", "call_rate",     3.50, 1.00, "agent_limit",     10,   3,    None, 5000.0, 3),
+        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", "call_rate",     3.00, 0.50, "agent_limit",     None, None, None, 10000.0, 4),
+        # agency plans
+        ("agency_starter", "Agency Starter", "agency_starter", 5000,  "agency", "wholesale_rate", 3.50, 1.00, "sub_client_limit", 10,   1,    2,    0.0, 5),
+        ("agency_growth",  "Agency Growth",  "agency_growth",  10000, "agency", "wholesale_rate", 3.00, 0.50, "sub_client_limit", 50,   3,    5,    0.0, 6),
+        ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", "wholesale_rate", 3.00, 0.50, "sub_client_limit", None, None, None, 0.0, 7),
+    ]
+
+    try:
+        with db() as conn:
+            # ── 1. Add missing columns ──
+            # PostgreSQL: use IF NOT EXISTS (PG 9.6+) — avoids transaction abort
+            # SQLite: try/except per column — SQLite < 3.37 has no IF NOT EXISTS
+            _billing_cols = [
+                ("plan_type",         "VARCHAR(20) DEFAULT 'direct'"),
+                ("call_rate",         "NUMERIC(8,2)"),
+                ("wholesale_rate",    "NUMERIC(8,2)"),
+                ("agent_limit",       "INTEGER"),
+                ("agents_per_client", "INTEGER"),
+                ("voice_clones",      "INTEGER"),
+                ("calls_per_month",   "INTEGER"),
+                ("wallet_min",        "NUMERIC(10,2)"),
+                ("sub_client_limit",  "INTEGER"),
+                ("profit_margin",     "NUMERIC(8,2)"),
+            ]
+            if USE_POSTGRES:
+                for col, ctype in _billing_cols:
+                    conn.execute(
+                        f"ALTER TABLE plans ADD COLUMN IF NOT EXISTS {col} {ctype}"
+                    )
+            else:
+                for col, ctype in _billing_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE plans ADD COLUMN {col} {ctype}")
+                    except Exception:
+                        pass  # column already exists
+
+            # ── 2. Remove non-canonical plans (old IDs / slug conflicts) ──
+            conn.execute(f"DELETE FROM plans WHERE id NOT IN ({CANONICAL_IDS})")
+
+            # ── 3. Upsert each canonical plan ──
+            ph = "%s" if USE_POSTGRES else "?"
+            for (pid, name, slug, price, ptype, rate_col, rate_val,
+                 margin, acol, aval, vc, apc, wmin, sord) in PLANS:
+
+                row = conn.execute(
+                    f"SELECT id, {rate_col}, profit_margin FROM plans WHERE id={ph}",
+                    (pid,)
+                ).fetchone()
+
+                if row is None:
+                    # INSERT with defaults
+                    conn.execute(f"""
+                        INSERT INTO plans
+                          (id, name, slug, price, currency, interval, max_users, description,
+                           is_active, sort_order, plan_type, {rate_col}, profit_margin,
+                           {acol}, voice_clones, wallet_min)
+                        VALUES
+                          ({ph},{ph},{ph},{ph},'INR','monthly',0,'',1,{ph},
+                           {ph},{ph},{ph},{ph},{ph},{ph})
+                    """, (pid, name, slug, price, sord, ptype,
+                          rate_val, margin, aval, vc, wmin))
+                else:
+                    # UPDATE structural fields; PRESERVE existing rate (cascade may have changed it)
+                    existing_rate = row[1] if USE_POSTGRES else row[rate_col]
+                    existing_margin = row[2] if USE_POSTGRES else row["profit_margin"]
+                    final_rate = existing_rate if existing_rate is not None else rate_val
+                    final_margin = existing_margin if existing_margin is not None else margin
+                    conn.execute(f"""
+                        UPDATE plans
+                        SET name={ph}, plan_type={ph}, {acol}={ph},
+                            voice_clones={ph}, wallet_min={ph}, price={ph},
+                            sort_order={ph}, {rate_col}={ph}, profit_margin={ph}
+                        WHERE id={ph}
+                    """, (name, ptype, aval, vc, wmin, price,
+                          sord, final_rate, final_margin, pid))
+
+            # ── 4. Also set agents_per_client for agency plans ──
+            for apc_data in [
+                ("agency_starter", 2),
+                ("agency_growth",  5),
+            ]:
+                conn.execute(
+                    f"UPDATE plans SET agents_per_client={ph} WHERE id={ph}",
+                    (apc_data[1], apc_data[0])
+                )
+
+            # ── 5. Fix calls_per_month: 100 for free_trial, NULL for paid ──
+            conn.execute(
+                f"UPDATE plans SET calls_per_month=100 WHERE id={ph}", ("free_trial",)
+            )
+            conn.execute(
+                f"UPDATE plans SET calls_per_month=NULL "
+                f"WHERE id IN ('starter','growth','business','enterprise',"
+                f"'agency_starter','agency_growth','agency_pro')"
+            )
+
+            # ── 6. Fix Agency Pro: ensure ≥ ₹3.00 wholesale rate ──
+            conn.execute(
+                f"UPDATE plans SET wholesale_rate=3.00, profit_margin=0.50 "
+                f"WHERE id='agency_pro' AND (wholesale_rate IS NULL OR wholesale_rate<=2.50)"
+            )
+
+        logger.info("Canonical plans ensured via raw db()")
+
+    except Exception as exc:
+        logger.error("_ensure_plans_via_raw_db failed: %s", exc)
 
 
 def _migrate_pricing_schema(engine):
@@ -703,6 +850,8 @@ if not USE_POSTGRES:
         except Exception as e:
             logger.warning("Could not create SQLAlchemy model tables: %s", e)
         _seed_defaults()
+        # Guarantee canonical plans are present (bypasses SQLAlchemy / asyncpg issues)
+        _ensure_plans_via_raw_db()
 
     _SQLITE_SCHEMA = """
     CREATE TABLE IF NOT EXISTS users (
@@ -896,14 +1045,83 @@ else:
         conn.autocommit = False
         return conn
 
+    class _PGConnAdapter:
+        """Wraps a psycopg2 connection to expose the sqlite3.Connection API.
+
+        All legacy raw-SQL code was written for sqlite3 which allows
+        connection.execute(), connection.fetchone() etc.  psycopg2 only
+        supports those on cursors.  This adapter bridges the gap so every
+        call-site works unchanged on both databases.
+
+        Row format: psycopg2.extras.DictCursor — rows support BOTH integer
+        indexing (row[0]) AND key access (row["col"]), matching sqlite3.Row.
+        """
+
+        def __init__(self, conn):
+            self._conn = conn
+            self._cur = None  # last executed cursor
+
+        # ── Core execute ──────────────────────────────────────────
+        def execute(self, sql, params=None):
+            """Execute one SQL statement; return self for .fetchone()/.fetchall() chaining."""
+            self._cur = self._conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            if params is not None:
+                self._cur.execute(sql, params)
+            else:
+                self._cur.execute(sql)
+            return self
+
+        def executescript(self, script: str):
+            """Execute a multi-statement SQL script split by semicolons.
+
+            Mirrors sqlite3 Connection.executescript() so init_db() can use a
+            single schema string on both databases.
+            """
+            cur = self._conn.cursor()
+            for stmt in script.split(";"):
+                stmt = stmt.strip()
+                if stmt:
+                    cur.execute(stmt)
+            self._cur = cur
+
+        # ── Fetch results ─────────────────────────────────────────
+        def fetchone(self):
+            return self._cur.fetchone() if self._cur else None
+
+        def fetchall(self):
+            return self._cur.fetchall() if self._cur else []
+
+        # ── Transaction ───────────────────────────────────────────
+        def commit(self):
+            self._conn.commit()
+
+        def rollback(self):
+            self._conn.rollback()
+
+        def close(self):
+            self._conn.close()
+
+        # ── Cursor / attribute pass-through ───────────────────────
+        def cursor(self, *args, **kwargs):
+            """Return a cursor using the connection's cursor_factory (DictCursor)."""
+            return self._conn.cursor(*args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
     @contextmanager
     def db():
-        """Legacy raw-SQL context manager for PostgreSQL."""
+        """Legacy raw-SQL context manager for PostgreSQL.
+
+        Yields a _PGConnAdapter so callers can use connection.execute() exactly
+        as they would with a sqlite3 connection.
+        """
         pool = _get_pool()
         conn = pool.getconn()
         try:
-            conn.cursor_factory = psycopg2.extras.RealDictCursor
-            yield conn
+            # DictCursor: rows support both [0] integer and ["col"] key access
+            conn.cursor_factory = psycopg2.extras.DictCursor
+            yield _PGConnAdapter(conn)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -914,28 +1132,42 @@ else:
     def init_db():
         """Initialize database: create legacy raw-SQL tables + SQLAlchemy model tables."""
         with db() as conn:
-            cur = conn.cursor()
-            cur.execute(_PG_SCHEMA)
-            conn.commit()
+            conn.executescript(_PG_SCHEMA)
         # Also create SQLAlchemy model tables
         try:
             init_models()
         except Exception as e:
             logger.warning("Could not create SQLAlchemy model tables: %s", e)
         _seed_defaults()
+        # Guarantee canonical plans are present (bypasses SQLAlchemy / asyncpg issues)
+        _ensure_plans_via_raw_db()
 
     _PG_SCHEMA = """
+    -- ══════════════════════════════════════════════════════════════════
+    -- VoiceFlow AI — PostgreSQL schema (comprehensive, idempotent)
+    -- All tables include IF NOT EXISTS so this is safe to re-run.
+    -- ══════════════════════════════════════════════════════════════════
+
     CREATE TABLE IF NOT EXISTS users (
-        id          TEXT PRIMARY KEY,
-        email       TEXT UNIQUE NOT NULL,
-        name        TEXT,
+        id              TEXT PRIMARY KEY,
+        email           TEXT UNIQUE NOT NULL,
+        name            TEXT,
+        full_name        TEXT,
         hashed_password TEXT NOT NULL,
-        role        TEXT DEFAULT 'user',
-        plan        TEXT DEFAULT 'starter',
-        company     TEXT,
-        phone       TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW(),
-        is_active   BOOLEAN DEFAULT TRUE
+        role            TEXT DEFAULT 'user',
+        plan            TEXT DEFAULT 'starter',
+        company         TEXT,
+        phone           TEXT,
+        created_at      TIMESTAMPTZ DEFAULT NOW(),
+        is_active       SMALLINT DEFAULT 1,
+        is_verified     SMALLINT DEFAULT 0,
+        is_super_admin  SMALLINT DEFAULT 0,
+        is_tenant_owner SMALLINT DEFAULT 0,
+        tenant_id       TEXT,
+        oauth_provider  TEXT,
+        oauth_id        TEXT,
+        avatar_url      TEXT,
+        last_login_at   TEXT
     );
 
     CREATE TABLE IF NOT EXISTS leads (
@@ -955,19 +1187,19 @@ else:
     );
 
     CREATE TABLE IF NOT EXISTS calls (
-        id          TEXT PRIMARY KEY,
-        lead_id     TEXT REFERENCES leads(id) ON DELETE SET NULL,
-        phone       TEXT,
-        duration    INTEGER DEFAULT 0,
-        status      TEXT DEFAULT 'completed',
-        direction   TEXT DEFAULT 'outbound',
-        sentiment   TEXT DEFAULT 'neutral',
-        language    TEXT DEFAULT 'English',
-        transcript  JSONB,
-        summary     TEXT,
+        id            TEXT PRIMARY KEY,
+        lead_id       TEXT REFERENCES leads(id) ON DELETE SET NULL,
+        phone         TEXT,
+        duration      INTEGER DEFAULT 0,
+        status        TEXT DEFAULT 'completed',
+        direction     TEXT DEFAULT 'outbound',
+        sentiment     TEXT DEFAULT 'neutral',
+        language      TEXT DEFAULT 'English',
+        transcript    JSONB,
+        summary       TEXT,
         recording_url TEXT,
-        agent_id    TEXT,
-        created_at  TIMESTAMPTZ DEFAULT NOW()
+        agent_id      TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS settings (
@@ -1000,18 +1232,179 @@ else:
         description TEXT DEFAULT '',
         personality TEXT DEFAULT 'professional',
         industry    TEXT DEFAULT 'general',
-        is_active   BOOLEAN DEFAULT TRUE,
+        is_active   SMALLINT DEFAULT 1,
         total_calls INTEGER DEFAULT 0,
         created_at  TIMESTAMPTZ DEFAULT NOW(),
         updated_at  TIMESTAMPTZ DEFAULT NOW()
     );
 
-    -- Indexes for common queries
+    -- ══════════════════════════════════════════════════════════════
+    -- SaaS Control Layer
+    -- ══════════════════════════════════════════════════════════════
+
+    CREATE TABLE IF NOT EXISTS plans (
+        id                TEXT PRIMARY KEY,
+        name              TEXT NOT NULL,
+        slug              TEXT UNIQUE NOT NULL,
+        price             INTEGER DEFAULT 0,
+        currency          TEXT DEFAULT 'INR',
+        interval          TEXT DEFAULT 'monthly',
+        max_users         INTEGER DEFAULT 0,
+        description       TEXT DEFAULT '',
+        is_active         SMALLINT DEFAULT 1,
+        sort_order        INTEGER DEFAULT 0,
+        created_at        TIMESTAMPTZ DEFAULT NOW(),
+        plan_type         TEXT DEFAULT 'direct',
+        call_rate         NUMERIC(8,2),
+        wholesale_rate    NUMERIC(8,2),
+        agent_limit       INTEGER,
+        agents_per_client INTEGER,
+        voice_clones      INTEGER,
+        calls_per_month   INTEGER,
+        wallet_min        NUMERIC(10,2),
+        sub_client_limit  INTEGER,
+        profit_margin     NUMERIC(8,2)
+    );
+
+    CREATE TABLE IF NOT EXISTS recharge_packs (
+        id          TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        price       NUMERIC(10,2) NOT NULL,
+        bonus       NUMERIC(10,2) NOT NULL DEFAULT 0,
+        is_active   SMALLINT NOT NULL DEFAULT 1,
+        sort_order  INTEGER NOT NULL DEFAULT 0,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS system_features (
+        id              TEXT PRIMARY KEY,
+        key             TEXT UNIQUE NOT NULL,
+        name            TEXT NOT NULL,
+        parent_key      TEXT,
+        category        TEXT DEFAULT 'core',
+        description     TEXT DEFAULT '',
+        icon            TEXT DEFAULT 'Box',
+        route           TEXT DEFAULT '',
+        default_enabled SMALLINT DEFAULT 1,
+        is_premium      SMALLINT DEFAULT 0,
+        sort_order      INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_tenants (
+        id                      TEXT PRIMARY KEY,
+        name                    TEXT NOT NULL,
+        slug                    TEXT UNIQUE NOT NULL,
+        domain                  TEXT,
+        owner_id                TEXT,
+        plan_id                 TEXT DEFAULT 'starter',
+        is_active               SMALLINT DEFAULT 1,
+        max_users               INTEGER DEFAULT 0,
+        logo_url                TEXT,
+        favicon_url             TEXT,
+        primary_color           TEXT DEFAULT '#f59e0b',
+        secondary_color         TEXT DEFAULT '#1e293b',
+        accent_color            TEXT DEFAULT '#8b5cf6',
+        app_name                TEXT,
+        font_family             TEXT DEFAULT 'Inter',
+        custom_css              TEXT,
+        trial_ends_at           TEXT,
+        created_at              TIMESTAMPTZ DEFAULT NOW(),
+        updated_at              TIMESTAMPTZ DEFAULT NOW(),
+        tagline                 TEXT,
+        support_email           TEXT,
+        support_phone           TEXT,
+        website                 TEXT,
+        address                 TEXT,
+        login_bg_color          TEXT,
+        sidebar_style           TEXT DEFAULT 'light',
+        industry                TEXT,
+        company_type            TEXT,
+        gstin                   TEXT,
+        pan_number              TEXT,
+        website_url             TEXT,
+        owner_name              TEXT,
+        owner_email             TEXT,
+        owner_phone             TEXT,
+        contact_email           TEXT,
+        contact_phone           TEXT,
+        billing_email           TEXT,
+        billing_address         TEXT,
+        contract_start_date     TEXT,
+        contract_end_date       TEXT,
+        monthly_billing_amount  NUMERIC(12,2),
+        payment_terms           TEXT DEFAULT 'prepaid',
+        onboarding_status       TEXT DEFAULT 'not_started',
+        onboarding_notes        TEXT,
+        go_live_date            TEXT,
+        tags                    JSONB,
+        internal_notes          TEXT,
+        max_voice_minutes       INTEGER DEFAULT 1000,
+        parent_tenant_id        TEXT,
+        markup_rate             NUMERIC(8,2),
+        agent_limit_override    INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_features (
+        id          TEXT PRIMARY KEY,
+        tenant_id   TEXT NOT NULL REFERENCES platform_tenants(id) ON DELETE CASCADE,
+        feature_key TEXT NOT NULL REFERENCES system_features(key) ON DELETE CASCADE,
+        enabled     SMALLINT DEFAULT 1,
+        config      JSONB DEFAULT '{}',
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(tenant_id, feature_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_tickets (
+        id          TEXT PRIMARY KEY,
+        tenant_id   TEXT NOT NULL,
+        raised_by   TEXT NOT NULL,
+        subject     TEXT NOT NULL,
+        body        TEXT NOT NULL,
+        category    TEXT DEFAULT 'other',
+        priority    TEXT DEFAULT 'medium',
+        status      TEXT DEFAULT 'open',
+        assigned_to TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_ticket_replies (
+        id              TEXT PRIMARY KEY,
+        ticket_id       TEXT NOT NULL,
+        author_id       TEXT NOT NULL,
+        is_super_admin  SMALLINT DEFAULT 0,
+        body            TEXT NOT NULL,
+        created_at      TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_contacts (
+        id          SERIAL PRIMARY KEY,
+        tenant_id   TEXT NOT NULL REFERENCES platform_tenants(id) ON DELETE CASCADE,
+        name        TEXT NOT NULL,
+        email       TEXT,
+        phone       TEXT,
+        designation TEXT,
+        role        TEXT NOT NULL DEFAULT 'general',
+        is_primary  SMALLINT NOT NULL DEFAULT 0,
+        notes       TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW(),
+        updated_at  TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    -- ── Indexes ───────────────────────────────────────────────────
     CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
     CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
     CREATE INDEX IF NOT EXISTS idx_calls_lead_id ON calls(lead_id);
     CREATE INDEX IF NOT EXISTS idx_calls_created_at ON calls(created_at);
     CREATE INDEX IF NOT EXISTS idx_campaigns_status ON campaigns(status);
+    CREATE INDEX IF NOT EXISTS idx_tenant_features_tenant ON tenant_features(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_tenant_features_key ON tenant_features(feature_key);
+    CREATE INDEX IF NOT EXISTS idx_pt_tenant ON platform_tickets(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_pt_status ON platform_tickets(status);
+    CREATE INDEX IF NOT EXISTS idx_ptr_ticket ON platform_ticket_replies(ticket_id);
+    CREATE INDEX IF NOT EXISTS idx_tc_tenant_id ON tenant_contacts(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role)
     """
 
 
@@ -1035,11 +1428,13 @@ def _seed_defaults():
 
     with db() as conn:
         # ── Step 1: Add columns if missing (migration) ──
+        # Since _PG_SCHEMA now includes all columns these are no-ops on fresh
+        # installs; they only matter when upgrading an old database.
         try:
             if USE_POSTGRES:
-                cur = conn.cursor()
-                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE")
-                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin SMALLINT DEFAULT 0")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT")
+                conn.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_tenant_owner SMALLINT DEFAULT 0")
             else:
                 cols = [c[1] for c in conn.execute("PRAGMA table_info(users)").fetchall()]
                 if "is_super_admin" not in cols:
@@ -1050,20 +1445,9 @@ def _seed_defaults():
                     conn.execute("ALTER TABLE users ADD COLUMN is_tenant_owner INTEGER DEFAULT 0")
             # Bump any tenant that was created with the old default (≤5) to
             # effectively unlimited so agencies aren't blocked when inviting.
-            try:
-                conn.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
-            except Exception:
-                pass
+            conn.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
         except Exception as e:
             logger.debug("Column migration: %s", e)
-        # Postgres: add column if missing (ignore errors)
-        try:
-            if USE_POSTGRES:
-                with conn.cursor() as cur:
-                    cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_tenant_owner BOOLEAN DEFAULT FALSE")
-                    cur.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
-        except Exception:
-            pass
 
         # ── Step 2: Super Admin (idempotent upsert) ──
         # The platform owner's credentials are pinned here so they survive
@@ -1206,11 +1590,10 @@ def _seed_saas_control_layer():
         _ph = "%" + "s" if USE_POSTGRES else "?"
 
         # ── Seed Plans ──
-        plan_count = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0] if not USE_POSTGRES else 0
-        if USE_POSTGRES:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) AS cnt FROM plans")
-            plan_count = cur.fetchone()["cnt"]
+        # _ensure_plans_via_raw_db() (called after _seed_defaults) handles
+        # all plan seeding.  This old block is kept only as a safety net for
+        # completely fresh databases where the plan table is truly empty.
+        plan_count = conn.execute("SELECT COUNT(*) FROM plans").fetchone()[0]
 
         if plan_count == 0:
             plans = [
@@ -1225,11 +1608,7 @@ def _seed_saas_control_layer():
                 """, p)
 
         # ── Seed System Features ──
-        feat_count = conn.execute("SELECT COUNT(*) FROM system_features").fetchone()[0] if not USE_POSTGRES else 0
-        if USE_POSTGRES:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) AS cnt FROM system_features")
-            feat_count = cur.fetchone()["cnt"]
+        feat_count = conn.execute("SELECT COUNT(*) FROM system_features").fetchone()[0]
 
         # Canonical VoiceFlow AI feature list. Every key maps 1:1 to a
         # page that actually exists in the frontend sidebar.
@@ -1274,7 +1653,7 @@ def _seed_saas_control_layer():
         # from earlier seeds, then (re)insert the VoiceFlow-AI-only set.
         valid_keys = {f[1] for f in voiceflow_features}
         existing = conn.execute("SELECT key FROM system_features").fetchall()
-        existing_keys = {r[0] if not isinstance(r, dict) else r["key"] for r in existing}
+        existing_keys = {r[0] for r in existing}
         stale = existing_keys - valid_keys
         for k in stale:
             conn.execute(f"DELETE FROM tenant_features WHERE feature_key={_ph}", (k,))
@@ -1358,9 +1737,8 @@ def _migrate_tenant_branding(conn):
     ]
     try:
         if USE_POSTGRES:
-            cur = conn.cursor()
             for col, ctype in new_cols:
-                cur.execute(
+                conn.execute(
                     f"ALTER TABLE platform_tenants ADD COLUMN IF NOT EXISTS {col} {ctype}"
                 )
         else:
@@ -1380,36 +1758,9 @@ def _seed_platform_tickets(conn, _ph):
     """
     import datetime
 
-    if USE_POSTGRES:
-        conn.cursor().execute("""
-            CREATE TABLE IF NOT EXISTS platform_tickets (
-                id              TEXT PRIMARY KEY,
-                tenant_id       TEXT NOT NULL,
-                raised_by       TEXT NOT NULL,
-                subject         TEXT NOT NULL,
-                body            TEXT NOT NULL,
-                category        TEXT DEFAULT 'other',
-                priority        TEXT DEFAULT 'medium',
-                status          TEXT DEFAULT 'open',
-                assigned_to     TEXT,
-                created_at      TIMESTAMPTZ DEFAULT NOW(),
-                updated_at      TIMESTAMPTZ DEFAULT NOW(),
-                resolved_at     TIMESTAMPTZ
-            );
-            CREATE INDEX IF NOT EXISTS idx_pt_tenant ON platform_tickets(tenant_id);
-            CREATE INDEX IF NOT EXISTS idx_pt_status ON platform_tickets(status);
-
-            CREATE TABLE IF NOT EXISTS platform_ticket_replies (
-                id              TEXT PRIMARY KEY,
-                ticket_id       TEXT NOT NULL,
-                author_id       TEXT NOT NULL,
-                is_super_admin  BOOLEAN DEFAULT FALSE,
-                body            TEXT NOT NULL,
-                created_at      TIMESTAMPTZ DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS idx_ptr_ticket ON platform_ticket_replies(ticket_id);
-        """)
-    else:
+    # PostgreSQL: tables are already in _PG_SCHEMA (created at init_db time).
+    # SQLite: create here since _SQLITE_SCHEMA doesn't include ticket tables.
+    if not USE_POSTGRES:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS platform_tickets (
                 id              TEXT PRIMARY KEY,
