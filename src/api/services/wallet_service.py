@@ -266,10 +266,8 @@ def update_rate_plan(tenant_id: str, **updates) -> _RatePlanDTO:
     with engine.begin() as conn:
         row = conn.execute(select(rp).where(rp.c.tenant_id == tenant_id)).first()
         if row is None:
-            conn.execute(rp.insert().values(
-                tenant_id=tenant_id, **_DEFAULT_PLAN, **clean,
-                updated_at=datetime.utcnow(),
-            ))
+            insert_vals = {**_DEFAULT_PLAN, **clean, "tenant_id": tenant_id, "updated_at": datetime.utcnow()}
+            conn.execute(rp.insert().values(**insert_vals))
         else:
             conn.execute(rp.update().where(rp.c.tenant_id == tenant_id).values(
                 **clean, updated_at=datetime.utcnow(),
