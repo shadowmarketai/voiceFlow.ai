@@ -1782,15 +1782,16 @@ def _seed_demo_agency(conn, _ph):
 
     Tenant: tenant-agency-demo  (plan: agency_starter)
     """
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+    import bcrypt as _bcrypt
 
     AGENCY_TENANT_ID   = "tenant-agency-demo"
     AGENCY_USER_ID     = "u-agency-demo-001"
     AGENCY_EMAIL       = "agency@voiceflow.ai"
     AGENCY_NAME        = "Agency Demo"
     AGENCY_PASSWORD    = "Agency@123"
-    AGENCY_HASH        = pwd_context.hash(AGENCY_PASSWORD)
+    AGENCY_HASH        = _bcrypt.hashpw(
+        AGENCY_PASSWORD.encode("utf-8"), _bcrypt.gensalt(rounds=12)
+    ).decode("utf-8")
 
     # ── 1. Ensure the tenant exists ──
     existing_tenant = conn.execute(
