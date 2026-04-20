@@ -124,10 +124,7 @@ export default function ApiDeveloper({ embedded = false } = {}) {
   const [newKeyName, setNewKeyName] = useState('')
   const [showNewKeyModal, setShowNewKeyModal] = useState(false)
   const [newlyCreatedKey, setNewlyCreatedKey] = useState(null)
-  const [webhooks, setWebhooks] = useState(() => {
-    const saved = localStorage.getItem('vf_webhooks')
-    return saved ? JSON.parse(saved) : []
-  })
+  const [webhooks, setWebhooks] = useState([])
   const [showWebhookModal, setShowWebhookModal] = useState(false)
   const [webhookUrl, setWebhookUrl] = useState('')
   const [webhookEvents, setWebhookEvents] = useState([])
@@ -137,8 +134,27 @@ export default function ApiDeveloper({ embedded = false } = {}) {
   const [testLoading, setTestLoading] = useState(false)
   const [copiedEmbed, setCopiedEmbed] = useState(false)
 
-  // Persist webhooks in localStorage (no backend for webhooks yet)
-  useEffect(() => { localStorage.setItem('vf_webhooks', JSON.stringify(webhooks)) }, [webhooks])
+  // Load webhooks from backend on mount
+  useEffect(() => {
+    const token = localStorage.getItem('voiceflow_token')
+    if (!token) return
+    fetch(`${API_BASE}/api/v1/webhooks`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) {
+          setWebhooks(data.map(w => ({
+            id: String(w.id),
+            url: w.url,
+            events: w.events || [],
+            created: w.created_at,
+            status: w.is_active ? 'active' : 'inactive',
+          })))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   // Load API keys from backend on mount
   useEffect(() => {
@@ -157,9 +173,6 @@ export default function ApiDeveloper({ embedded = false } = {}) {
           return
         }
       } catch {}
-      // Fallback to localStorage
-      const saved = localStorage.getItem('vf_api_keys')
-      if (saved) setApiKeys(JSON.parse(saved))
     }
     loadKeys()
   }, [])
@@ -189,7 +202,7 @@ export default function ApiDeveloper({ embedded = false } = {}) {
         return
       }
     } catch {}
-    // Fallback to local
+    // Fallback to local (backend not available)
     const newKey = {
       id: Date.now().toString(),
       name: newKeyName.trim(),
@@ -199,7 +212,6 @@ export default function ApiDeveloper({ embedded = false } = {}) {
     }
     setApiKeys(prev => [...prev, newKey])
     setNewlyCreatedKey(newKey.key)
-    localStorage.setItem('vf_api_keys', JSON.stringify([...apiKeys, newKey]))
     setNewKeyName('')
     setShowNewKeyModal(false)
     toast.success(`API key "${newKey.name}" created (local mode)`)
@@ -261,9 +273,40 @@ export default function ApiDeveloper({ embedded = false } = {}) {
   // ── Webhook CRUD ──
   const WEBHOOK_EVENTS = ['call.started', 'call.ended', 'call.transferred', 'transcript.ready', 'agent.error', 'voice.cloned', 'campaign.completed']
 
-  const handleAddWebhook = () => {
+  const handleAddWebhook = async () => {
     if (!webhookUrl.trim()) { toast.error('Enter a webhook URL'); return }
     if (webhookEvents.length === 0) { toast.error('Select at least one event'); return }
+    const token = localStorage.getItem('voiceflow_token')
+    try {
+      const resp = await fetch(`${API_BASE}/api/v1/webhooks`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          name: `Webhook ${webhookEvents[0]}`,
+          url: webhookUrl.trim(),
+          events: webhookEvents,
+        }),
+      })
+      if (resp.ok) {
+        const data = await resp.json()
+        setWebhooks(prev => [...prev, {
+          id: String(data.id),
+          url: data.url,
+          events: data.events || [],
+          created: data.created_at,
+          status: 'active',
+        }])
+        setWebhookUrl('')
+        setWebhookEvents([])
+        setShowWebhookModal(false)
+        toast.success('Webhook added')
+        return
+      }
+    } catch (_) {}
+    // Fallback: local only (no backend available)
     const wh = {
       id: Date.now().toString(),
       url: webhookUrl.trim(),
@@ -275,10 +318,17 @@ export default function ApiDeveloper({ embedded = false } = {}) {
     setWebhookUrl('')
     setWebhookEvents([])
     setShowWebhookModal(false)
-    toast.success('Webhook added')
+    toast.success('Webhook added (local mode)')
   }
 
-  const handleDeleteWebhook = (id) => {
+  const handleDeleteWebhook = async (id) => {
+    const token = localStorage.getItem('voiceflow_token')
+    try {
+      await fetch(`${API_BASE}/api/v1/webhooks/${id}`, {
+        method: 'DELETE',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      })
+    } catch (_) {}
     setWebhooks(prev => prev.filter(w => w.id !== id))
     toast.success('Webhook removed')
   }

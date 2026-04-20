@@ -178,13 +178,7 @@ export default function CallLogsPage() {
      const list = data?.agents || data || [];
      setAgents(Array.isArray(list) ? list : []);
    })
-   .catch(() => {
-     // Fallback: load from localStorage
-     try {
-       const saved = JSON.parse(localStorage.getItem('voiceflow_agents') || '[]');
-       if (saved.length > 0) setAgents(saved);
-     } catch {}
-   });
+   .catch(() => {});
  }, []);
 
  // Load call logs — use agent filter when set

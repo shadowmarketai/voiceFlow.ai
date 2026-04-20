@@ -764,12 +764,7 @@ export default function AgentsListPage() {
         }));
         if (dbAgents.length > 0) setCustomAgents(dbAgents);
       })
-      .catch(() => {
-        try {
-          const saved = localStorage.getItem('vf_custom_agents');
-          if (saved) setCustomAgents(JSON.parse(saved));
-        } catch {}
-      });
+      .catch(() => {});
   }, []);
 
   const filteredDemo = useMemo(() => {

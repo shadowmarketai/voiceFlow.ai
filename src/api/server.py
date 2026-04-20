@@ -569,6 +569,30 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Contact Lists router not available: %s", exc)
 
+    # ── Voice Clone shim (VoiceStudio.jsx compatibility) ────
+    try:
+        from api.routers.voice_clone import router as voice_clone_shim_router
+        application.include_router(voice_clone_shim_router)
+        logger.info("Voice Clone shim router loaded (/api/v1/voice-clone/*)")
+    except Exception as exc:
+        logger.warning("Voice Clone shim router not available: %s", exc)
+
+    # ── Integrations (third-party connections persisted in DB) ──
+    try:
+        from api.routers.integrations import router as integrations_router
+        application.include_router(integrations_router)
+        logger.info("Integrations router loaded")
+    except Exception as exc:
+        logger.warning("Integrations router not available: %s", exc)
+
+    # ── Channel Configs (web widget / WhatsApp / phone settings) ──
+    try:
+        from api.routers.channels_config import router as channels_config_router
+        application.include_router(channels_config_router)
+        logger.info("Channel Config router loaded")
+    except Exception as exc:
+        logger.warning("Channel Config router not available: %s", exc)
+
     # ── CRM Integration API ──────────────────────────────────
     _register_crm_integration_api(application)
 

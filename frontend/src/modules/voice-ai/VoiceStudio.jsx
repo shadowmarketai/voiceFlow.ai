@@ -19,6 +19,19 @@ import {
 } from './data/voices';
 import { ttsAPI } from '../../services/api';
 
+/* -- Auth helper -------------------------------------------------------- */
+
+function authFetch(url, options = {}) {
+  const token = localStorage.getItem('voiceflow_token');
+  const headers = { ...(options.headers || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  // Don't set Content-Type for FormData (browser sets multipart boundary automatically)
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, { ...options, headers });
+}
+
 /* -- Constants ---------------------------------------------------------- */
 
 const EMOTIONS = [
@@ -545,7 +558,7 @@ function VoiceCloningTab({ onCountChange }) {
 
   // Load existing cloned voices
   useEffect(() => {
-    fetch('/api/v1/voice-clone/voices')
+    authFetch('/api/v1/voice-clone/voices')
       .then(r => r.json())
       .then(data => {
         const voices = data.voices || [];
@@ -594,7 +607,7 @@ function VoiceCloningTab({ onCountChange }) {
     try {
       const formData = new FormData();
       formData.append('audio_file', audioFile);
-      const resp = await fetch('/api/v1/voice-clone/quality-check', { method: 'POST', body: formData });
+      const resp = await authFetch('/api/v1/voice-clone/quality-check', { method: 'POST', body: formData });
       if (resp.ok) {
         const data = await resp.json();
         setQuality(data);
@@ -633,7 +646,7 @@ function VoiceCloningTab({ onCountChange }) {
         ? '/api/v1/voice-clone/elevenlabs-clone'
         : '/api/v1/voice-clone/register';
 
-      const resp = await fetch(endpoint, { method: 'POST', body: formData });
+      const resp = await authFetch(endpoint, { method: 'POST', body: formData });
       if (resp.ok) {
         const data = await resp.json();
         setVoiceId(data.voice_id);
@@ -668,9 +681,8 @@ function VoiceCloningTab({ onCountChange }) {
 
     // Try backend API
     try {
-      const resp = await fetch('/api/v1/voice-clone/synthesize', {
+      const resp = await authFetch('/api/v1/voice-clone/synthesize', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ voice_id: voiceId, text: synthText, language: synthLang }),
       });
       if (resp.ok) {
@@ -715,7 +727,7 @@ function VoiceCloningTab({ onCountChange }) {
 
   // Delete voice
   const handleDelete = async (id) => {
-    try { await fetch(`/api/v1/voice-clone/voices/${id}`, { method: 'DELETE' }); } catch (_) {}
+    try { await authFetch(`/api/v1/voice-clone/voices/${id}`, { method: 'DELETE' }); } catch (_) {}
     setClonedVoices(prev => prev.filter(v => v.voice_id !== id));
     if (voiceId === id) { setVoiceId(null); setStep('upload'); }
     toast.success('Voice deleted');

@@ -224,9 +224,7 @@ export default function RecordingsPage() {
      const list = data?.agents || data || [];
      setAgents(Array.isArray(list) ? list : []);
    })
-   .catch(() => {
-     try { setAgents(JSON.parse(localStorage.getItem('voiceflow_agents') || '[]')); } catch {}
-   });
+   .catch(() => {});
  }, []);
 
  // Fetch real recordings from API, merge with mock data

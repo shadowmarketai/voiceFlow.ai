@@ -296,6 +296,11 @@ def init_models():
     except Exception as e:
         logger.warning(f"Pricing schema migration skipped: {e}")
 
+    try:
+        _migrate_integrations_channels_schema(engine)
+    except Exception as e:
+        logger.warning(f"Integrations/channels schema migration skipped: {e}")
+
 
 def _migrate_knowledge_schema(engine):
     """Add campaign_id + scope columns to knowledge_documents if missing."""
@@ -1013,6 +1018,35 @@ if not USE_POSTGRES:
 
     CREATE INDEX IF NOT EXISTS idx_tenant_features_tenant ON tenant_features(tenant_id);
     CREATE INDEX IF NOT EXISTS idx_tenant_features_key ON tenant_features(feature_key);
+
+    CREATE TABLE IF NOT EXISTS user_integrations (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       TEXT NOT NULL,
+        tenant_id     TEXT,
+        provider_id   TEXT NOT NULL,
+        provider_name TEXT,
+        is_connected  INTEGER NOT NULL DEFAULT 0,
+        config        TEXT DEFAULT '{}',
+        connected_at  TEXT,
+        created_at    TEXT DEFAULT (datetime('now')),
+        updated_at    TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, provider_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_channels (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id       TEXT NOT NULL,
+        tenant_id     TEXT,
+        channel_id    TEXT NOT NULL,
+        channel_name  TEXT,
+        config        TEXT DEFAULT '{}',
+        status        TEXT DEFAULT 'needs_setup',
+        updated_at    TEXT DEFAULT (datetime('now')),
+        UNIQUE(user_id, channel_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ui_user_id ON user_integrations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id)
     """
 
 else:
@@ -1397,6 +1431,32 @@ else:
         updated_at  TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS user_integrations (
+        id            SERIAL PRIMARY KEY,
+        user_id       TEXT NOT NULL,
+        tenant_id     TEXT,
+        provider_id   TEXT NOT NULL,
+        provider_name TEXT,
+        is_connected  SMALLINT NOT NULL DEFAULT 0,
+        config        JSONB DEFAULT '{}',
+        connected_at  TEXT,
+        created_at    TIMESTAMPTZ DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, provider_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tenant_channels (
+        id            SERIAL PRIMARY KEY,
+        user_id       TEXT NOT NULL,
+        tenant_id     TEXT,
+        channel_id    TEXT NOT NULL,
+        channel_name  TEXT,
+        config        JSONB DEFAULT '{}',
+        status        TEXT DEFAULT 'needs_setup',
+        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, channel_id)
+    );
+
     -- ── Indexes ───────────────────────────────────────────────────
     CREATE INDEX IF NOT EXISTS idx_leads_status ON leads(status);
     CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
@@ -1409,8 +1469,91 @@ else:
     CREATE INDEX IF NOT EXISTS idx_pt_status ON platform_tickets(status);
     CREATE INDEX IF NOT EXISTS idx_ptr_ticket ON platform_ticket_replies(ticket_id);
     CREATE INDEX IF NOT EXISTS idx_tc_tenant_id ON tenant_contacts(tenant_id);
-    CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role)
+    CREATE INDEX IF NOT EXISTS idx_tc_role ON tenant_contacts(role);
+    CREATE INDEX IF NOT EXISTS idx_ui_user_id ON user_integrations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id)
     """
+
+
+def _migrate_integrations_channels_schema(engine):
+    """Create user_integrations and tenant_channels tables if missing (additive migration)."""
+    from sqlalchemy import inspect as sa_inspect
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    with engine.begin() as conn:
+        if "user_integrations" not in existing_tables:
+            if str(engine.url).startswith("postgresql"):
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS user_integrations (
+                        id            SERIAL PRIMARY KEY,
+                        user_id       TEXT NOT NULL,
+                        tenant_id     TEXT,
+                        provider_id   TEXT NOT NULL,
+                        provider_name TEXT,
+                        is_connected  SMALLINT NOT NULL DEFAULT 0,
+                        config        JSONB DEFAULT '{}',
+                        connected_at  TEXT,
+                        created_at    TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE(user_id, provider_id)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS user_integrations (
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id       TEXT NOT NULL,
+                        tenant_id     TEXT,
+                        provider_id   TEXT NOT NULL,
+                        provider_name TEXT,
+                        is_connected  INTEGER NOT NULL DEFAULT 0,
+                        config        TEXT DEFAULT '{}',
+                        connected_at  TEXT,
+                        created_at    TEXT DEFAULT (datetime('now')),
+                        updated_at    TEXT DEFAULT (datetime('now')),
+                        UNIQUE(user_id, provider_id)
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_ui_user_id ON user_integrations(user_id)"
+            ))
+            logger.info("user_integrations table created")
+
+        if "tenant_channels" not in existing_tables:
+            if str(engine.url).startswith("postgresql"):
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS tenant_channels (
+                        id            SERIAL PRIMARY KEY,
+                        user_id       TEXT NOT NULL,
+                        tenant_id     TEXT,
+                        channel_id    TEXT NOT NULL,
+                        channel_name  TEXT,
+                        config        JSONB DEFAULT '{}',
+                        status        TEXT DEFAULT 'needs_setup',
+                        updated_at    TIMESTAMPTZ DEFAULT NOW(),
+                        UNIQUE(user_id, channel_id)
+                    )
+                """))
+            else:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS tenant_channels (
+                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                        user_id       TEXT NOT NULL,
+                        tenant_id     TEXT,
+                        channel_id    TEXT NOT NULL,
+                        channel_name  TEXT,
+                        config        TEXT DEFAULT '{}',
+                        status        TEXT DEFAULT 'needs_setup',
+                        updated_at    TEXT DEFAULT (datetime('now')),
+                        UNIQUE(user_id, channel_id)
+                    )
+                """))
+            conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_tch_user_id ON tenant_channels(user_id)"
+            ))
+            logger.info("tenant_channels table created")
 
 
 # ============================================
@@ -1450,6 +1593,30 @@ def _seed_defaults():
             conn.execute("UPDATE platform_tenants SET max_users = 0 WHERE max_users IS NULL OR max_users <= 5")
         except Exception as e:
             logger.debug("Column migration: %s", e)
+
+        # ── One-time cleanup: remove legacy Swetha Structures demo rows ──
+        # These were seeded in early dev builds and must be removed from any
+        # existing database on first boot after this code ships.
+        try:
+            _swetha_emails = ("admin@swetha.in", "staff1@swetha.in", "staff2@swetha.in")
+            if USE_POSTGRES:
+                conn.execute(
+                    "DELETE FROM users WHERE email IN (%s,%s,%s)",
+                    _swetha_emails,
+                )
+                conn.execute(
+                    "DELETE FROM platform_tenants WHERE id=%s OR slug=%s",
+                    ("tenant-swetha", "swetha-structures"),
+                )
+            else:
+                for em in _swetha_emails:
+                    conn.execute("DELETE FROM users WHERE email=?", (em,))
+                conn.execute(
+                    "DELETE FROM platform_tenants WHERE id=? OR slug=?",
+                    ("tenant-swetha", "swetha-structures"),
+                )
+        except Exception as e:
+            logger.debug("Swetha cleanup (may already be clean): %s", e)
 
         # ── Step 2: Super Admin (idempotent upsert) ──
         # The platform owner's credentials are pinned here so they survive

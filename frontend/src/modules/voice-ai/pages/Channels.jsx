@@ -16,20 +16,43 @@ import ApiDeveloper from './ApiDeveloper'
 
 /* ─────────── Helpers ─────────────────────────────────────────── */
 
-const LS_KEY = 'voiceflow_channels_config'
-
-function loadSavedConfig() {
-  try {
-    return JSON.parse(localStorage.getItem(LS_KEY) || '{}')
-  } catch {
-    return {}
+function apiHeaders() {
+  const token = localStorage.getItem('voiceflow_token')
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   }
 }
 
-function saveConfig(id, data) {
-  const all = loadSavedConfig()
-  all[id] = { ...data, updated_at: new Date().toISOString() }
-  localStorage.setItem(LS_KEY, JSON.stringify(all))
+async function loadSavedConfig() {
+  try {
+    const resp = await fetch('/api/v1/channels/config', { headers: apiHeaders() })
+    if (resp.ok) {
+      const data = await resp.json()
+      // Convert {configs: {id: {config, status, ...}}} to flat {id: config_obj}
+      const result = {}
+      for (const [id, val] of Object.entries(data.configs || {})) {
+        result[id] = { ...val.config, status: val.status, updated_at: val.updated_at }
+      }
+      return result
+    }
+  } catch (_) {}
+  return {}
+}
+
+async function saveConfig(id, data) {
+  const { status, updated_at, ...config } = data
+  try {
+    await fetch(`/api/v1/channels/config/${id}`, {
+      method: 'PUT',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        channel_id: id,
+        config,
+        status: status || 'configured',
+      }),
+    })
+  } catch (_) {}
 }
 
 /* ─────────── Status badges ───────────────────────────────────── */
@@ -436,7 +459,7 @@ export default function Channels() {
     'whatsapp': 'checking',
     'phone': 'checking',
   })
-  const [savedConfig, setSavedConfig] = useState(loadSavedConfig())
+  const [savedConfig, setSavedConfig] = useState({})
   const [agents, setAgents] = useState([])
 
   const refreshStatuses = async () => {
@@ -455,8 +478,8 @@ export default function Channels() {
     } catch {
       setStatuses(s => ({ ...s, phone: 'needs_setup' }))
     }
-    // Web widget — configured if we have a saved agent_id
-    const saved = loadSavedConfig()
+    // Web widget + all channels — load from DB
+    const saved = await loadSavedConfig()
     setSavedConfig(saved)
     setStatuses(s => ({
       ...s,
@@ -465,24 +488,18 @@ export default function Channels() {
   }
 
   const loadAgents = async () => {
-    // Pull templates from localStorage (Agents page uses that), else fall back to backend
     try {
-      const tpl = JSON.parse(localStorage.getItem('voiceflow_agents') || '[]')
-      if (tpl.length > 0) {
-        setAgents(tpl.map(a => ({ id: String(a.id), name: a.name })))
+      const { data } = await api.get('/api/v1/assistants')
+      if (data?.assistants?.length > 0) {
+        setAgents(data.assistants.map(a => ({ id: String(a.id), name: a.name })))
         return
       }
     } catch {}
-    try {
-      const { data } = await api.get('/api/v1/assistants')
-      setAgents((data?.assistants || []).map(a => ({ id: String(a.id), name: a.name })))
-    } catch {
-      setAgents([
-        { id: '1', name: 'Sales Assistant' },
-        { id: '2', name: 'Support Bot' },
-        { id: '3', name: 'Appointment Scheduler' },
-      ])
-    }
+    setAgents([
+      { id: '1', name: 'Sales Assistant' },
+      { id: '2', name: 'Support Bot' },
+      { id: '3', name: 'Appointment Scheduler' },
+    ])
   }
 
   useEffect(() => {
@@ -520,9 +537,10 @@ export default function Channels() {
     },
   ]
 
-  const handleSave = (id, data) => {
-    saveConfig(id, data)
-    setSavedConfig(loadSavedConfig())
+  const handleSave = async (id, data) => {
+    await saveConfig(id, data)
+    const updated = await loadSavedConfig()
+    setSavedConfig(updated)
     setStatuses(s => ({ ...s, [id]: 'configured' }))
     toast.success(`${id.replace('-', ' ')} configuration saved`)
     setOpen(null)

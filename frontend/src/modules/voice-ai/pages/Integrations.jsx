@@ -35,20 +35,32 @@ const INITIAL_INTEGRATIONS = [
   { id: 'calcom', name: 'Cal.com', category: 'Calendar', description: 'Open-source scheduling for booking meetings from calls.', logo: 'CC', configFields: [{ key: 'api_key', label: 'API Key', placeholder: 'cal_xxx' }] },
 ]
 
+function apiHeaders() {
+  const token = localStorage.getItem('voiceflow_token')
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  }
+}
+
 export default function Integrations() {
   const [activeCategory, setActiveCategory] = useState('All')
   const [search, setSearch] = useState('')
-  const [connectionState, setConnectionState] = useState(() => {
-    try {
-      localStorage.removeItem('vf_integrations')
-      const saved = localStorage.getItem('vf_integration_connections')
-      return saved ? JSON.parse(saved) : {}
-    } catch { return {} }
-  })
+  const [connectionState, setConnectionState] = useState({})
   const [connectModal, setConnectModal] = useState(null)
   const [configValues, setConfigValues] = useState({})
   const [connecting, setConnecting] = useState(false)
   const [manageModal, setManageModal] = useState(null)
+
+  // Load connections from DB on mount
+  useState(() => {
+    fetch('/api/v1/integrations/', { headers: apiHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.connections) setConnectionState(data.connections)
+      })
+      .catch(() => {})
+  })
 
   const integrations = INITIAL_INTEGRATIONS.map(def => ({
     ...def,
@@ -56,14 +68,27 @@ export default function Integrations() {
     config: connectionState[def.id]?.config,
   }))
 
-  const saveConnection = (id, connected, config) => {
+  const saveConnection = async (id, connected, config) => {
     const next = { ...connectionState }
     if (connected) {
       next[id] = { connected: true, config }
+      try {
+        const integration = INITIAL_INTEGRATIONS.find(i => i.id === id)
+        await fetch(`/api/v1/integrations/${id}/connect`, {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify({ provider_name: integration?.name || id, config }),
+        })
+      } catch (_) {}
     } else {
       delete next[id]
+      try {
+        await fetch(`/api/v1/integrations/${id}`, {
+          method: 'DELETE',
+          headers: apiHeaders(),
+        })
+      } catch (_) {}
     }
-    localStorage.setItem('vf_integration_connections', JSON.stringify(next))
     setConnectionState(next)
   }
 
@@ -78,7 +103,7 @@ export default function Integrations() {
 
   const connectedCount = integrations.filter(i => i.connected).length
 
-  const handleConnect = (integrationId) => {
+  const handleConnect = async (integrationId) => {
     const integration = INITIAL_INTEGRATIONS.find(i => i.id === integrationId)
     if (!integration) return
     const missing = integration.configFields?.filter(f => !configValues[f.key]?.trim())
@@ -87,18 +112,16 @@ export default function Integrations() {
       return
     }
     setConnecting(true)
-    setTimeout(() => {
-      saveConnection(integrationId, true, { ...configValues })
-      setConnectModal(null)
-      setConfigValues({})
-      setConnecting(false)
-      toast.success(`${integration.name} connected!`)
-    }, 1000)
+    await saveConnection(integrationId, true, { ...configValues })
+    setConnectModal(null)
+    setConfigValues({})
+    setConnecting(false)
+    toast.success(`${integration.name} connected!`)
   }
 
-  const handleDisconnect = (integrationId) => {
+  const handleDisconnect = async (integrationId) => {
     const integration = INITIAL_INTEGRATIONS.find(i => i.id === integrationId)
-    saveConnection(integrationId, false, undefined)
+    await saveConnection(integrationId, false, undefined)
     setManageModal(null)
     toast.success(`${integration?.name} disconnected`)
   }
