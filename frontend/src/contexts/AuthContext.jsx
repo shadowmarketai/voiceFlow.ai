@@ -74,6 +74,14 @@ export function AuthProvider({ children }) {
       // Fallback to login response data
     }
 
+    // Flag agency users needing onboarding (no branding configured yet)
+    const isAgency = userData?.plan?.startsWith?.('agency') ||
+      userData?.plan_id?.startsWith?.('agency') ||
+      userData?.tenant?.plan_id?.startsWith?.('agency')
+    if (isAgency && !userData?.tenant?.app_name && !userData?.tenant?.logo_url) {
+      userData._needs_onboarding = true
+    }
+
     localStorage.setItem('voiceflow_user', JSON.stringify(userData))
     setUser(userData)
     return userData

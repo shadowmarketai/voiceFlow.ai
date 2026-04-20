@@ -21,7 +21,7 @@ import {
   FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
-  Bell, X,
+  Bell, X, Building2, DollarSign, Network,
 } from 'lucide-react';
 
 /* ─── Navigation definition ─────────────────────────────────────────── */
@@ -67,12 +67,20 @@ const navSections = [
     ],
   },
   {
+    label: 'AGENCY',
+    agencySection: true,
+    items: [
+      { icon: Network,    name: 'Sub-clients',  path: '/voice/sub-clients',     agencyOnly: true },
+      { icon: DollarSign, name: 'My Pricing',   path: '/voice/tenant-pricing',  agencyOnly: true },
+      { icon: Wallet,     name: 'Agency Wallet', path: '/voice/wallet',          agencyOnly: true },
+    ],
+  },
+  {
     label: 'ACCOUNT',
     items: [
       { icon: CreditCard, name: 'Plans',      path: '/voice/billing' },
-      { icon: Wallet,     name: 'Wallet',     path: '/voice/wallet' },
-      { icon: CreditCard, name: 'My Pricing', path: '/voice/tenant-pricing', tenantOnly: true },
-      { icon: Users,      name: 'Team',       path: '/voice/team',           tenantOnly: true },
+      { icon: Wallet,     name: 'Wallet',     path: '/voice/wallet',  hideForAgency: true },
+      { icon: Users,      name: 'Team',       path: '/voice/team',    tenantOnly: true },
     ],
   },
 ];
@@ -125,6 +133,14 @@ export default function DashboardLayout() {
     if (!currentNavItem) return null;
     return navSections.find((s) => s.items.includes(currentNavItem));
   }, [currentNavItem]);
+
+  /* ── Agency detection ──────────────────────────────────────── */
+
+  const isAgency = Boolean(
+    user?.plan?.startsWith?.('agency') ||
+    user?.plan_id?.startsWith?.('agency') ||
+    user?.tenant?.plan_id?.startsWith?.('agency')
+  );
 
   /* ── Tenant branding ────────────────────────────────────────── */
 
@@ -341,30 +357,42 @@ export default function DashboardLayout() {
             isCollapsedDesktop ? 'px-2' : 'px-3'
           )}
         >
-          {navSections.map((section) => (
-            <div key={section.label}>
-              {/* Section header */}
-              {!isCollapsedDesktop && (
-                <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-300 select-none">
-                  {section.label}
-                </div>
-              )}
-              {isCollapsedDesktop && (
-                <div className="w-5 mx-auto mb-2 border-t border-slate-100" />
-              )}
-              <div className="space-y-0.5">
-                {section.items
-                  .filter((item) => {
-                    if (item.tenantOnly && !user?.tenant_id) return false;
-                    if (item.superAdminOnly && !user?.is_super_admin) return false;
-                    return true;
-                  })
-                  .map((item) => (
+          {navSections.map((section) => {
+            // Hide entire AGENCY section for non-agency users
+            if (section.agencySection && !isAgency) return null;
+
+            const visibleItems = section.items.filter((item) => {
+              if (item.tenantOnly && !user?.tenant_id) return false;
+              if (item.superAdminOnly && !user?.is_super_admin) return false;
+              if (item.agencyOnly && !isAgency) return false;
+              if (item.hideForAgency && isAgency) return false;
+              return true;
+            });
+
+            if (visibleItems.length === 0) return null;
+
+            return (
+              <div key={section.label}>
+                {/* Section header */}
+                {!isCollapsedDesktop && (
+                  <div
+                    className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-widest select-none"
+                    style={section.agencySection ? { color: brandPrimary, opacity: 0.7 } : { color: '#cbd5e1' }}
+                  >
+                    {section.label}
+                  </div>
+                )}
+                {isCollapsedDesktop && (
+                  <div className="w-5 mx-auto mb-2 border-t border-slate-100" />
+                )}
+                <div className="space-y-0.5">
+                  {visibleItems.map((item) => (
                     <SidebarNavItem key={item.path} item={item} mobile={mobile} />
                   ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Footer actions — fixed at sidebar bottom */}

@@ -149,10 +149,13 @@ export default function TenantDetail() {
  viewer: 'bg-violet-50 text-violet-700 border border-violet-200',
  }
 
+ const isAgencyTenant = tenant?.plan?.includes('agency') || tenant?.plan_id?.includes('agency')
+
  const tabs = [
  { id: 'features', label: 'Features', count: `${enabledCount}/${totalCount}` },
  { id: 'branding', label: 'Branding' },
  { id: 'users', label: 'Users', count: tenant?.users?.length || 0 },
+ ...(isAgencyTenant ? [{ id: 'agency', label: 'Agency' }] : []),
  ]
 
  return (
@@ -170,9 +173,19 @@ export default function TenantDetail() {
  {tenant?.name?.[0] || 'T'}
  </div>
  <div>
+ <div className="flex items-center gap-3 flex-wrap">
  <h1 className="text-2xl font-bold text-slate-900">{tenant?.name}</h1>
+ {isAgencyTenant && (
+ <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+ Agency Plan
+ </span>
+ )}
+ </div>
  <div className="flex items-center gap-3 mt-1">
  <span className="flex items-center gap-1 text-sm text-slate-500"><Globe className="w-3.5 h-3.5" /> {tenant?.slug}</span>
+ {tenant?.plan && (
+ <span className="text-xs text-slate-400 font-mono bg-slate-100 px-1.5 py-0.5 rounded">{tenant.plan}</span>
+ )}
  </div>
  </div>
  </div>
@@ -302,6 +315,11 @@ export default function TenantDetail() {
  {/* Users Tab — Full Management */}
  {activeTab === 'users' && (
  <UsersManager tenantId={tenantId} users={tenant?.users || []} onRefresh={loadData} />
+ )}
+
+ {/* Agency Tab */}
+ {activeTab === 'agency' && tenant && (
+ <AgencyPanel tenant={tenant} />
  )}
  </div>
  )
@@ -1166,6 +1184,95 @@ function BrandingPanel({ tenant, onSaved }) {
  </div>
  )
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Agency Panel — White-label agency configuration (super admin view)
+// ═══════════════════════════════════════════════════════════════════
+
+function AgencyPanel({ tenant }) {
+ const planId = tenant?.plan || tenant?.plan_id || ''
+ const planParts = planId.split('_')
+ const planTier = planParts[planParts.length - 1] || 'starter'
+
+ const INFO_ROWS = [
+ { label: 'Plan ID',      value: planId || '—' },
+ { label: 'Plan Tier',    value: planTier.charAt(0).toUpperCase() + planTier.slice(1) },
+ { label: 'Max Users',    value: tenant?.max_users || '∞' },
+ { label: 'Max Minutes',  value: tenant?.max_voice_minutes ? `${tenant.max_voice_minutes.toLocaleString()} min` : '∞' },
+ { label: 'Industry',     value: tenant?.industry || '—' },
+ { label: 'Go-live Date', value: tenant?.go_live_date || '—' },
+ { label: 'Onboarding',   value: tenant?.onboarding_status?.replace('_', ' ') || '—' },
+ ]
+
+ const BILLING_ROWS = [
+ { label: 'Billing Email',    value: tenant?.billing_email || tenant?.contact_email || '—' },
+ { label: 'Payment Terms',    value: tenant?.payment_terms || 'prepaid' },
+ { label: 'Monthly Amount',   value: tenant?.monthly_billing_amount ? `₹${Number(tenant.monthly_billing_amount).toLocaleString('en-IN')}` : '—' },
+ { label: 'Contract Start',   value: tenant?.contract_start_date || '—' },
+ { label: 'Contract End',     value: tenant?.contract_end_date || '—' },
+ ]
+
+ return (
+ <div className="space-y-5">
+ {/* Agency identity */}
+ <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5">
+ <h3 className="font-semibold text-slate-900 text-sm mb-4 flex items-center gap-2">
+ <span className="w-2 h-2 rounded-full bg-violet-500" />
+ Agency Plan Details
+ </h3>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+ {INFO_ROWS.map(({ label, value }) => (
+ <div key={label} className="flex items-start justify-between gap-2 py-2 border-b border-slate-50 last:border-0">
+ <span className="text-xs font-medium text-slate-500 flex-shrink-0">{label}</span>
+ <span className="text-xs text-slate-900 font-medium text-right">{value}</span>
+ </div>
+ ))}
+ </div>
+ </div>
+
+ {/* Billing / contract */}
+ <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5">
+ <h3 className="font-semibold text-slate-900 text-sm mb-4 flex items-center gap-2">
+ <span className="w-2 h-2 rounded-full bg-indigo-500" />
+ Billing & Contract
+ </h3>
+ <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+ {BILLING_ROWS.map(({ label, value }) => (
+ <div key={label} className="flex items-start justify-between gap-2 py-2 border-b border-slate-50 last:border-0">
+ <span className="text-xs font-medium text-slate-500 flex-shrink-0">{label}</span>
+ <span className="text-xs text-slate-900 font-medium text-right">{value}</span>
+ </div>
+ ))}
+ </div>
+ </div>
+
+ {/* Internal notes */}
+ {tenant?.internal_notes && (
+ <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+ <p className="text-xs font-semibold text-amber-700 mb-1">Internal Notes</p>
+ <p className="text-sm text-amber-800">{tenant.internal_notes}</p>
+ </div>
+ )}
+
+ {/* Quick actions */}
+ <div className="bg-white border border-slate-200 shadow-sm rounded-xl p-5">
+ <h3 className="font-semibold text-slate-900 text-sm mb-3">Quick Links</h3>
+ <div className="flex flex-wrap gap-2">
+ <a href={`/admin/tenants/${tenant.id}`} className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-700 transition-colors">
+ View Branding →
+ </a>
+ <button
+ onClick={() => window.open(`/login?t=${tenant.slug || tenant.id}`, '_blank')}
+ className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-xs font-medium text-indigo-700 transition-colors"
+ >
+ Preview Login Page →
+ </button>
+ </div>
+ </div>
+ </div>
+ )
+}
+
 
 function Section({ title, subtitle, children }) {
  return (

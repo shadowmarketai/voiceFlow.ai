@@ -109,6 +109,9 @@ export default function Login() {
   const [isRegister, setIsRegister] = useState(false)
   const [name, setName] = useState('')
 
+  // White-label tenant branding
+  const [tenantBranding, setTenantBranding] = useState(null)
+
   // 2FA state
   const [show2FA, setShow2FA] = useState(false)
   const [tempToken, setTempToken] = useState('')
@@ -118,6 +121,23 @@ export default function Login() {
 
   const { login, register, verify2FALogin, googleLogin } = useAuth()
   const navigate = useNavigate()
+
+  // Detect tenant slug from URL ?t=slug or subdomain
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const slugParam = urlParams.get('t')
+    const hostname = window.location.hostname
+    const subdomain = hostname.split('.')[0]
+    const isCustomSubdomain = subdomain && subdomain !== 'voice' && subdomain !== 'www' && subdomain !== 'localhost' && hostname !== 'localhost'
+    const tenantSlug = slugParam || (isCustomSubdomain ? subdomain : null)
+
+    if (tenantSlug) {
+      fetch(`/api/v1/auth/tenant-branding?slug=${encodeURIComponent(tenantSlug)}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => { if (data) setTenantBranding(data) })
+        .catch(() => {})
+    }
+  }, [])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -142,6 +162,8 @@ export default function Login() {
 
       if (result?.is_super_admin) {
         navigate('/admin')
+      } else if (result?._needs_onboarding) {
+        navigate('/voice/onboarding')
       } else {
         navigate('/')
       }
@@ -160,6 +182,8 @@ export default function Login() {
       const userData = await verify2FALogin(twoFAEmail, otpCode, tempToken)
       if (userData?.is_super_admin) {
         navigate('/admin')
+      } else if (userData?._needs_onboarding) {
+        navigate('/voice/onboarding')
       } else {
         navigate('/')
       }
@@ -177,6 +201,8 @@ export default function Login() {
       const userData = await googleLogin(credential)
       if (userData?.is_super_admin) {
         navigate('/admin')
+      } else if (userData?._needs_onboarding) {
+        navigate('/voice/onboarding')
       } else {
         navigate('/')
       }
@@ -200,7 +226,12 @@ export default function Login() {
 
         {/* ─── LEFT: Dark immersive 3D panel ──────────────────── */}
         <div className="hidden lg:flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#050012] via-[#0f0a24] to-[#130826]" />
+          <div
+            className="absolute inset-0"
+            style={{ background: tenantBranding?.secondary_color
+              ? `linear-gradient(135deg, ${tenantBranding.secondary_color}dd, ${tenantBranding.secondary_color})`
+              : 'linear-gradient(135deg, #050012, #0f0a24, #130826)' }}
+          />
           <div
             className="absolute inset-0 opacity-[0.04]"
             style={{
@@ -210,32 +241,49 @@ export default function Login() {
             }}
           />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[120px]" />
+            <div
+              className="w-[500px] h-[500px] rounded-full blur-[120px]"
+              style={{ background: `${tenantBranding?.primary_color || '#6366f1'}1a` }}
+            />
           </div>
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="w-[300px] h-[300px] rounded-full bg-violet-500/8 blur-[80px] translate-y-12" />
-          </div>
-          <div className="absolute inset-0">
-            <Suspense
-              fallback={
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-20 h-20 rounded-full border-2 border-indigo-500/30 border-t-indigo-400 animate-spin" />
-                </div>
-              }
-            >
-              <ThreeScene />
-            </Suspense>
-          </div>
+          {!tenantBranding && (
+            <div className="absolute inset-0">
+              <Suspense
+                fallback={
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-20 h-20 rounded-full border-2 border-indigo-500/30 border-t-indigo-400 animate-spin" />
+                  </div>
+                }
+              >
+                <ThreeScene />
+              </Suspense>
+            </div>
+          )}
 
           <div className="relative z-10 flex flex-col justify-between h-full p-10 xl:p-14">
             {/* Brand */}
             <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0} className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 ring-1 ring-white/10">
-                <Mic className="w-5 h-5 text-white" />
-              </div>
+              {tenantBranding?.logo_url ? (
+                <img
+                  src={tenantBranding.logo_url}
+                  alt={tenantBranding.app_name || tenantBranding.name}
+                  className="w-11 h-11 rounded-xl object-contain bg-white/10 p-1"
+                />
+              ) : (
+                <div
+                  className="w-11 h-11 rounded-xl flex items-center justify-center shadow-lg ring-1 ring-white/10"
+                  style={{ background: `linear-gradient(135deg, ${tenantBranding?.primary_color || '#6366f1'}, ${tenantBranding?.accent_color || '#8b5cf6'})` }}
+                >
+                  <Mic className="w-5 h-5 text-white" />
+                </div>
+              )}
               <div>
-                <p className="text-white font-heading font-bold text-lg leading-tight tracking-tight">VoiceFlow</p>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-300/60 font-medium">AI&nbsp;Platform</p>
+                <p className="text-white font-heading font-bold text-lg leading-tight tracking-tight">
+                  {tenantBranding?.app_name || tenantBranding?.name || 'VoiceFlow'}
+                </p>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-white/40 font-medium">
+                  {tenantBranding ? (tenantBranding.tagline || 'Voice AI Platform') : 'AI\u00A0Platform'}
+                </p>
               </div>
             </motion.div>
 
@@ -296,12 +344,23 @@ export default function Login() {
           <motion.div initial="hidden" animate="visible" variants={scaleIn} className="w-full max-w-[420px]">
             {/* Mobile brand */}
             <div className="lg:hidden flex items-center gap-3 mb-8">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-200">
-                <Mic className="w-5 h-5 text-white" />
-              </div>
+              {tenantBranding?.logo_url ? (
+                <img src={tenantBranding.logo_url} alt={tenantBranding.app_name || tenantBranding.name} className="w-10 h-10 rounded-xl object-contain shadow-lg" />
+              ) : (
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shadow-lg"
+                  style={{ background: `linear-gradient(135deg, ${tenantBranding?.primary_color || '#6366f1'}, ${tenantBranding?.accent_color || '#8b5cf6'})` }}
+                >
+                  <Mic className="w-5 h-5 text-white" />
+                </div>
+              )}
               <div>
-                <p className="text-slate-900 font-heading font-bold text-lg">VoiceFlow</p>
-                <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-500/60">AI Platform</p>
+                <p className="text-slate-900 font-heading font-bold text-lg">
+                  {tenantBranding?.app_name || tenantBranding?.name || 'VoiceFlow'}
+                </p>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-indigo-500/60">
+                  {tenantBranding ? (tenantBranding.tagline || 'Voice AI Platform') : 'AI Platform'}
+                </p>
               </div>
             </div>
 
@@ -402,7 +461,7 @@ export default function Login() {
                       <p className="text-sm text-slate-500 mt-1.5">
                         {isRegister
                           ? 'Start your free trial — no credit card required.'
-                          : 'Sign in to your VoiceFlow workspace.'}
+                          : `Sign in to your ${tenantBranding?.app_name || 'VoiceFlow'} workspace.`}
                       </p>
                     </div>
 
@@ -547,7 +606,7 @@ export default function Login() {
             </div>
 
             <p className="text-center mt-6 text-[11px] text-slate-400">
-              Protected by enterprise-grade encryption &middot; &copy; 2026 VoiceFlow AI
+              Protected by enterprise-grade encryption &middot; &copy; 2026 {tenantBranding?.app_name || tenantBranding?.name || 'VoiceFlow AI'}
             </p>
           </motion.div>
         </div>

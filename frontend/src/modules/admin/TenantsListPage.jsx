@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Building2, Plus, Search, Users, ChevronRight, X, Globe, Phone, Mail, FileText, Tag } from 'lucide-react'
+import { Building2, Plus, Search, Users, ChevronRight, X, Globe, Phone, Mail, FileText, Tag, Network } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api, { superAdminAPI } from '../../services/api'
 
@@ -38,12 +38,27 @@ function SkeletonRow() {
           </div>
         </div>
       </td>
+      <td className="px-6 py-4"><div className="h-6 w-20 bg-slate-100 animate-pulse rounded-full" /></td>
       <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-100 animate-pulse rounded-full" /></td>
       <td className="px-6 py-4"><div className="h-3.5 w-12 bg-slate-100 animate-pulse rounded" /></td>
       <td className="px-6 py-4"><div className="h-6 w-16 bg-slate-100 animate-pulse rounded-full" /></td>
       <td className="px-6 py-4"><div className="h-3 w-20 bg-slate-100 animate-pulse rounded" /></td>
       <td className="px-6 py-4" />
     </tr>
+  )
+}
+
+function PlanTypeBadge({ plan }) {
+  const isAgency = plan?.includes('agency')
+  return isAgency ? (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+      <Network className="w-3 h-3" aria-hidden="true" />
+      Agency
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+      Direct
+    </span>
   )
 }
 
@@ -135,7 +150,7 @@ export default function TenantsListPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">Agencies</h1>
             <p className="text-sm text-slate-500 mt-1">
-              {loading ? 'Loading agencies…' : `${tenants.length} agenc${tenants.length !== 1 ? 'ies' : 'y'} on the platform`}
+              {loading ? 'Loading agencies…' : `${tenants.length} agenc${tenants.length !== 1 ? 'ies' : 'y'} · ${tenants.filter(t => t.plan?.startsWith('agency') || t.plan_type === 'agency').length} agency plan`}
             </p>
           </div>
           <button
@@ -220,6 +235,7 @@ export default function TenantsListPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-left">
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Agency</th>
+                  <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Plan</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Users</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
                   <th scope="col" className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
@@ -261,6 +277,9 @@ export default function TenantsListPage() {
                           <p className="text-xs text-slate-400 mt-0.5">{t.slug || t.id}</p>
                         </div>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <PlanTypeBadge plan={t.plan || t.plan_id || ''} />
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center gap-1.5 text-slate-600 text-sm">

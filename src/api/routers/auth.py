@@ -12,7 +12,7 @@ KB-007: Include logout endpoint
 import logging
 import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -198,6 +198,117 @@ def _load_tenant_branding(tenant_id: str | None) -> TenantBranding | None:
     except Exception as exc:
         logger.warning("Failed to load tenant branding for %s: %s", tenant_id, exc)
         return None
+
+
+# ── GET /tenant-branding (public — no auth) ──────────────────────
+
+
+@router.get(
+    "/tenant-branding",
+    summary="Get public tenant branding by slug (no auth required)",
+)
+async def get_tenant_branding_public(
+    slug: str = Query(..., description="Tenant slug"),
+) -> dict:
+    """Public endpoint used by the white-label login page.
+    Returns branding fields for a tenant identified by slug.
+    No authentication required.
+    """
+    from api.database import USE_POSTGRES, db
+    _ph = "%s" if USE_POSTGRES else "?"
+    try:
+        with db() as conn:
+            row = conn.execute(
+                f"SELECT * FROM platform_tenants WHERE slug={_ph} AND is_active=1",
+                (slug,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Tenant not found")
+            t = dict(row)
+            return {
+                "id": t["id"],
+                "name": t.get("name", ""),
+                "slug": t.get("slug"),
+                "app_name": t.get("app_name"),
+                "tagline": t.get("tagline"),
+                "logo_url": t.get("logo_url"),
+                "favicon_url": t.get("favicon_url"),
+                "primary_color": t.get("primary_color"),
+                "secondary_color": t.get("secondary_color"),
+                "accent_color": t.get("accent_color"),
+                "font_family": t.get("font_family"),
+            }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Failed to load public tenant branding for slug=%s: %s", slug, exc)
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+
+# ── GET /my-tenant ────────────────────────────────────────────────
+
+
+@router.get(
+    "/my-tenant",
+    summary="Get own tenant branding (authenticated)",
+)
+async def get_my_tenant(
+    current_user: dict = Depends(get_current_active_user),
+) -> dict:
+    """Returns full tenant record for the currently logged-in user's tenant."""
+    tenant_id = current_user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=404, detail="No tenant associated with this account")
+    from api.database import USE_POSTGRES, db
+    _ph = "%s" if USE_POSTGRES else "?"
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT * FROM platform_tenants WHERE id={_ph}", (tenant_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        return dict(row)
+
+
+# ── PUT /my-tenant ────────────────────────────────────────────────
+
+
+@router.put(
+    "/my-tenant",
+    summary="Update own tenant branding (authenticated)",
+)
+async def update_my_tenant(
+    body: dict,
+    current_user: dict = Depends(get_current_active_user),
+) -> dict:
+    """Agency users can update their own tenant's branding fields."""
+    tenant_id = current_user.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=403, detail="No tenant associated with this account")
+
+    ALLOWED_FIELDS = {
+        "app_name", "tagline", "logo_url", "favicon_url",
+        "primary_color", "secondary_color", "accent_color",
+        "font_family", "sidebar_style", "website",
+        "support_email", "support_phone", "address",
+    }
+    updates = {k: v for k, v in body.items() if k in ALLOWED_FIELDS}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No valid fields to update")
+
+    from api.database import USE_POSTGRES, db
+    _ph = "%s" if USE_POSTGRES else "?"
+    cols = ", ".join(f"{k}={_ph}" for k in updates)
+    vals = list(updates.values()) + [tenant_id]
+    with db() as conn:
+        conn.execute(
+            f"UPDATE platform_tenants SET {cols} WHERE id={_ph}",
+            vals,
+        )
+        row = conn.execute(
+            f"SELECT * FROM platform_tenants WHERE id={_ph}", (tenant_id,)
+        ).fetchone()
+        return dict(row)
 
 
 # ── PUT /me ──────────────────────────────────────────────────────
