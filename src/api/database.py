@@ -409,10 +409,31 @@ def _migrate_pricing_schema(engine):
         """))
         logger.info("recharge_packs table ensured")
 
-        # ── One-time fix: Agency Pro was seeded at ₹2.50 (break-even) — correct to ₹3.00 (₹0.50 margin) ──
+        # ── Clean up: remove any plans whose slug conflicts with our canonical IDs
+        # (old deployments may have had plans with integer/different IDs but same slugs,
+        #  causing our INSERT to fail on the UNIQUE slug constraint)
+        canonical_ids = (
+            "'free_trial','starter','growth','business','enterprise',"
+            "'agency_starter','agency_growth','agency_pro'"
+        )
+        conn.execute(text(
+            f"DELETE FROM plans WHERE id NOT IN ({canonical_ids})"
+        ))
+
+        # ── One-time fix: Agency Pro ₹2.50 (break-even) → ₹3.00 (₹0.50 margin) ──
         conn.execute(text(
             "UPDATE plans SET wholesale_rate = 3.00, profit_margin = 0.50 "
             "WHERE id = 'agency_pro' AND (wholesale_rate IS NULL OR wholesale_rate <= 2.50)"
+        ))
+
+        # ── Enforce Free Trial call cap (100/month, always fixed) ──
+        conn.execute(text(
+            "UPDATE plans SET calls_per_month = 100 WHERE id = 'free_trial'"
+        ))
+        # ── All paid direct plans: no monthly call cap (prepaid wallet is the limiter) ──
+        conn.execute(text(
+            "UPDATE plans SET calls_per_month = NULL "
+            "WHERE id IN ('starter','growth','business','enterprise')"
         ))
 
         # ── Seed / upsert pricing data from billing spec ──
@@ -420,23 +441,24 @@ def _migrate_pricing_schema(engine):
 
 
 def _seed_pricing_data(conn):
-    """Upsert default plan pricing + recharge packs from the VoiceFlow AI billing spec.
-    Uses SQLAlchemy text() with :param binding — safe from injection.
+    """Upsert canonical plan pricing from the VoiceFlow AI billing spec.
 
-    Rates policy:
-      - On INSERT: set default call_rate / wholesale_rate and profit_margin.
-      - On UPDATE: NEVER overwrite call_rate / wholesale_rate (cascade changes must survive
-        restarts). Only update structural fields (limits, plan_type, price, sort_order).
-      - profit_margin = default margin above the ₹2.50 base cost floor.
+    Strategy:
+    - INSERT the plan if it doesn't exist (with all default values).
+    - UPDATE only structural/display fields on existing plans.
+    - NEVER overwrite call_rate / wholesale_rate — cascade changes survive restarts.
+    - calls_per_month: fixed 100 for free_trial, NULL (unlimited) for all paid plans.
+      This is enforced in _migrate_pricing_schema before this function is called.
     """
-    # (id, name, slug, price, plan_type, default_call_rate, profit_margin, agent_limit,
-    #  voice_clones, calls_per_month, wallet_min, sort_order)
+    # (id, name, slug, price, plan_type, default_call_rate, profit_margin,
+    #  agent_limit, voice_clones, wallet_min, sort_order)
+    # calls_per_month omitted — handled by the migration step above
     direct_plans = [
-        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 2.00, 1,    0,    100,  500.0,  0),
-        ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 2.00, 1,    0,    None, 1000.0, 1),
-        ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 1.50, 3,    1,    None, 3000.0, 2),
-        ("business",   "Business",    "business",   3000, "direct", 3.50, 1.00, 10,   3,    None, 5000.0, 3),
-        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, 0.50, None, None, None, 10000.0, 4),
+        ("free_trial", "Free Trial",  "free_trial", 0,    "direct", 4.50, 2.00, 1,    0,    500.0,  0),
+        ("starter",    "Starter",     "starter",    0,    "direct", 4.50, 2.00, 1,    0,    1000.0, 1),
+        ("growth",     "Growth",      "growth",     1500, "direct", 4.00, 1.50, 3,    1,    3000.0, 2),
+        ("business",   "Business",    "business",   3000, "direct", 3.50, 1.00, 10,   3,    5000.0, 3),
+        ("enterprise", "Enterprise",  "enterprise", 8000, "direct", 3.00, 0.50, None, None, 10000.0, 4),
     ]
     # (id, name, slug, price, plan_type, default_wholesale_rate, profit_margin,
     #  sub_client_limit, agents_per_client, voice_clones, sort_order)
@@ -446,32 +468,31 @@ def _seed_pricing_data(conn):
         ("agency_pro",     "Agency Pro",     "agency_pro",     20000, "agency", 3.00, 0.50, None, None, None, 7),
     ]
 
-    for pid, name, slug, price, ptype, call_rate, margin, agent_limit, vc, cpm, wmin, sord in direct_plans:
+    for pid, name, slug, price, ptype, call_rate, margin, agent_limit, vc, wmin, sord in direct_plans:
         exists = conn.execute(text("SELECT id FROM plans WHERE id=:pid"), {"pid": pid}).fetchone()
         if not exists:
             conn.execute(text("""
                 INSERT INTO plans
-                  (id,name,slug,price,currency,interval,max_users,description,
-                   is_active,sort_order,plan_type,call_rate,profit_margin,agent_limit,
-                   voice_clones,calls_per_month,wallet_min)
+                  (id, name, slug, price, currency, interval, max_users, description,
+                   is_active, sort_order, plan_type, call_rate, profit_margin,
+                   agent_limit, voice_clones, wallet_min)
                 VALUES
-                  (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
-                   :ptype,:call_rate,:margin,:agent_limit,:vc,:cpm,:wmin)
+                  (:id, :name, :slug, :price, 'INR', 'monthly', 0, '', 1, :sord,
+                   :ptype, :call_rate, :margin, :agent_limit, :vc, :wmin)
             """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
                        ptype=ptype, call_rate=call_rate, margin=margin,
-                       agent_limit=agent_limit, vc=vc, cpm=cpm, wmin=wmin))
+                       agent_limit=agent_limit, vc=vc, wmin=wmin))
         else:
-            # Do NOT overwrite call_rate — preserve any cascade-updated value.
-            # Set profit_margin only if not already set.
+            # Preserve call_rate (may have been cascade-updated).
+            # Set profit_margin only if not already initialised.
             conn.execute(text("""
                 UPDATE plans
-                SET plan_type=:ptype, agent_limit=:agent_limit,
-                    voice_clones=:vc, calls_per_month=:cpm, wallet_min=:wmin,
-                    price=:price, sort_order=:sord,
+                SET name=:name, plan_type=:ptype, agent_limit=:agent_limit,
+                    voice_clones=:vc, wallet_min=:wmin, price=:price, sort_order=:sord,
                     profit_margin = CASE WHEN profit_margin IS NULL THEN :margin ELSE profit_margin END
                 WHERE id=:pid
-            """), dict(ptype=ptype, agent_limit=agent_limit,
-                       vc=vc, cpm=cpm, wmin=wmin, price=price, sord=sord,
+            """), dict(name=name, ptype=ptype, agent_limit=agent_limit,
+                       vc=vc, wmin=wmin, price=price, sord=sord,
                        margin=margin, pid=pid))
 
     for pid, name, slug, price, ptype, wrate, margin, sub_limit, apc, vc, sord in agency_plans:
@@ -479,24 +500,24 @@ def _seed_pricing_data(conn):
         if not exists:
             conn.execute(text("""
                 INSERT INTO plans
-                  (id,name,slug,price,currency,interval,max_users,description,
-                   is_active,sort_order,plan_type,wholesale_rate,profit_margin,
-                   sub_client_limit,agents_per_client,voice_clones)
+                  (id, name, slug, price, currency, interval, max_users, description,
+                   is_active, sort_order, plan_type, wholesale_rate, profit_margin,
+                   sub_client_limit, agents_per_client, voice_clones)
                 VALUES
-                  (:id,:name,:slug,:price,'INR','monthly',0,'',1,:sord,
-                   :ptype,:wrate,:margin,:sub_limit,:apc,:vc)
+                  (:id, :name, :slug, :price, 'INR', 'monthly', 0, '', 1, :sord,
+                   :ptype, :wrate, :margin, :sub_limit, :apc, :vc)
             """), dict(id=pid, name=name, slug=slug, price=price, sord=sord,
                        ptype=ptype, wrate=wrate, margin=margin,
                        sub_limit=sub_limit, apc=apc, vc=vc))
         else:
-            # Do NOT overwrite wholesale_rate — preserve cascade-updated value.
+            # Preserve wholesale_rate — may have been cascade-updated.
             conn.execute(text("""
                 UPDATE plans
-                SET plan_type=:ptype, sub_client_limit=:sub_limit, agents_per_client=:apc,
-                    voice_clones=:vc, price=:price, sort_order=:sord,
+                SET name=:name, plan_type=:ptype, sub_client_limit=:sub_limit,
+                    agents_per_client=:apc, voice_clones=:vc, price=:price, sort_order=:sord,
                     profit_margin = CASE WHEN profit_margin IS NULL THEN :margin ELSE profit_margin END
                 WHERE id=:pid
-            """), dict(ptype=ptype, sub_limit=sub_limit, apc=apc,
+            """), dict(name=name, ptype=ptype, sub_limit=sub_limit, apc=apc,
                        vc=vc, price=price, sord=sord, margin=margin, pid=pid))
 
     # Upsert recharge packs

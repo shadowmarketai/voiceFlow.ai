@@ -18,11 +18,11 @@ import api from '../../services/api'
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEFAULT_DIRECT_PLANS = [
-  { id: 'free_trial',  name: 'Free Trial',  monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    calls_mo: 100,  voice_clones: 0,    wallet_min: 500,   is_active: true },
-  { id: 'starter',     name: 'Starter',     monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    calls_mo: null, voice_clones: 0,    wallet_min: 1000,  is_active: true },
-  { id: 'growth',      name: 'Growth',      monthly_fee: 1500, call_rate: 4.00, profit_margin: 1.50, agents: 3,    calls_mo: null, voice_clones: 1,    wallet_min: 3000,  is_active: true },
-  { id: 'business',    name: 'Business',    monthly_fee: 3000, call_rate: 3.50, profit_margin: 1.00, agents: 10,   calls_mo: null, voice_clones: 3,    wallet_min: 5000,  is_active: true },
-  { id: 'enterprise',  name: 'Enterprise',  monthly_fee: 8000, call_rate: 3.00, profit_margin: 0.50, agents: null, calls_mo: null, voice_clones: null, wallet_min: 10000, is_active: true },
+  { id: 'free_trial',  name: 'Free Trial',  monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    voice_clones: 0,    wallet_min: 500,   is_active: true },
+  { id: 'starter',     name: 'Starter',     monthly_fee: 0,    call_rate: 4.50, profit_margin: 2.00, agents: 1,    voice_clones: 0,    wallet_min: 1000,  is_active: true },
+  { id: 'growth',      name: 'Growth',      monthly_fee: 1500, call_rate: 4.00, profit_margin: 1.50, agents: 3,    voice_clones: 1,    wallet_min: 3000,  is_active: true },
+  { id: 'business',    name: 'Business',    monthly_fee: 3000, call_rate: 3.50, profit_margin: 1.00, agents: 10,   voice_clones: 3,    wallet_min: 5000,  is_active: true },
+  { id: 'enterprise',  name: 'Enterprise',  monthly_fee: 8000, call_rate: 3.00, profit_margin: 0.50, agents: null, voice_clones: null, wallet_min: 10000, is_active: true },
 ]
 
 const DEFAULT_AGENCY_PLANS = [
@@ -350,9 +350,8 @@ export default function PlatformPricingPage() {
 
         const normalizePlan = (p) => ({
           ...p,
-          agents:        p.agents        ?? p.agent_limit      ?? null,
-          calls_mo:      p.calls_mo      ?? p.calls_per_month  ?? null,
-          monthly_fee:   p.monthly_fee   ?? p.price            ?? 0,
+          agents:        p.agents        ?? p.agent_limit  ?? null,
+          monthly_fee:   p.monthly_fee   ?? p.price        ?? 0,
           call_rate:     p.call_rate     ?? 4.50,
           profit_margin: p.profit_margin ?? null,
           voice_clones:  p.voice_clones  ?? null,
@@ -402,13 +401,13 @@ export default function PlatformPricingPage() {
   // Map frontend field names → DB column names. Explicitly omit frontend-only aliases
   // (monthly_fee, agents, calls_mo, sub_clients) so they never reach the DB layer.
   function serializeDirect(p) {
+    // calls_mo excluded — calls_per_month is managed server-side (100 for free_trial, null for others)
     const { monthly_fee, agents, calls_mo, sub_clients, ...rest } = p
     return {
       ...rest,
-      plan_type:       'direct',
-      price:           monthly_fee,
-      agent_limit:     agents,
-      calls_per_month: calls_mo,
+      plan_type:   'direct',
+      price:       monthly_fee,
+      agent_limit: agents,
     }
   }
 
@@ -799,7 +798,6 @@ export default function PlatformPricingPage() {
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Call Rate ₹/min</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-emerald-600 uppercase tracking-wide">Margin ₹/min</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Max Agents</th>
-                    <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Calls/Month</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Voice Clones</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Wallet Min ₹</th>
                     <th scope="col" className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide text-center">Active</th>
@@ -807,7 +805,7 @@ export default function PlatformPricingPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={9} />)
+                    Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={8} />)
                   ) : (
                     directPlans.map((plan, idx) => (
                       <tr
@@ -910,55 +908,6 @@ export default function PlatformPricingPage() {
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'agents', null) }}
-                                className="text-slate-400 hover:text-emerald-600 transition-colors flex-shrink-0"
-                                aria-label="Set to unlimited"
-                                title="Set unlimited"
-                              >
-                                <Zap className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Calls/month (null = unlimited, 0 = none, n = limit) */}
-                        <td className="px-4 py-3">
-                          {isUnlimited(plan.calls_mo) ? (
-                            <div className="flex items-center gap-1.5">
-                              <UnlimitedBadge />
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'calls_mo', 100) }}
-                                className="text-slate-400 hover:text-slate-600 transition-colors"
-                                aria-label="Set a calls per month limit"
-                                title="Set limit"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : plan.calls_mo === 0 ? (
-                            <div className="flex items-center gap-1.5">
-                              <NoneBadge />
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'calls_mo', 100) }}
-                                className="text-slate-400 hover:text-slate-600 transition-colors"
-                                aria-label="Set calls per month limit"
-                                title="Set limit"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1.5 w-28">
-                              <NumInput
-                                value={displayVal(plan.calls_mo)}
-                                onChange={(e) => updateDirect(idx, 'calls_mo', parseNullable(e.target.value))}
-                                min={0}
-                                placeholder="∞"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); updateDirect(idx, 'calls_mo', null) }}
                                 className="text-slate-400 hover:text-emerald-600 transition-colors flex-shrink-0"
                                 aria-label="Set to unlimited"
                                 title="Set unlimited"

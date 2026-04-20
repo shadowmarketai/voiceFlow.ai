@@ -493,8 +493,10 @@ async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_a
 
     # "monthly_fee" is a frontend alias — serialized to "price" before sending.
     # Never include "monthly_fee" here; the DB column is "price".
+    # "calls_per_month" is NOT editable via API: free_trial is fixed at 100 (set by migration),
+    # paid plans are always NULL (unlimited). The prepaid wallet is the real limiter.
     _DIRECT_ALLOWED = ["name", "price", "call_rate", "profit_margin",
-                       "agent_limit", "voice_clones", "calls_per_month", "wallet_min", "is_active"]
+                       "agent_limit", "voice_clones", "wallet_min", "is_active"]
     _AGENCY_ALLOWED = ["name", "price", "wholesale_rate", "profit_margin",
                        "sub_client_limit", "agents_per_client", "voice_clones", "is_active"]
 
