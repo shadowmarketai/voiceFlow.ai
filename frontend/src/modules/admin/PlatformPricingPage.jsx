@@ -247,7 +247,6 @@ export default function PlatformPricingPage() {
   const [basePlan, setBasePlan] = useState(null)
   const [baseCatalog, setBaseCatalog] = useState(null)
   const [baseSaving, setBaseSaving] = useState(false)
-  const [adminToken, setAdminToken] = useState(() => localStorage.getItem('voiceflow_admin_token') || '')
   const [baseAgencyId, setBaseAgencyId] = useState('default')
 
   // Dirty tracking (snapshot of last-saved state)
@@ -266,29 +265,31 @@ export default function PlatformPricingPage() {
   // ── Base cost handlers ────────────────────────────────────────────────────
 
   const loadBasePlan = useCallback(async () => {
-    if (!adminToken) return
     try {
       const [planRes, catRes] = await Promise.allSettled([
-        api.get(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`, {
-          headers: { 'X-Admin-Token': adminToken }
-        }),
+        api.get(`/api/v1/billing/admin/rate-plan/${baseAgencyId}`),
         api.get('/api/v1/billing/catalog'),
       ])
-      if (planRes.status === 'fulfilled') setBasePlan(planRes.value.data)
-      if (catRes.status === 'fulfilled') setBaseCatalog(catRes.value.data.catalog)
       if (planRes.status === 'fulfilled') {
+        setBasePlan(planRes.value.data)
         const p = planRes.value.data
         setPlatformCostPerMin(p.min_floor_inr || p.platform_fee_inr || 2.50)
+      } else {
+        toast.error('Failed to load base plan — check your super admin login')
       }
+      if (catRes.status === 'fulfilled') setBaseCatalog(catRes.value.data.catalog)
     } catch {
       toast.error('Failed to load base plan')
     }
-  }, [adminToken, baseAgencyId])
+  }, [baseAgencyId])
 
   useEffect(() => { if (activeTab === 'base') loadBasePlan() }, [activeTab, loadBasePlan])
 
   const saveBasePlan = async () => {
-    if (!basePlan || !adminToken) return
+    if (!basePlan) {
+      toast.error('Load the base plan first before saving')
+      return
+    }
     setBaseSaving(true)
 
     // Capture old base cost before saving
@@ -304,7 +305,7 @@ export default function PlatformPricingPage() {
         min_floor_inr: basePlan.min_floor_inr,
         lock_llm: basePlan.lock_llm,
         lock_tts: basePlan.lock_tts,
-      }, { headers: { 'X-Admin-Token': adminToken } })
+      })
 
       // ── Cascade base cost change to all plan rates ──────────────────────
       if (Math.abs(newBase - oldBase) >= 0.01) {
@@ -578,63 +579,25 @@ export default function PlatformPricingPage() {
             </div>
             <div className="p-5 space-y-5">
 
-              {/* Admin token gate */}
-              {!adminToken ? (
-                <div className="max-w-sm space-y-3">
-                  <p className="text-sm text-slate-600">Enter admin token to manage base platform costs.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      placeholder="Admin token"
-                      className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          localStorage.setItem('voiceflow_admin_token', e.target.value)
-                          setAdminToken(e.target.value)
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        const val = e.currentTarget.previousElementSibling.value
-                        localStorage.setItem('voiceflow_admin_token', val)
-                        setAdminToken(val)
-                      }}
-                      className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
-                    >
-                      Unlock
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Agency selector */}
-                  <div className="flex items-center gap-3">
-                    <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Agency ID</label>
-                    <input
-                      value={baseAgencyId}
-                      onChange={(e) => setBaseAgencyId(e.target.value)}
-                      placeholder="default"
-                      className="flex-1 max-w-xs border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
-                    />
-                    <button
-                      type="button"
-                      onClick={loadBasePlan}
-                      className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
-                    >
-                      <RefreshCw className="w-4 h-4" /> Load
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { localStorage.removeItem('voiceflow_admin_token'); setAdminToken('') }}
-                      className="text-sm text-slate-400 hover:text-red-600 transition-colors"
-                    >
-                      Log out
-                    </button>
-                  </div>
+              {/* Agency selector */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-slate-700 whitespace-nowrap">Agency ID</label>
+                <input
+                  value={baseAgencyId}
+                  onChange={(e) => setBaseAgencyId(e.target.value)}
+                  placeholder="default"
+                  className="flex-1 max-w-xs border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                />
+                <button
+                  type="button"
+                  onClick={loadBasePlan}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
+                >
+                  <RefreshCw className="w-4 h-4" /> Load
+                </button>
+              </div>
 
-                  {basePlan && baseCatalog ? (
+              {basePlan && baseCatalog ? (
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                       <div className="lg:col-span-2 space-y-5">
                         {/* Provider stack */}
@@ -760,10 +723,8 @@ export default function PlatformPricingPage() {
                         </div>
                       </div>
                     </div>
-                  ) : (
-                    <p className="text-sm text-slate-500">Enter an agency ID and click Load to view and edit the base cost configuration.</p>
-                  )}
-                </>
+              ) : (
+                <p className="text-sm text-slate-500">Enter an agency ID above and click Load to view and edit the base cost configuration.</p>
               )}
             </div>
           </div>

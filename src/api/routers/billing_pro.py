@@ -29,7 +29,7 @@ import secrets
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from api.database import USE_POSTGRES, db
@@ -63,12 +63,44 @@ def _current_tenant(x_tenant_id: str | None = Header(default=None)) -> str:
     return x_tenant_id or "default"
 
 
-def _require_admin(x_admin_token: str | None = Header(default=None)) -> bool:
-    """Tiny agency-admin gate. Set ADMIN_TOKEN env var in production."""
+def _require_admin(
+    request: Request,
+    x_admin_token: str | None = Header(default=None),
+) -> bool:
+    """Admin gate: accepts either the ADMIN_TOKEN header OR a valid JWT super admin.
+
+    This allows logged-in super admins to manage base platform costs without
+    needing a separate admin token.
+    """
+    # 1. Static token check (original mechanism)
     expected = os.getenv("ADMIN_TOKEN", "dev-admin-token")
-    if not x_admin_token or not hmac.compare_digest(x_admin_token, expected):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin token required")
-    return True
+    if x_admin_token and hmac.compare_digest(x_admin_token, expected):
+        return True
+
+    # 2. JWT super-admin check — look for Bearer token in Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+        try:
+            from api.services.auth_service import AuthService
+            payload = AuthService.decode_token(token)
+            if payload.get("is_super_admin") or payload.get("role") == "super_admin":
+                return True
+            # Also check the DB for is_super_admin flag
+            user_id = payload.get("user_id") or payload.get("sub")
+            if user_id:
+                from api.database import db as _db
+                with _db() as conn:
+                    row = conn.execute(
+                        "SELECT is_super_admin FROM users WHERE id=? OR email=?",
+                        (user_id, user_id),
+                    ).fetchone()
+                    if row and row["is_super_admin"]:
+                        return True
+        except Exception:
+            pass
+
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin access required")
 
 
 # ─── Pricing catalog ───────────────────────────────────────────────────────
