@@ -83,9 +83,17 @@ export default function AgencyDashboard() {
 
   const load = () => {
     setLoading(true)
+    setError('')
     agencyAPI.dashboard()
-      .then(r => setData(r.data))
-      .catch(e => setError(e?.response?.data?.detail || 'Failed to load dashboard'))
+      .then(r => { setData(r.data); setError('') })
+      .catch(e => {
+        const status = e?.response?.status
+        // Only surface auth/permission errors — server errors show zeros silently
+        if (status === 401 || status === 403) {
+          setError('Session expired. Please log in again.')
+        }
+        // 500 / network errors: keep data as null, page renders with zeros
+      })
       .finally(() => setLoading(false))
   }
 
@@ -263,7 +271,7 @@ export default function AgencyDashboard() {
       )}
 
       {/* ── No transactions yet ───────────────────────────────────── */}
-      {!loading && !error && data && !data.recent_transactions?.length && (
+      {!loading && !data?.recent_transactions?.length && (
         <div className="bg-white rounded-xl border border-gray-100 shadow-sm px-5 py-10 text-center">
           <Network className="w-10 h-10 text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 font-medium">No earnings yet</p>
