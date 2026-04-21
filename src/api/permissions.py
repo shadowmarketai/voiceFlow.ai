@@ -98,8 +98,8 @@ PERMISSION_MATRIX: dict[str, dict[str, set[str]]] = {
         "quotation": {"create", "read", "update"},
     },
     "user": {
-        "crm": {"read"},
-        "voiceAI": {"read"},
+        "crm": {"create", "read", "update", "delete"},
+        "voiceAI": {"create", "read", "update", "delete"},
         "campaigns": set(),
         "analytics": {"read"},
         "helpdesk": {"create", "read", "update"},

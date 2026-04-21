@@ -51,6 +51,9 @@ export default function CrmContactsPage() {
   const [pipeline, setPipeline] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [showAddLead, setShowAddLead] = useState(false);
+  const [addingLead, setAddingLead] = useState(false);
+  const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', business_name: '', location_city: '', business_type: '', source: 'manual' });
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -125,6 +128,29 @@ export default function CrmContactsPage() {
     }
   };
 
+  const handleAddLead = async () => {
+    if (!newLead.name?.trim()) { toast.error('Name is required'); return; }
+    if (!newLead.phone?.trim() && !newLead.email?.trim()) { toast.error('Phone or email required'); return; }
+    setAddingLead(true);
+    try {
+      await crmLeadsAPI.capture({
+        ...newLead,
+        source: newLead.source || 'manual',
+        consent_given: true,
+        consent_source: 'manual_entry',
+      });
+      toast.success('Lead added!');
+      setNewLead({ name: '', phone: '', email: '', business_name: '', location_city: '', business_type: '', source: 'manual' });
+      setShowAddLead(false);
+      loadLeads();
+      loadPipeline();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to add lead');
+    } finally {
+      setAddingLead(false);
+    }
+  };
+
   const totalPages = Math.ceil(total / perPage);
 
   return (
@@ -148,11 +174,66 @@ export default function CrmContactsPage() {
             className="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-600">
             <Upload className="w-4 h-4" /> Import CSV
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium">
+          <button onClick={() => setShowAddLead(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 font-medium">
             <Plus className="w-4 h-4" /> Add Lead
           </button>
         </div>
       </div>
+
+      {/* Add Lead Modal */}
+      <AnimatePresence>
+        {showAddLead && (
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-800">Add New Lead</h3>
+              <button onClick={() => setShowAddLead(false)}><X className="w-4 h-4 text-slate-400" /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Name <span className="text-red-500">*</span></label>
+                <input type="text" value={newLead.name} onChange={e => setNewLead(p => ({ ...p, name: e.target.value }))}
+                  placeholder="John Doe" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Phone</label>
+                <input type="text" value={newLead.phone} onChange={e => setNewLead(p => ({ ...p, phone: e.target.value }))}
+                  placeholder="+91 98765 43210" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
+                <input type="email" value={newLead.email} onChange={e => setNewLead(p => ({ ...p, email: e.target.value }))}
+                  placeholder="john@company.com" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Business Name</label>
+                <input type="text" value={newLead.business_name} onChange={e => setNewLead(p => ({ ...p, business_name: e.target.value }))}
+                  placeholder="Acme Corp" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">City</label>
+                <input type="text" value={newLead.location_city} onChange={e => setNewLead(p => ({ ...p, location_city: e.target.value }))}
+                  placeholder="Chennai" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">Business Type</label>
+                <input type="text" value={newLead.business_type} onChange={e => setNewLead(p => ({ ...p, business_type: e.target.value }))}
+                  placeholder="Real Estate" className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white" />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setShowAddLead(false)}
+                className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={handleAddLead} disabled={addingLead}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium disabled:opacity-50">
+                {addingLead ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                {addingLead ? 'Adding...' : 'Add Lead'}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Pipeline Stats */}
       {pipeline && (
