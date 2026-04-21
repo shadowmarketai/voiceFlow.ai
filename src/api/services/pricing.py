@@ -84,6 +84,163 @@ RECHARGE_PACKS = [
 GST_RATE = 0.18
 
 
+# ── Provider tier ordering (used for access gating) ─────────────────────────
+
+PROVIDER_TIERS = ["free", "budget", "standard", "premium", "ultra"]
+
+# Canonical tier for each catalog badge (case-insensitive).
+# Every COST_CATALOG entry has a "badge" — we normalise it to a tier here.
+_BADGE_TO_TIER: dict[str, str] = {
+    "free": "free", "fastest": "budget", "ultra-fast": "budget",
+    "cheapest": "budget", "low": "budget", "fast": "budget",
+    "budget": "budget", "indian": "standard", "reliable": "standard",
+    "accurate": "standard", "standard": "standard", "india": "standard",
+    "smart": "standard", "quality": "premium", "highest": "premium",
+    "premium": "premium", "native audio": "premium", "ultra": "ultra",
+}
+
+
+def get_provider_tier(category: str, catalog_key: str) -> str:
+    """Return the normalised tier ('free', 'budget', 'standard', 'premium', 'ultra') for a catalog entry."""
+    badge = COST_CATALOG.get(category, {}).get(catalog_key, {}).get("badge", "standard")
+    return _BADGE_TO_TIER.get(badge.lower(), "standard")
+
+
+def tier_allowed(tier: str, allowed_tiers: list[str]) -> bool:
+    """Check whether a provider tier is in the allowed list."""
+    return tier in allowed_tiers
+
+
+# ── Agent config → COST_CATALOG key mapping ─────────────────────────────────
+# The Agent Builder stores provider/model as (llmProvider, llmModel) in the
+# voice_agents.config JSON.  The billing system uses COST_CATALOG keys like
+# "groq_llama3_8b" or "claude_sonnet".  This mapping bridges the gap so that
+# call settlement charges for the EXACT model the agent actually uses.
+
+MODEL_TO_CATALOG: dict[str, dict[tuple[str, str], str]] = {
+    "llm": {
+        # Groq
+        ("groq", "default"):                     "groq_llama3_8b",
+        ("groq", "llama-3.1-8b-instant"):        "groq_llama3_8b",
+        ("groq", "gemma2-9b-it"):                "groq_llama3_8b",   # similar cost bracket
+        ("groq", "llama-3.1-70b-versatile"):     "groq_llama3_70b",
+        ("groq", "llama-3.3-70b-versatile"):     "groq_llama3_70b",
+        ("groq", "mixtral-8x7b-32768"):          "groq_llama3_70b",  # similar cost bracket
+        # Anthropic
+        ("anthropic", "default"):                "claude_haiku",
+        ("anthropic", "claude-haiku-4-5-20251001"): "claude_haiku",
+        ("anthropic", "claude-haiku-3-5"):       "claude_haiku",
+        ("anthropic", "claude-sonnet-4-6"):      "claude_sonnet",
+        ("anthropic", "claude-sonnet-4-5"):      "claude_sonnet",
+        ("anthropic", "claude-opus-4-6"):        "claude_opus",
+        ("anthropic", "claude-opus-4-5"):        "claude_opus",
+        # OpenAI
+        ("openai", "default"):                   "gpt4o_mini",
+        ("openai", "gpt-4o-mini"):               "gpt4o_mini",
+        ("openai", "gpt-3.5-turbo"):             "gpt4o_mini",       # cheapest bracket
+        ("openai", "gpt-4o"):                    "gpt4o",
+        ("openai", "gpt-4-turbo"):               "gpt4o",
+        ("openai", "gpt-4"):                     "gpt4o",
+        ("openai", "o1-mini"):                   "gpt4o",
+        ("openai", "o1-preview"):                "gpt4o",
+        # Gemini
+        ("gemini", "default"):                   "gemini_flash",
+        ("gemini", "gemini-2.5-flash"):          "gemini_flash",
+        ("gemini", "gemini-2.0-flash"):          "gemini_flash",
+        ("gemini", "gemini-1.5-flash"):          "gemini_flash",
+        ("gemini", "gemini-2.0-flash-thinking"): "gemini_flash",
+        ("gemini", "gemini-2.5-pro"):            "gemini_25_hd",
+        ("gemini", "gemini-1.5-pro"):            "gemini_25_hd",
+        # DeepSeek
+        ("deepseek", "default"):                 "deepseek",
+        ("deepseek", "deepseek-chat"):           "deepseek",
+        ("deepseek", "deepseek-reasoner"):       "deepseek",
+        ("deepseek", "deepseek-coder"):          "deepseek",
+    },
+}
+
+
+def resolve_catalog_key(category: str, provider_id: str, model_id: str | None = None) -> str:
+    """Map (provider, model) from agent config to a COST_CATALOG key.
+
+    Falls back to (provider, 'default') then to provider_id itself.
+    """
+    model_id = model_id or "default"
+    key = MODEL_TO_CATALOG.get(category, {}).get((provider_id, model_id))
+    if key is None:
+        key = MODEL_TO_CATALOG.get(category, {}).get((provider_id, "default"))
+    if key is None and provider_id in COST_CATALOG.get(category, {}):
+        return provider_id
+    return key or provider_id
+
+
+def resolve_agent_providers(agent_config: dict) -> dict[str, str]:
+    """Extract the 4 billing catalog keys from a voice_agents.config JSON blob.
+
+    Returns {"stt": "...", "llm": "...", "tts": "...", "telephony": "..."} where
+    each value is a COST_CATALOG key suitable for calculate_cost().
+    """
+    llm_provider = agent_config.get("llmProvider") or "groq"
+    llm_model = agent_config.get("llmModel") or "default"
+
+    # STT: Agent Builder uses preset pipelines, not per-agent STT selection.
+    # Default to deepgram_nova2 unless explicitly set.
+    stt_key = agent_config.get("sttProvider") or "deepgram_nova2"
+
+    # TTS: Agent Builder doesn't expose a direct catalog key; it uses voice IDs.
+    # Map by engine if available, else default.
+    tts_engine = agent_config.get("ttsEngine") or agent_config.get("tts") or "cartesia"
+    tts_key = tts_engine if tts_engine in COST_CATALOG.get("tts", {}) else "cartesia"
+
+    # Telephony: from channel config, not agent config. Default exotel.
+    tel_key = agent_config.get("telephonyProvider") or "exotel"
+    if tel_key not in COST_CATALOG.get("telephony", {}):
+        tel_key = "exotel"
+
+    return {
+        "stt": stt_key if stt_key in COST_CATALOG.get("stt", {}) else "deepgram_nova2",
+        "llm": resolve_catalog_key("llm", llm_provider, llm_model),
+        "tts": tts_key,
+        "telephony": tel_key,
+    }
+
+
+def calculate_agent_cost(
+    agent_config: dict,
+    plan_multiplier: float = 1.0,
+    duration_min: float = 1.0,
+) -> dict[str, Any]:
+    """Calculate per-minute cost for an agent based on its ACTUAL config.
+
+    This is the single source of truth for call settlement.
+    Returns raw_cost, multiplied cost, and provider breakdown.
+    """
+    providers = resolve_agent_providers(agent_config)
+    stt_cost = _lookup("stt", providers["stt"])
+    llm_cost = _lookup("llm", providers["llm"])
+    tts_cost = _lookup("tts", providers["tts"])
+    tel_cost = _lookup("telephony", providers["telephony"])
+
+    raw_per_min = round(stt_cost + llm_cost + tts_cost + tel_cost, 4)
+    billed_per_min = round(raw_per_min * max(plan_multiplier, 1.0), 2)
+    total = round(billed_per_min * duration_min, 2)
+
+    return {
+        "providers": providers,
+        "raw_per_min": raw_per_min,
+        "plan_multiplier": plan_multiplier,
+        "billed_per_min": billed_per_min,
+        "total": total,
+        "duration_min": duration_min,
+        "breakdown": {
+            "stt": stt_cost,
+            "llm": llm_cost,
+            "tts": tts_cost,
+            "telephony": tel_cost,
+        },
+    }
+
+
 def _lookup(category: str, key: str) -> float:
     """Return per-minute cost for a provider; 0 for unknown."""
     return float(COST_CATALOG.get(category, {}).get(key, {}).get("cost", 0.0))

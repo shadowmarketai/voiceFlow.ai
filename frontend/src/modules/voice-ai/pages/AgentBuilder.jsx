@@ -120,13 +120,66 @@ function getModelOptions(providerId) {
   return MODEL_OPTIONS[providerId] || [{ id: 'default', label: 'Default' }];
 }
 
-/* Map AgentBuilder-internal provider ids → pricing catalog keys */
+/* Map (provider, model) → pricing catalog key.
+   This must match MODEL_TO_CATALOG in pricing.py so the cost estimate
+   in the builder matches what call settlement actually charges. */
+const _MODEL_CATALOG_MAP = {
+  'groq:default': 'groq_llama3_8b',
+  'groq:llama-3.1-8b-instant': 'groq_llama3_8b',
+  'groq:gemma2-9b-it': 'groq_llama3_8b',
+  'groq:llama-3.1-70b-versatile': 'groq_llama3_70b',
+  'groq:llama-3.3-70b-versatile': 'groq_llama3_70b',
+  'groq:mixtral-8x7b-32768': 'groq_llama3_70b',
+  'anthropic:default': 'claude_haiku',
+  'anthropic:claude-haiku-4-5-20251001': 'claude_haiku',
+  'anthropic:claude-haiku-3-5': 'claude_haiku',
+  'anthropic:claude-sonnet-4-6': 'claude_sonnet',
+  'anthropic:claude-sonnet-4-5': 'claude_sonnet',
+  'anthropic:claude-opus-4-6': 'claude_opus',
+  'anthropic:claude-opus-4-5': 'claude_opus',
+  'openai:default': 'gpt4o_mini',
+  'openai:gpt-4o-mini': 'gpt4o_mini',
+  'openai:gpt-3.5-turbo': 'gpt4o_mini',
+  'openai:gpt-4o': 'gpt4o',
+  'openai:gpt-4-turbo': 'gpt4o',
+  'openai:gpt-4': 'gpt4o',
+  'openai:o1-mini': 'gpt4o',
+  'openai:o1-preview': 'gpt4o',
+  'gemini:default': 'gemini_flash',
+  'gemini:gemini-2.5-flash': 'gemini_flash',
+  'gemini:gemini-2.0-flash': 'gemini_flash',
+  'gemini:gemini-1.5-flash': 'gemini_flash',
+  'gemini:gemini-2.0-flash-thinking': 'gemini_flash',
+  'gemini:gemini-2.5-pro': 'gemini_25_hd',
+  'gemini:gemini-1.5-pro': 'gemini_25_hd',
+  'deepseek:default': 'deepseek',
+  'deepseek:deepseek-chat': 'deepseek',
+  'deepseek:deepseek-reasoner': 'deepseek',
+  'deepseek:deepseek-coder': 'deepseek',
+};
+
+/** Resolve catalog key from (provider, model) — matches backend pricing.py */
+function llmToCatalog(provider, model) {
+  return _MODEL_CATALOG_MAP[`${provider}:${model}`]
+    || _MODEL_CATALOG_MAP[`${provider}:default`]
+    || 'groq_llama3_8b';
+}
+
+/* Legacy flat map for quick reference (default model per provider) */
 const LLM_TO_CATALOG = {
   groq: 'groq_llama3_8b',
   anthropic: 'claude_haiku',
   openai: 'gpt4o_mini',
-  gemini: 'gemini_25_hd',
+  gemini: 'gemini_flash',
   deepseek: 'deepseek',
+};
+
+/* Tier classification for each catalog key (must match backend COST_CATALOG badges) */
+const LLM_TIER = {
+  groq_llama3_8b: 'budget', gemini_flash: 'budget',
+  groq_llama3_70b: 'standard', gpt4o_mini: 'standard', claude_haiku: 'standard', deepseek: 'standard',
+  gemini_25_hd: 'premium', claude_sonnet: 'premium', gpt4o: 'premium',
+  claude_opus: 'ultra',
 };
 
 // Use the canonical preset map from PipelineSelector
@@ -256,12 +309,37 @@ export default function AgentBuilder() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('priya');
 
+  // ── Plan tier gating ──
+  const [allowedTiers, setAllowedTiers] = useState(['free', 'budget', 'standard', 'premium', 'ultra']);
+  const [planName, setPlanName] = useState('');
+
+  useEffect(() => {
+    // Fetch allowed provider tiers from billing API
+    (async () => {
+      try {
+        const res = await agentsAPI.post('/api/v1/billing/validate-providers', {
+          llmProvider: 'groq', llmModel: 'default',
+        });
+        if (res.data?.allowed_tiers) setAllowedTiers(res.data.allowed_tiers);
+        if (res.data?.plan_name) setPlanName(res.data.plan_name);
+      } catch {
+        // Fallback: allow all (don't block on API failure)
+      }
+    })();
+  }, []);
+
+  /** Check if an LLM catalog key is allowed by the current plan */
+  function isLlmAllowed(catalogKey) {
+    const tier = LLM_TIER[catalogKey] || 'standard';
+    return allowedTiers.includes(tier);
+  }
+
   // Track previous LLM catalog key for cost-impact warnings.
   // This must come AFTER llmProvider is declared (TDZ).
-  const prevLlmRef = useRef(LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b');
+  const prevLlmRef = useRef(llmToCatalog(llmProvider, llmModel));
   const previousLlmCatalog = prevLlmRef.current;
   useEffect(() => {
-    prevLlmRef.current = LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b';
+    prevLlmRef.current = llmToCatalog(llmProvider, llmModel);
     // Reset model to default when the provider changes so we don't keep a
     // stale model id from the previous provider's catalog.
     setLlmModel('default');
@@ -749,7 +827,7 @@ export default function AgentBuilder() {
             {/* Live cost calculator — uses backend pricing catalog + tenant rate plan */}
             <CostCalculator
               stt={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).stt}
-              llm={LLM_TO_CATALOG[llmProvider] || 'groq_llama3_8b'}
+              llm={llmToCatalog(llmProvider, llmModel)}
               tts={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).tts}
               telephony={(PRESET_TO_PIPELINE[quickPreset] || PRESET_TO_PIPELINE.low_latency).telephony}
               previousLlm={previousLlmCatalog}
@@ -778,16 +856,29 @@ export default function AgentBuilder() {
               <div className="space-y-3">
                 <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Provider</label>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  {LLM_PROVIDERS.map(p => (
-                    <button key={p.id} onClick={() => setLlmProvider(p.id)}
-                      className={`p-3 rounded-xl border-2 text-left transition-all ${llmProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+                  {LLM_PROVIDERS.map(p => {
+                    const defaultCatalog = LLM_TO_CATALOG[p.id] || 'groq_llama3_8b';
+                    const providerAllowed = isLlmAllowed(defaultCatalog);
+                    return (
+                    <button key={p.id}
+                      onClick={() => providerAllowed ? setLlmProvider(p.id) : toast.error(`${p.name} requires a plan upgrade (${(LLM_TIER[defaultCatalog] || 'standard').replace(/^./, c => c.toUpperCase())} tier)`)}
+                      className={[
+                        'p-3 rounded-xl border-2 text-left transition-all',
+                        !providerAllowed ? 'opacity-50 border-gray-200 cursor-not-allowed' :
+                        llmProvider === p.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300',
+                      ].join(' ')}>
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-semibold text-gray-900">{p.name}</p>
-                        {p.badge && <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{p.badge}</span>}
+                        <div className="flex items-center gap-1">
+                          {!providerAllowed && <Shield className="w-3 h-3 text-amber-500" />}
+                          {p.badge && <span className="text-[8px] font-medium px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">{p.badge}</span>}
+                        </div>
                       </div>
                       <p className="text-[10px] text-gray-400 mt-0.5 font-mono">{p.model}</p>
+                      {!providerAllowed && <p className="text-[9px] text-amber-600 mt-1">Upgrade plan to unlock</p>}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </Section>

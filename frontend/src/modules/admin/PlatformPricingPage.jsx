@@ -426,6 +426,8 @@ export default function PlatformPricingPage() {
       plan_type:   'direct',
       price:       monthly_fee,
       agent_limit: agents,
+      allowed_provider_tiers: Array.isArray(p.allowed_provider_tiers)
+        ? JSON.stringify(p.allowed_provider_tiers) : p.allowed_provider_tiers,
     }
   }
 
@@ -436,6 +438,8 @@ export default function PlatformPricingPage() {
       plan_type:        'agency',
       price:            monthly_fee,
       sub_client_limit: sub_clients,
+      allowed_provider_tiers: Array.isArray(p.allowed_provider_tiers)
+        ? JSON.stringify(p.allowed_provider_tiers) : p.allowed_provider_tiers,
     }
   }
 
@@ -581,6 +585,10 @@ export default function PlatformPricingPage() {
         >
           <Package className="w-3.5 h-3.5" aria-hidden="true" />
           Recharge Packs
+        </TabButton>
+        <TabButton active={activeTab === 'access'} onClick={() => setActiveTab('access')}>
+          <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+          Provider Access
         </TabButton>
       </nav>
 
@@ -1500,6 +1508,144 @@ export default function PlatformPricingPage() {
           </div>
         </section>
       )}
+
+      {/* ── Provider Access Matrix ──────────────────────────────────────── */}
+      {activeTab === 'access' && (
+        <section aria-label="Provider Access Matrix">
+          <div className="bg-white ring-1 ring-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100">
+              <h2 className="text-base font-semibold text-slate-900">Provider Access Matrix</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Control which provider tiers each plan can access. Users will be blocked from selecting locked tiers in the Agent Builder.
+              </p>
+            </div>
+            <div className="p-5">
+              <ProviderAccessMatrix
+                directPlans={directPlans}
+                agencyPlans={agencyPlans}
+                onUpdateDirect={(idx, tiers) => updateDirect(idx, 'allowed_provider_tiers', tiers)}
+                onUpdateAgency={(idx, tiers) => updateAgency(idx, 'allowed_provider_tiers', tiers)}
+              />
+              <div className="flex justify-end mt-5">
+                <button
+                  type="button"
+                  onClick={savePlans}
+                  disabled={savingPlans}
+                  className="flex items-center gap-2 px-5 py-2 rounded-xl bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                  {savingPlans ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save Access Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+
+// ─── Provider Access Matrix Component ────────────────────────────────────────
+
+const TIERS = ['free', 'budget', 'standard', 'premium', 'ultra']
+const TIER_COLORS = {
+  free:     'bg-slate-100 text-slate-600',
+  budget:   'bg-blue-100 text-blue-700',
+  standard: 'bg-violet-100 text-violet-700',
+  premium:  'bg-amber-100 text-amber-700',
+  ultra:    'bg-red-100 text-red-700',
+}
+
+function ProviderAccessMatrix({ directPlans, agencyPlans, onUpdateDirect, onUpdateAgency }) {
+  function parseTiers(plan) {
+    const raw = plan.allowed_provider_tiers
+    if (!raw) return ['free', 'budget', 'standard']
+    if (Array.isArray(raw)) return raw
+    try { return JSON.parse(raw) } catch { return ['free', 'budget', 'standard'] }
+  }
+
+  function toggleTier(current, tier) {
+    if (current.includes(tier)) {
+      return current.filter(t => t !== tier)
+    }
+    return [...current, tier]
+  }
+
+  function renderRow(plan, idx, onUpdate) {
+    const tiers = parseTiers(plan)
+    const mult = Number(plan.plan_multiplier || 1.0)
+    return (
+      <tr key={plan.id} className="hover:bg-slate-50/70">
+        <td className="px-4 py-3">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${planBadgeClass(plan.id)}`}>
+            {plan.name}
+          </span>
+        </td>
+        {TIERS.map(tier => {
+          const active = tiers.includes(tier)
+          return (
+            <td key={tier} className="px-4 py-3 text-center">
+              <button
+                type="button"
+                onClick={() => onUpdate(idx, toggleTier(tiers, tier))}
+                className={[
+                  'w-8 h-8 rounded-lg border-2 text-xs font-bold transition-all',
+                  active
+                    ? `${TIER_COLORS[tier]} border-current`
+                    : 'border-slate-200 text-slate-300 hover:border-slate-400',
+                ].join(' ')}
+                title={active ? `Revoke ${tier} access` : `Grant ${tier} access`}
+              >
+                {active ? '✓' : '—'}
+              </button>
+            </td>
+          )
+        })}
+        <td className="px-4 py-3 text-center">
+          <NumInput
+            value={mult.toFixed(2)}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value)
+              if (!isNaN(v) && v > 0) onUpdate(idx, tiers) // trigger save; multiplier stored separately
+              // For multiplier we update via the plan field directly
+              const planList = plan.plan_type === 'agency' ? 'agency' : 'direct'
+              if (planList === 'direct') {
+                directPlans[idx] = { ...directPlans[idx], plan_multiplier: v }
+              }
+            }}
+            min={1.0}
+            step={0.1}
+            className="w-20 text-center"
+          />
+        </td>
+      </tr>
+    )
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left border-b border-slate-100">
+            <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase w-40">Plan</th>
+            {TIERS.map(t => (
+              <th key={t} className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-center">
+                <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${TIER_COLORS[t]}`}>
+                  {t}
+                </span>
+              </th>
+            ))}
+            <th className="px-4 py-3 text-xs font-semibold text-slate-500 uppercase text-center">Multiplier</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-50">
+          <tr><td colSpan={7} className="px-4 py-2 text-[10px] font-semibold text-slate-400 uppercase">Direct Plans</td></tr>
+          {directPlans.map((p, i) => renderRow({ ...p, plan_type: 'direct' }, i, (idx, tiers) => onUpdateDirect(idx, tiers)))}
+          <tr><td colSpan={7} className="px-4 py-2 text-[10px] font-semibold text-slate-400 uppercase">Agency Plans</td></tr>
+          {agencyPlans.map((p, i) => renderRow({ ...p, plan_type: 'agency' }, i, (idx, tiers) => onUpdateAgency(idx, tiers)))}
+        </tbody>
+      </table>
     </div>
   )
 }

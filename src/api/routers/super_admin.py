@@ -496,9 +496,11 @@ async def update_pricing_plans(body: dict, user: dict = Depends(_require_super_a
     # "calls_per_month" is NOT editable via API: free_trial is fixed at 100 (set by migration),
     # paid plans are always NULL (unlimited). The prepaid wallet is the real limiter.
     _DIRECT_ALLOWED = ["name", "price", "call_rate", "profit_margin",
-                       "agent_limit", "voice_clones", "wallet_min", "is_active"]
+                       "agent_limit", "voice_clones", "wallet_min", "is_active",
+                       "plan_multiplier", "allowed_provider_tiers"]
     _AGENCY_ALLOWED = ["name", "price", "wholesale_rate", "profit_margin",
-                       "sub_client_limit", "agents_per_client", "voice_clones", "is_active"]
+                       "sub_client_limit", "agents_per_client", "voice_clones", "is_active",
+                       "plan_multiplier", "allowed_provider_tiers"]
 
     def _upsert_plan(conn, plan: dict, allowed: list, plan_type: str):
         pid = plan.get("id")

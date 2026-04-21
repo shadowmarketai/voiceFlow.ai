@@ -434,6 +434,8 @@ def _ensure_plans_via_raw_db():
                 ("wallet_min",        "NUMERIC(10,2)"),
                 ("sub_client_limit",  "INTEGER"),
                 ("profit_margin",     "NUMERIC(8,2)"),
+                ("plan_multiplier",   "NUMERIC(6,4) DEFAULT 1.0"),
+                ("allowed_provider_tiers", "TEXT DEFAULT '[\"budget\",\"standard\"]'"),
             ]
             if USE_POSTGRES:
                 for col, ctype in _billing_cols:
@@ -513,6 +515,30 @@ def _ensure_plans_via_raw_db():
                 f"WHERE id='agency_pro' AND (wholesale_rate IS NULL OR wholesale_rate<=2.50)"
             )
 
+            # ── 7. Seed plan_multiplier + allowed_provider_tiers ──
+            # Only set where currently NULL (preserves admin customisation).
+            _tier_seeds = [
+                ("free_trial",      1.80, '["free","budget"]'),
+                ("starter",         1.80, '["free","budget","standard"]'),
+                ("growth",          1.60, '["free","budget","standard","premium"]'),
+                ("business",        1.40, '["free","budget","standard","premium"]'),
+                ("enterprise",      1.20, '["free","budget","standard","premium","ultra"]'),
+                ("agency_starter",  1.60, '["free","budget","standard"]'),
+                ("agency_growth",   1.40, '["free","budget","standard","premium"]'),
+                ("agency_pro",      1.20, '["free","budget","standard","premium","ultra"]'),
+            ]
+            for pid, mult, tiers in _tier_seeds:
+                conn.execute(
+                    f"UPDATE plans SET plan_multiplier={ph} "
+                    f"WHERE id={ph} AND (plan_multiplier IS NULL OR plan_multiplier<=0)",
+                    (mult, pid),
+                )
+                conn.execute(
+                    f"UPDATE plans SET allowed_provider_tiers={ph} "
+                    f"WHERE id={ph} AND allowed_provider_tiers IS NULL",
+                    (tiers, pid),
+                )
+
         logger.info("Canonical plans ensured via raw db()")
 
     except Exception as exc:
@@ -544,6 +570,8 @@ def _migrate_pricing_schema(engine):
         ("wallet_min",        "NUMERIC(10,2)"),                  # minimum balance required
         ("sub_client_limit",  "INTEGER"),                        # agency: max sub-clients
         ("profit_margin",     "NUMERIC(8,2)"),                   # fixed margin above base cost (auto-maintained)
+        ("plan_multiplier",   "NUMERIC(6,4) DEFAULT 1.0"),       # cost multiplier for billing (raw_cost × this)
+        ("allowed_provider_tiers", "TEXT DEFAULT '[\"budget\",\"standard\"]'"),  # JSON array of allowed tiers
     ]
 
     with engine.begin() as conn:
@@ -1348,7 +1376,9 @@ else:
         calls_per_month   INTEGER,
         wallet_min        NUMERIC(10,2),
         sub_client_limit  INTEGER,
-        profit_margin     NUMERIC(8,2)
+        profit_margin     NUMERIC(8,2),
+        plan_multiplier   NUMERIC(6,4) DEFAULT 1.0,
+        allowed_provider_tiers TEXT DEFAULT '["budget","standard"]'
     );
 
     CREATE TABLE IF NOT EXISTS recharge_packs (

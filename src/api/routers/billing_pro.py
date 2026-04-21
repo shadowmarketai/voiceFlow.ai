@@ -418,15 +418,35 @@ def verify_recharge(req: RechargeVerifyRequest, tenant_id: str = Depends(_curren
 
 
 class DebitRequest(BaseModel):
-    amount_inr: float
+    amount_inr: float | None = None    # explicit amount (legacy) OR auto-calculate from agent
     reference_id: str
     description: str = "Call charge"
+    agent_id: str | None = None        # if set, auto-calculate cost from agent config
+    duration_sec: float | None = None  # required when agent_id is set
+    channel: str = "webrtc"
 
 
 @router.post("/wallet/debit")
 def wallet_debit(req: DebitRequest, tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
-    """Internal call-settlement debit. Not gated — trust auth at gateway level."""
+    """Call settlement debit.
+
+    Two modes:
+    1. Legacy: pass amount_inr directly (pre-calculated by caller).
+    2. Agent-aware: pass agent_id + duration_sec → auto-calculates from
+       the agent's actual config × plan multiplier.
+    """
     try:
+        if req.agent_id and req.duration_sec is not None:
+            return wallet_service.settle_call_from_agent(
+                tenant_id=tenant_id,
+                agent_id=req.agent_id,
+                call_id=req.reference_id,
+                duration_sec=req.duration_sec,
+                channel=req.channel,
+            )
+        if req.amount_inr is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "Either amount_inr or (agent_id + duration_sec) is required")
         return wallet_service.debit(
             tenant_id, int(round(req.amount_inr * 100)),
             reference_id=req.reference_id, description=req.description,
@@ -435,6 +455,85 @@ def wallet_debit(req: DebitRequest, tenant_id: str = Depends(_current_tenant)) -
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(e))
     except wallet_service.WalletBlockedError as e:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(e))
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+
+
+# ── Provider validation (for AgentBuilder live cost check) ────────────────
+
+class ValidateProvidersRequest(BaseModel):
+    llmProvider: str | None = None
+    llmModel: str | None = None
+    ttsEngine: str | None = None
+    telephonyProvider: str | None = None
+
+
+@router.post("/validate-providers")
+def validate_providers(
+    req: ValidateProvidersRequest,
+    tenant_id: str = Depends(_current_tenant),
+) -> dict[str, Any]:
+    """Check if the current tenant's plan allows the selected providers.
+
+    Returns allowed status, estimated cost, and tier details.
+    Used by AgentBuilder for live cost display + tier gating.
+    """
+    import json as _json
+
+    agent_config = {
+        "llmProvider": req.llmProvider or "groq",
+        "llmModel": req.llmModel or "default",
+        "ttsEngine": req.ttsEngine,
+        "telephonyProvider": req.telephonyProvider,
+    }
+
+    # Check access
+    from api.services.agents_store import validate_agent_providers
+    validation_error = validate_agent_providers(tenant_id, agent_config)
+
+    # Calculate cost
+    providers = pricing.resolve_agent_providers(agent_config)
+    llm_tier = pricing.get_provider_tier("llm", providers["llm"])
+
+    # Get plan multiplier
+    multiplier = 1.0
+    allowed_tiers = ["free", "budget", "standard"]
+    plan_name = "starter"
+    try:
+        with db() as conn:
+            row = conn.execute(
+                f"SELECT plan_id FROM platform_tenants WHERE id={_bp}", (tenant_id,)
+            ).fetchone()
+            plan_id = dict(row).get("plan_id", "starter") if row else "starter"
+            plan_row = conn.execute(
+                f"SELECT plan_multiplier, allowed_provider_tiers, name FROM plans WHERE id={_bp}",
+                (plan_id,),
+            ).fetchone()
+            if plan_row:
+                pr = dict(plan_row)
+                m = pr.get("plan_multiplier")
+                multiplier = float(m) if m and float(m) > 0 else 1.0
+                raw_tiers = pr.get("allowed_provider_tiers")
+                if raw_tiers:
+                    allowed_tiers = _json.loads(raw_tiers) if isinstance(raw_tiers, str) else raw_tiers
+                plan_name = pr.get("name") or plan_id
+    except Exception:
+        pass
+
+    cost = pricing.calculate_agent_cost(agent_config, plan_multiplier=multiplier)
+
+    return {
+        "allowed": validation_error is None,
+        "reason": validation_error["reason"] if validation_error else None,
+        "providers": providers,
+        "llm_tier": llm_tier,
+        "allowed_tiers": allowed_tiers,
+        "plan_name": plan_name,
+        "plan_multiplier": multiplier,
+        "raw_per_min": cost["raw_per_min"],
+        "billed_per_min": cost["billed_per_min"],
+        "breakdown": cost["breakdown"],
+    }
 
 
 # ═══ SUBSCRIPTION PLAN SELECTION (user-facing) ════════════════════════════

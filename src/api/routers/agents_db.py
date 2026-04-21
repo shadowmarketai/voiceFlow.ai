@@ -44,7 +44,10 @@ def list_agents_route(x_tenant_id: str | None = Header(default=None)) -> dict[st
 @router.post("/agents", status_code=201)
 def create_agent(payload: dict, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
     tenant_id = _tenant(x_tenant_id)
-    return agents_store.upsert_agent(tenant_id, payload.get("id"), payload)
+    try:
+        return agents_store.upsert_agent(tenant_id, payload.get("id"), payload)
+    except agents_store.ProviderNotAllowedError as exc:
+        raise HTTPException(403, str(exc))
 
 
 @router.get("/agents/{agent_id}")
@@ -59,7 +62,10 @@ def get_agent_route(agent_id: str, x_tenant_id: str | None = Header(default=None
 @router.put("/agents/{agent_id}")
 def update_agent_route(agent_id: str, payload: dict, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
     tenant_id = _tenant(x_tenant_id)
-    return agents_store.upsert_agent(tenant_id, agent_id, payload)
+    try:
+        return agents_store.upsert_agent(tenant_id, agent_id, payload)
+    except agents_store.ProviderNotAllowedError as exc:
+        raise HTTPException(403, str(exc))
 
 
 @router.delete("/agents/{agent_id}")

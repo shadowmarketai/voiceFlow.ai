@@ -389,3 +389,107 @@ def update_rate_plan(tenant_id: str, **updates) -> _RatePlanDTO:
                     vals
                 )
     return get_rate_plan(tenant_id)
+
+
+# ── Call settlement (agent config → real cost → wallet debit) ─────────────
+
+def _get_plan_multiplier(tenant_id: str) -> float:
+    """Look up the plan_multiplier for a tenant's current plan. Returns 1.0 on any error."""
+    try:
+        with db() as conn:
+            row = conn.execute(
+                f"SELECT plan_id FROM platform_tenants WHERE id={_ph}", (tenant_id,)
+            ).fetchone()
+            if not row:
+                return 1.0
+            plan_id = dict(row).get("plan_id", "starter")
+            plan_row = conn.execute(
+                f"SELECT plan_multiplier FROM plans WHERE id={_ph}", (plan_id,)
+            ).fetchone()
+            if plan_row:
+                m = dict(plan_row).get("plan_multiplier")
+                return float(m) if m and float(m) > 0 else 1.0
+    except Exception:
+        pass
+    return 1.0
+
+
+def settle_call_from_agent(
+    tenant_id: str,
+    agent_id: str,
+    call_id: str,
+    duration_sec: float,
+    channel: str = "webrtc",
+) -> dict[str, Any]:
+    """Settle a completed call by reading the agent's ACTUAL config and debiting the wallet.
+
+    This is the single source of truth for call billing.
+    Returns the settlement details including cost breakdown.
+    """
+    import json as _json
+    from api.services import agents_store, pricing
+
+    # 1. Load agent config
+    agent = agents_store.get_agent(tenant_id, agent_id)
+    if not agent:
+        raise ValueError(f"Agent {agent_id} not found for tenant {tenant_id}")
+    config = agent.get("config") or {}
+
+    # Override telephony based on actual call channel
+    if channel in pricing.COST_CATALOG.get("telephony", {}):
+        config["telephonyProvider"] = channel
+
+    # 2. Get plan multiplier
+    multiplier = _get_plan_multiplier(tenant_id)
+
+    # 3. Calculate real cost
+    duration_min = max(duration_sec / 60.0, 0.0)
+    cost_result = pricing.calculate_agent_cost(
+        agent_config=config,
+        plan_multiplier=multiplier,
+        duration_min=duration_min,
+    )
+
+    amount_paise = int(round(cost_result["total"] * 100))
+    if amount_paise <= 0:
+        return {"success": True, "amount_inr": 0, "settlement": cost_result}
+
+    # 4. Debit wallet
+    meta = {
+        "agent_id": agent_id,
+        "call_id": call_id,
+        "duration_sec": round(duration_sec, 1),
+        "providers": cost_result["providers"],
+        "raw_per_min": cost_result["raw_per_min"],
+        "multiplier": multiplier,
+        "billed_per_min": cost_result["billed_per_min"],
+    }
+
+    try:
+        debit_result = debit(
+            tenant_id=tenant_id,
+            amount_paise=amount_paise,
+            reference_id=call_id,
+            description=f"Call {call_id} · {duration_min:.1f}min · ₹{cost_result['billed_per_min']}/min",
+        )
+
+        # 5. Update the call_log with actual cost
+        try:
+            with db() as conn:
+                conn.execute(
+                    f"UPDATE call_logs SET cost_inr={_ph}, meta={_ph} WHERE id={_ph}",
+                    (cost_result["total"], _json.dumps(meta), call_id),
+                )
+        except Exception:
+            pass  # call_logs table may not exist or column mismatch — non-fatal
+
+        return {
+            "success": True,
+            "amount_inr": cost_result["total"],
+            "balance_paise": debit_result.get("balance_paise"),
+            "settlement": cost_result,
+        }
+    except InsufficientFundsError:
+        raise
+    except WalletBlockedError:
+        raise

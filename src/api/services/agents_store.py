@@ -5,14 +5,18 @@ broken ORM mappers in the rest of the codebase.
 
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 
-from api.database import get_engine
+from api.database import USE_POSTGRES, db, get_engine
 from api.models.voice_agent_db import CallLog, ChannelConfig, VoiceAgent
+
+logger = logging.getLogger(__name__)
 
 _TABLES_ENSURED = False
 
@@ -65,8 +69,76 @@ def get_agent(tenant_id: str, agent_id: str) -> dict[str, Any] | None:
     return _row_to_dict(row) if row else None
 
 
+class ProviderNotAllowedError(Exception):
+    """Raised when agent config selects a provider tier not allowed by the tenant's plan."""
+    pass
+
+
+def validate_agent_providers(tenant_id: str, config: dict[str, Any]) -> dict[str, Any] | None:
+    """Check that the agent's LLM (and optionally TTS) is allowed by the tenant's plan.
+
+    Returns None if allowed, or a dict with error details if blocked.
+    """
+    from api.services.pricing import (
+        COST_CATALOG,
+        get_provider_tier,
+        resolve_catalog_key,
+    )
+
+    llm_provider = config.get("llmProvider")
+    if not llm_provider:
+        return None  # no LLM selection to validate
+
+    llm_model = config.get("llmModel") or "default"
+    catalog_key = resolve_catalog_key("llm", llm_provider, llm_model)
+    tier = get_provider_tier("llm", catalog_key)
+
+    # Look up the tenant's plan → allowed tiers
+    _ph = "%s" if USE_POSTGRES else "?"
+    allowed_tiers = ["free", "budget", "standard"]  # safe default
+    try:
+        with db() as conn:
+            # Get tenant's plan_id from platform_tenants
+            row = conn.execute(
+                f"SELECT plan_id FROM platform_tenants WHERE id={_ph}", (tenant_id,)
+            ).fetchone()
+            plan_id = dict(row).get("plan_id", "starter") if row else "starter"
+
+            # Get allowed_provider_tiers from the plan
+            plan_row = conn.execute(
+                f"SELECT allowed_provider_tiers, plan_multiplier FROM plans WHERE id={_ph}",
+                (plan_id,),
+            ).fetchone()
+            if plan_row:
+                raw = dict(plan_row).get("allowed_provider_tiers")
+                if raw:
+                    allowed_tiers = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception as exc:
+        logger.debug("Provider validation plan lookup: %s", exc)
+
+    if tier not in allowed_tiers:
+        llm_label = COST_CATALOG.get("llm", {}).get(catalog_key, {}).get("label", catalog_key)
+        return {
+            "allowed": False,
+            "provider": llm_label,
+            "tier": tier,
+            "allowed_tiers": allowed_tiers,
+            "reason": f"{llm_label} is a {tier.title()} tier provider. "
+                      f"Your plan allows: {', '.join(t.title() for t in allowed_tiers)}. "
+                      f"Upgrade your plan to use this provider.",
+        }
+
+    return None  # all good
+
+
 def upsert_agent(tenant_id: str, agent_id: str | None, payload: dict[str, Any]) -> dict[str, Any]:
     """Insert or update. Returns the saved row."""
+    # Validate provider access before saving
+    config = payload.get("config") or {}
+    validation_error = validate_agent_providers(tenant_id, config)
+    if validation_error:
+        raise ProviderNotAllowedError(validation_error["reason"])
+
     _ensure_tables()
     eng = get_engine()
     t = VoiceAgent.__table__
