@@ -61,12 +61,9 @@ const INTEGRATIONS = [
   },
   {
     id: 'facebook', name: 'Facebook Lead Ads', icon: '📘',
-    type: 'webhook',
-    fields: [
-      { key: 'page_access_token', label: 'Page Access Token', required: false, secret: true, multiline: true },
-    ],
-    desc: 'Register the webhook URL in Facebook Developer settings, or paste your Page Access Token',
-    showWebhook: true,
+    type: 'facebook_oauth',
+    fields: [],
+    desc: 'Connect your Facebook account to import leads from Lead Ad forms',
   },
   {
     id: 'google', name: 'Google Ads', icon: '🔍',
@@ -218,7 +215,15 @@ export default function CrmIntegrationsPage() {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({});
   const [agents, setAgents] = useState([]);
-  const [assignAgent, setAssignAgent] = useState('');
+
+  // Facebook-specific state
+  const [fbConnected, setFbConnected] = useState(false);
+  const [fbPages, setFbPages] = useState([]);
+  const [fbForms, setFbForms] = useState([]);
+  const [fbSelectedPage, setFbSelectedPage] = useState('');
+  const [fbSelectedForm, setFbSelectedForm] = useState('');
+  const [fbSubscribedForms, setFbSubscribedForms] = useState([]);
+  const [fbLoading, setFbLoading] = useState(false);
 
   const activeIntegration = INTEGRATIONS.find(i => i.id === activeId);
 
@@ -245,10 +250,107 @@ export default function CrmIntegrationsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Load Facebook subscribed forms
+  const loadFbForms = useCallback(async () => {
+    try {
+      const { data } = await crmIntegrationsAPI.facebookListForms();
+      setFbConnected(data.connected);
+      setFbSubscribedForms(data.forms || []);
+    } catch {}
+  }, []);
+
+  useEffect(() => { if (activeId === 'facebook') loadFbForms(); }, [activeId, loadFbForms]);
+
+  // Facebook Login handler
+  const handleFacebookLogin = () => {
+    const appId = import.meta.env.VITE_FACEBOOK_APP_ID || '';
+    if (!appId) {
+      toast.error('Facebook App ID not configured. Contact admin.');
+      return;
+    }
+    const redirectUri = encodeURIComponent(window.location.origin + '/voice/crm-integrations?fb=callback');
+    const scope = 'pages_manage_ads,pages_manage_metadata,pages_read_engagement,leads_retrieval';
+    window.location.href = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=token`;
+  };
+
+  // Handle FB callback (token in URL hash)
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.includes('access_token')) {
+      const params = new URLSearchParams(hash.substring(1));
+      const token = params.get('access_token');
+      if (token) {
+        setActiveId('facebook');
+        crmIntegrationsAPI.facebookSaveToken(token)
+          .then(() => {
+            toast.success('Facebook connected!');
+            setFbConnected(true);
+            window.history.replaceState(null, '', window.location.pathname);
+            loadFbPages();
+          })
+          .catch(() => toast.error('Failed to save Facebook token'));
+      }
+    }
+  }, []);
+
+  const loadFbPages = async () => {
+    setFbLoading(true);
+    try {
+      const { data } = await crmIntegrationsAPI.facebookGetPages();
+      setFbPages(data.pages || []);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to load pages');
+    } finally {
+      setFbLoading(false);
+    }
+  };
+
+  const handleFbPageSelect = async (pageId) => {
+    setFbSelectedPage(pageId);
+    setFbSelectedForm('');
+    setFbForms([]);
+    if (!pageId) return;
+    setFbLoading(true);
+    try {
+      const { data } = await crmIntegrationsAPI.facebookGetForms(pageId);
+      setFbForms(data.forms || []);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to load forms');
+    } finally {
+      setFbLoading(false);
+    }
+  };
+
+  const handleFbSubscribe = async () => {
+    if (!fbSelectedPage || !fbSelectedForm) { toast.error('Select page and form'); return; }
+    const page = fbPages.find(p => p.id === fbSelectedPage);
+    const form = fbForms.find(f => f.id === fbSelectedForm);
+    try {
+      await crmIntegrationsAPI.facebookSubscribe({
+        page_id: fbSelectedPage,
+        page_name: page?.name || '',
+        form_id: fbSelectedForm,
+        form_name: form?.name || '',
+      });
+      toast.success('Form subscribed!');
+      setFbSelectedForm('');
+      loadFbForms();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to subscribe');
+    }
+  };
+
+  const handleFbDeleteForm = async (formId) => {
+    try {
+      await crmIntegrationsAPI.facebookDeleteForm(formId);
+      toast.success('Form removed');
+      loadFbForms();
+    } catch { toast.error('Failed to remove'); }
+  };
+
   // Reset form when switching integration
   useEffect(() => {
     setFormData({});
-    setAssignAgent('');
   }, [activeId]);
 
   // Get existing connections for current integration
@@ -472,20 +574,6 @@ document.querySelector('form').addEventListener('submit', function(e) {
                     ))}
                   </div>
 
-                  {/* Auto Lead Assignment */}
-                  <div className="mt-4">
-                    <label className="block text-xs font-medium text-slate-500 mb-1">
-                      Select Auto Lead Assignment Rule:
-                    </label>
-                    <select value={assignAgent} onChange={e => setAssignAgent(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800">
-                      <option value="">Select One</option>
-                      {agents.map(a => (
-                        <option key={a.id} value={String(a.id)}>{a.name}</option>
-                      ))}
-                    </select>
-                  </div>
-
                   {/* Save button */}
                   <div className="mt-4 flex gap-2">
                     <button onClick={handleSave} disabled={saving}
@@ -493,7 +581,7 @@ document.querySelector('form').addEventListener('submit', function(e) {
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       {saving ? 'Saving...' : 'Save'}
                     </button>
-                    <button onClick={() => { setFormData({}); setAssignAgent(''); }}
+                    <button onClick={() => setFormData({})}
                       className="px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
                       Clear
                     </button>
@@ -501,27 +589,119 @@ document.querySelector('form').addEventListener('submit', function(e) {
                 </div>
               )}
 
-              {/* For pure webhook integrations with no fields, just show save for assignment rule */}
-              {activeIntegration.fields.length === 0 && (
+              {/* For pure webhook integrations (no fields, not facebook) */}
+              {activeIntegration.fields.length === 0 && activeIntegration.type !== 'facebook_oauth' && (
                 <div className="mt-5">
-                  <label className="block text-xs font-medium text-slate-500 mb-1">
-                    Auto assign leads from {activeIntegration.name}:
-                  </label>
-                  <select value={assignAgent} onChange={e => setAssignAgent(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800 max-w-sm">
-                    <option value="">Select One</option>
-                    {agents.map(a => (
-                      <option key={a.id} value={String(a.id)}>{a.name}</option>
-                    ))}
-                  </select>
                   <button onClick={handleSave} disabled={saving}
-                    className="mt-3 flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
+                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     {saving ? 'Saving...' : 'Save Settings'}
                   </button>
                 </div>
               )}
+
+              {/* ── Facebook Lead Ads OAuth Flow ── */}
+              {activeIntegration.type === 'facebook_oauth' && (
+                <div className="mt-5 space-y-4">
+                  {/* Continue with Facebook button */}
+                  {!fbConnected ? (
+                    <button onClick={handleFacebookLogin}
+                      className="flex items-center gap-3 px-6 py-3 bg-[#1877F2] text-white rounded-xl text-sm font-semibold hover:bg-[#166FE5] transition-colors shadow-sm">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                      Continue with Facebook
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                      <span className="text-sm font-medium text-emerald-700">Facebook Connected</span>
+                      <button onClick={() => { loadFbPages(); }}
+                        className="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-medium">
+                        Refresh Pages
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Page selector */}
+                  {fbConnected && (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Page</label>
+                        <select value={fbSelectedPage} onChange={e => handleFbPageSelect(e.target.value)}
+                          className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-slate-800 max-w-md">
+                          <option value="">Select Page</option>
+                          {fbPages.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                        {fbPages.length === 0 && !fbLoading && (
+                          <button onClick={loadFbPages} className="mt-1 text-xs text-indigo-600 hover:underline">
+                            Load Pages
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Form selector */}
+                      {fbSelectedPage && (
+                        <div>
+                          <label className="block text-sm font-medium text-slate-700 mb-1">Form</label>
+                          <select value={fbSelectedForm} onChange={e => setFbSelectedForm(e.target.value)}
+                            className="w-full px-3 py-2.5 text-sm border border-slate-200 rounded-xl bg-white text-slate-800 max-w-md">
+                            <option value="">Select Form</option>
+                            {fbForms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+
+                      {/* Subscribe button */}
+                      {fbSelectedForm && (
+                        <button onClick={handleFbSubscribe}
+                          className="flex items-center gap-2 px-5 py-2.5 bg-[#1877F2] text-white rounded-xl text-sm font-medium hover:bg-[#166FE5]">
+                          <Plus className="w-4 h-4" /> Subscribe to Form
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {fbLoading && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading...
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Facebook subscribed forms table */}
+            {activeId === 'facebook' && fbSubscribedForms.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-3 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-700">Existing Forms</p>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-100">
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Page Name</th>
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Form Name</th>
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Form ID</th>
+                      <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fbSubscribedForms.map(f => (
+                      <tr key={f.form_id} className="border-b border-slate-50 hover:bg-slate-50">
+                        <td className="px-4 py-3 font-medium text-slate-700">{f.page_name}</td>
+                        <td className="px-4 py-3 text-slate-600">{f.form_name}</td>
+                        <td className="px-4 py-3 text-xs text-slate-400 font-mono">{f.form_id}</td>
+                        <td className="px-4 py-3 text-right">
+                          <button onClick={() => handleFbDeleteForm(f.form_id)}
+                            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             {/* Existing connections table */}
             {existingConnections.length > 0 && (

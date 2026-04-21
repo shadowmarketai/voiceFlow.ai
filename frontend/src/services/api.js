@@ -935,6 +935,14 @@ export const crmIntegrationsAPI = {
   createAdSource: (data) => api.post('/api/v1/crm-integrations/ad-sources', data),
   deleteAdSource: (id) => api.delete(`/api/v1/crm-integrations/ad-sources/${id}`),
 
+  // Facebook Lead Ads
+  facebookSaveToken: (accessToken) => api.post('/api/v1/crm-integrations/facebook/token', { access_token: accessToken }),
+  facebookGetPages: () => api.get('/api/v1/crm-integrations/facebook/pages'),
+  facebookGetForms: (pageId) => api.get(`/api/v1/crm-integrations/facebook/forms/${pageId}`),
+  facebookSubscribe: (data) => api.post('/api/v1/crm-integrations/facebook/subscribe', data),
+  facebookListForms: () => api.get('/api/v1/crm-integrations/facebook/subscribed-forms'),
+  facebookDeleteForm: (formId) => api.delete(`/api/v1/crm-integrations/facebook/forms/${formId}`),
+
   // Sync logs
   listSyncLogs: (limit = 50) => api.get('/api/v1/crm-integrations/sync-logs', { params: { limit } }),
 };

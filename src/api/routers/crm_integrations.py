@@ -539,6 +539,240 @@ async def generic_webhook(
 
 
 # ============================================
+# Facebook Lead Ads — Pages & Forms
+# ============================================
+
+@router.post("/facebook/token")
+async def facebook_save_token(
+    request: Request,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Save Facebook user access token (from FB Login SDK on frontend)."""
+    body = await request.json()
+    access_token = body.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="access_token required")
+
+    tenant_id = _tenant_id(user)
+
+    # Exchange for long-lived token
+    import aiohttp
+    fb_app_id = os.environ.get("FACEBOOK_APP_ID", "")
+    fb_app_secret = os.environ.get("FACEBOOK_APP_SECRET", "")
+
+    long_token = access_token
+    if fb_app_id and fb_app_secret:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    "https://graph.facebook.com/v19.0/oauth/access_token",
+                    params={
+                        "grant_type": "fb_exchange_token",
+                        "client_id": fb_app_id,
+                        "client_secret": fb_app_secret,
+                        "fb_exchange_token": access_token,
+                    },
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        long_token = data.get("access_token", access_token)
+        except Exception as exc:
+            logger.warning("FB long-lived token exchange failed: %s", exc)
+
+    # Store in ad_source_connections
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if conn:
+        conn.credentials = {"access_token": long_token}
+    else:
+        conn = AdSourceConnection(
+            tenant_id=tenant_id,
+            provider="facebook",
+            display_name="Facebook Lead Ads",
+            auth_type="oauth2",
+            credentials={"access_token": long_token},
+        )
+        db.add(conn)
+    await db.flush()
+    await db.commit()
+
+    return {"status": "connected"}
+
+
+@router.get("/facebook/pages")
+async def facebook_get_pages(
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """Get list of Facebook pages the user manages."""
+    import aiohttp
+
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials or not conn.credentials.get("access_token"):
+        raise HTTPException(status_code=400, detail="Facebook not connected. Click 'Continue with Facebook' first.")
+
+    token = conn.credentials["access_token"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://graph.facebook.com/v19.0/me/accounts",
+            params={"access_token": token, "fields": "id,name,access_token"},
+        ) as resp:
+            if resp.status != 200:
+                error = await resp.text()
+                raise HTTPException(status_code=400, detail=f"Facebook API error: {error}")
+            data = await resp.json()
+
+    pages = [{"id": p["id"], "name": p["name"], "access_token": p.get("access_token", "")} for p in data.get("data", [])]
+    return {"pages": pages}
+
+
+@router.get("/facebook/forms/{page_id}")
+async def facebook_get_forms(
+    page_id: str,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """Get lead gen forms for a specific Facebook page."""
+    import aiohttp
+
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials:
+        raise HTTPException(status_code=400, detail="Facebook not connected")
+
+    token = conn.credentials["access_token"]
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://graph.facebook.com/v19.0/{page_id}/leadgen_forms",
+            params={"access_token": token, "fields": "id,name,status"},
+        ) as resp:
+            if resp.status != 200:
+                error = await resp.text()
+                raise HTTPException(status_code=400, detail=f"Facebook API error: {error}")
+            data = await resp.json()
+
+    forms = [{"id": f["id"], "name": f["name"], "status": f.get("status", "")} for f in data.get("data", [])]
+    return {"forms": forms}
+
+
+@router.post("/facebook/subscribe")
+async def facebook_subscribe_form(
+    request: Request,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Subscribe to a Facebook lead gen form to receive leads via webhook."""
+    body = await request.json()
+    page_id = body.get("page_id")
+    page_name = body.get("page_name", "")
+    form_id = body.get("form_id")
+    form_name = body.get("form_name", "")
+
+    if not page_id or not form_id:
+        raise HTTPException(status_code=400, detail="page_id and form_id required")
+
+    tenant_id = _tenant_id(user)
+
+    # Subscribe the page to leadgen webhook
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials:
+        raise HTTPException(status_code=400, detail="Facebook not connected")
+
+    # Store the form subscription in credentials
+    creds = conn.credentials or {}
+    forms = creds.get("subscribed_forms", [])
+    # Avoid duplicates
+    if not any(f.get("form_id") == form_id for f in forms):
+        forms.append({
+            "page_id": page_id,
+            "page_name": page_name,
+            "form_id": form_id,
+            "form_name": form_name,
+        })
+    creds["subscribed_forms"] = forms
+    conn.credentials = creds
+    conn.is_active = True
+    await db.flush()
+    await db.commit()
+
+    return {"status": "subscribed", "form_id": form_id, "page_name": page_name}
+
+
+@router.get("/facebook/subscribed-forms")
+async def facebook_list_subscribed_forms(
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """List all subscribed Facebook lead forms."""
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials:
+        return {"forms": [], "connected": False}
+
+    forms = conn.credentials.get("subscribed_forms", [])
+    return {"forms": forms, "connected": True}
+
+
+@router.delete("/facebook/forms/{form_id}")
+async def facebook_unsubscribe_form(
+    form_id: str,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "delete")),
+):
+    """Remove a subscribed Facebook form."""
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials:
+        raise HTTPException(status_code=404, detail="Facebook not connected")
+
+    creds = conn.credentials or {}
+    forms = [f for f in creds.get("subscribed_forms", []) if f.get("form_id") != form_id]
+    creds["subscribed_forms"] = forms
+    conn.credentials = creds
+    await db.flush()
+    await db.commit()
+
+    return {"status": "removed"}
+
+
+# ============================================
 # Sync Logs
 # ============================================
 
