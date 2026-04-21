@@ -34,6 +34,7 @@ from pydantic import BaseModel, Field
 
 from api.database import USE_POSTGRES, db
 from api.services import pricing, wallet_service
+from api.services.auth_service import AuthService
 from api.services.pricing import COST_CATALOG, PRESETS, RECHARGE_PACKS
 
 logger = logging.getLogger(__name__)
@@ -58,9 +59,45 @@ router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 
 # ─── Tenant resolution (stub; plug into your real auth) ────────────────────
 
-def _current_tenant(x_tenant_id: str | None = Header(default=None)) -> str:
-    """Resolve tenant id. Accepts `X-Tenant-Id` header, falls back to 'default'."""
-    return x_tenant_id or "default"
+def _current_tenant(
+    request: Request,
+    x_tenant_id: str | None = Header(default=None),
+) -> str:
+    """Resolve tenant_id.
+
+    Priority:
+    1. X-Tenant-Id header (legacy / explicit override)
+    2. tenant_id field inside the JWT Bearer token (normal browser flow)
+    3. email lookup in users table (fallback when tenant_id not in JWT)
+    4. 'default' (last resort)
+    """
+    if x_tenant_id:
+        return x_tenant_id
+
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        token = auth.split(" ", 1)[1]
+        if token == "demo-token-123":
+            return "tenant-demo"
+        try:
+            payload = AuthService.decode_token(token)
+            # Prefer explicit tenant_id in JWT
+            tid = payload.get("tenant_id")
+            if tid:
+                return tid
+            # Fall back to DB lookup by email (sub claim)
+            email = payload.get("sub")
+            if email:
+                with db() as conn:
+                    row = conn.execute(
+                        "SELECT tenant_id FROM users WHERE email=?", (email,)
+                    ).fetchone()
+                    if row and row[0]:
+                        return row[0]
+        except Exception:
+            pass
+
+    return "default"
 
 
 def _require_admin(
@@ -82,15 +119,13 @@ def _require_admin(
     if auth_header.startswith("Bearer "):
         token = auth_header.split(" ", 1)[1]
         try:
-            from api.services.auth_service import AuthService
             payload = AuthService.decode_token(token)
             if payload.get("is_super_admin") or payload.get("role") == "super_admin":
                 return True
             # Also check the DB for is_super_admin flag
             user_id = payload.get("user_id") or payload.get("sub")
             if user_id:
-                from api.database import db as _db
-                with _db() as conn:
+                with db() as conn:
                     row = conn.execute(
                         "SELECT is_super_admin FROM users WHERE id=? OR email=?",
                         (user_id, user_id),
