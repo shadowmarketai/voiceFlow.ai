@@ -35,6 +35,8 @@ const TestingPage = lazy(() => import('./modules/voice-ai/pages/Testing'))
 const QualityDashboardPage = lazy(() => import('./modules/voice-ai/pages/QualityDashboard'))
 const ComboBenchmarkPage = lazy(() => import('./modules/voice-ai/pages/ComboBenchmark'))
 const IntegrationsPage = lazy(() => import('./modules/voice-ai/pages/Integrations'))
+const CrmContactsPage = lazy(() => import('./modules/voice-ai/pages/CrmContacts'))
+const CrmIntegrationsPage = lazy(() => import('./modules/voice-ai/pages/CrmIntegrations'))
 const ApiDeveloperPage = lazy(() => import('./modules/voice-ai/pages/ApiDeveloper'))
 const VoiceBillingPage = lazy(() => import('./modules/voice-ai/pages/BillingPage'))
 const WalletBillingPage = lazy(() => import('./modules/voice-ai/pages/WalletBilling'))
@@ -175,6 +177,8 @@ function App() {
           <Route path="voice/testing" element={<S><TestingPage /></S>} />
           <Route path="voice/quality" element={<S><QualityDashboardPage /></S>} />
           <Route path="voice/combo-benchmark" element={<S><ComboBenchmarkPage /></S>} />
+          <Route path="voice/crm-contacts" element={<S><CrmContactsPage /></S>} />
+          <Route path="voice/crm-integrations" element={<S><CrmIntegrationsPage /></S>} />
           <Route path="voice/integrations" element={<S><IntegrationsPage /></S>} />
           {/* /voice/api → redirect to the Channels page's Developer tab */}
           <Route path="voice/api" element={<Navigate to="/voice/channels?view=developer" replace />} />

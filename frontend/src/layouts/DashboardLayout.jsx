@@ -18,7 +18,7 @@ import { defaultTheme } from '../config/theme';
 import {
   LayoutDashboard, Bot, Wand2, BookOpen, Mic, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
-  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
+  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users, UserPlus, Link2,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
   Bell, X, Building2, DollarSign, Network,
@@ -41,6 +41,13 @@ const userNavSections = [
     items: [
       { icon: BookOpen, name: 'Knowledge Base',         path: '/voice/knowledge' },
       { icon: Mic,      name: 'Voice Library & Studio', path: '/voice/studio' },
+    ],
+  },
+  {
+    label: 'CRM',
+    items: [
+      { icon: UserPlus, name: 'Contacts & Leads', path: '/voice/crm-contacts' },
+      { icon: Link2,    name: 'Integrations',     path: '/voice/crm-integrations' },
     ],
   },
   {

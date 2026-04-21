@@ -50,6 +50,7 @@ services:
 
       # ── Database ─────────────────────────────
       DATABASE_URL: postgresql+asyncpg://voiceflow:${DB_PASSWORD:-voiceflow_prod_secret_2026}@postgres:5432/voiceflow
+      LEADS_DATABASE_URL: postgresql+asyncpg://voiceflow:${DB_PASSWORD:-voiceflow_prod_secret_2026}@postgres:5432/shadowmarket_leads
       REDIS_URL: redis://redis:6379/0
 
       # ── Auth ─────────────────────────────────

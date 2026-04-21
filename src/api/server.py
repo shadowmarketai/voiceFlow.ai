@@ -210,6 +210,15 @@ def _register_lifecycle(application: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Database init warning: %s", exc)
 
+        # Initialize leads database (separate DB)
+        try:
+            from api.leads_database import ensure_leads_database_exists, init_leads_db
+            await ensure_leads_database_exists()
+            await init_leads_db()
+            logger.info("Leads database initialized.")
+        except Exception as exc:
+            logger.warning("Leads database init warning: %s", exc)
+
         # Initialize voice engine (lazy — fails gracefully)
         try:
             from voice_engine.engine import VoiceFlowEngine
@@ -334,6 +343,21 @@ def _include_routers(application: FastAPI) -> None:
         logger.info("Voice Agent router loaded (cloning, knowledge, recordings)")
     except Exception as exc:
         logger.warning("Voice Agent router not available: %s", exc)
+
+    # ── CRM Leads (separate leads database) ───────────────────
+    try:
+        from api.routers.crm_leads import router as crm_leads_router
+        application.include_router(crm_leads_router)
+        logger.info("CRM Leads router loaded (contacts, leads, import/export)")
+    except Exception as exc:
+        logger.warning("CRM Leads router not available: %s", exc)
+
+    try:
+        from api.routers.crm_integrations import router as crm_integrations_router
+        application.include_router(crm_integrations_router)
+        logger.info("CRM Integrations router loaded (OAuth2, webhooks, ad sources)")
+    except Exception as exc:
+        logger.warning("CRM Integrations router not available: %s", exc)
 
     # ── Campaign & Analytics ─────────────────────────────────
     try:

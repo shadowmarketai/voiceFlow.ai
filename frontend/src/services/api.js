@@ -889,4 +889,54 @@ export const adminWithdrawalsAPI = {
   creditAgency: (body) => api.post('/api/v1/admin/withdrawals/credit-agency', body),
 };
 
+// ============================================
+// CRM LEADS API
+// ============================================
+export const crmLeadsAPI = {
+  // CRUD
+  list: (params) => api.get('/api/v1/crm-leads', { params }),
+  get: (id) => api.get(`/api/v1/crm-leads/${id}`),
+  create: (data) => api.post('/api/v1/crm-leads', data),
+  update: (id, data) => api.put(`/api/v1/crm-leads/${id}`, data),
+  delete: (id) => api.delete(`/api/v1/crm-leads/${id}`),
+
+  // Universal capture
+  capture: (data) => api.post('/api/v1/crm-leads/capture', data),
+
+  // Pipeline
+  pipeline: () => api.get('/api/v1/crm-leads/pipeline/stats'),
+
+  // Import / Export
+  importCSV: (formData) => api.post('/api/v1/crm-leads/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }),
+  exportCSV: () => api.get('/api/v1/crm-leads/export/csv', { responseType: 'blob' }),
+
+  // Interactions
+  addInteraction: (data) => api.post('/api/v1/crm-leads/interactions', data),
+  getInteractions: (leadId, limit = 50) => api.get(`/api/v1/crm-leads/${leadId}/interactions`, { params: { limit } }),
+};
+
+// ============================================
+// CRM INTEGRATIONS API
+// ============================================
+export const crmIntegrationsAPI = {
+  // CRM connections
+  listCrm: () => api.get('/api/v1/crm-integrations/crm'),
+  createCrm: (data) => api.post('/api/v1/crm-integrations/crm', data),
+  deleteCrm: (id) => api.delete(`/api/v1/crm-integrations/crm/${id}`),
+  triggerSync: (id) => api.post(`/api/v1/crm-integrations/crm/${id}/sync`),
+
+  // OAuth2
+  oauthAuthorize: (provider) => api.get(`/api/v1/crm-integrations/oauth/authorize/${provider}`),
+
+  // Ad sources
+  listAdSources: () => api.get('/api/v1/crm-integrations/ad-sources'),
+  createAdSource: (data) => api.post('/api/v1/crm-integrations/ad-sources', data),
+  deleteAdSource: (id) => api.delete(`/api/v1/crm-integrations/ad-sources/${id}`),
+
+  // Sync logs
+  listSyncLogs: (limit = 50) => api.get('/api/v1/crm-integrations/sync-logs', { params: { limit } }),
+};
+
 export default api;
