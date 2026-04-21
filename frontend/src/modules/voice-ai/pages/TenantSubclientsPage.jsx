@@ -24,35 +24,7 @@ const PLAN_BADGE = {
   agency_pro:     'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
 }
 
-const AGENCY_PLAN_DEFAULTS = [
-  {
-    id: 'agency_starter',
-    name: 'Agency Starter',
-    monthly_fee: 5000,
-    wholesale_rate: 3.50,
-    sub_clients: 10,
-    agents_per_client: 2,
-    voice_clones: 1,
-  },
-  {
-    id: 'agency_growth',
-    name: 'Agency Growth',
-    monthly_fee: 10000,
-    wholesale_rate: 3.00,
-    sub_clients: 50,
-    agents_per_client: 5,
-    voice_clones: 3,
-  },
-  {
-    id: 'agency_pro',
-    name: 'Agency Pro',
-    monthly_fee: 20000,
-    wholesale_rate: 2.50,
-    sub_clients: null,
-    agents_per_client: null,
-    voice_clones: null,
-  },
-]
+// No hardcoded defaults — all plan data comes from /billing/tenant/plan API
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -137,6 +109,144 @@ function EmptySubclients({ onAdd }) {
         <Plus className="w-4 h-4" aria-hidden="true" />
         Add Sub-client
       </button>
+    </div>
+  )
+}
+
+// ─── Upgrade Plan Modal ──────────────────────────────────────────────────────
+
+function UpgradePlanModal({ currentPlanId, plans, onClose }) {
+  const PLAN_ORDER = ['agency_starter', 'agency_growth', 'agency_pro']
+  const currentIdx = PLAN_ORDER.indexOf(currentPlanId)
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="upgrade-plan-title"
+        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl ring-1 ring-slate-200/70 overflow-hidden"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <div>
+            <h2 id="upgrade-plan-title" className="text-base font-semibold text-slate-900">Choose Your Agency Plan</h2>
+            <p className="text-xs text-slate-500 mt-0.5">All plans include white-label branding and sub-client management</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Plans grid */}
+        <div className="p-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {plans.map((plan, idx) => {
+            const isCurrent = plan.id === currentPlanId
+            const isUpgrade = PLAN_ORDER.indexOf(plan.id) > currentIdx
+            const isTop = plan.id === 'agency_pro'
+
+            return (
+              <div
+                key={plan.id}
+                className={[
+                  'relative rounded-2xl p-5 flex flex-col gap-3 ring-2 transition-all',
+                  isCurrent
+                    ? 'ring-indigo-500 bg-indigo-50'
+                    : isTop
+                    ? 'ring-amber-400 bg-amber-50'
+                    : 'ring-slate-200 bg-white',
+                ].join(' ')}
+              >
+                {isCurrent && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-2.5 py-0.5 bg-indigo-600 text-white text-[10px] font-bold rounded-full uppercase tracking-wide">
+                    <CheckCircle className="w-3 h-3" /> Current Plan
+                  </span>
+                )}
+                {isTop && !isCurrent && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-500 text-white text-[10px] font-bold rounded-full uppercase tracking-wide">
+                    <Crown className="w-3 h-3" /> Best Value
+                  </span>
+                )}
+
+                <div>
+                  <p className="font-bold text-slate-900">{plan.name}</p>
+                  <div className="flex items-baseline gap-1 mt-1">
+                    <span className="text-2xl font-extrabold text-slate-900">₹{formatInr(plan.monthly_fee)}</span>
+                    <span className="text-xs text-slate-500">/month</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5 text-sm text-slate-700 flex-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      {plan.sub_client_limit === null || plan.sub_client_limit === undefined
+                        ? 'Unlimited sub-clients'
+                        : `Up to ${plan.sub_client_limit} sub-clients`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      {plan.agents_per_client === null || plan.agents_per_client === undefined
+                        ? 'Unlimited agents/client'
+                        : `${plan.agents_per_client} agents per client`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                    <span>
+                      {plan.voice_clones === null || plan.voice_clones === undefined
+                        ? 'Unlimited voice clones'
+                        : `${plan.voice_clones} voice clone${plan.voice_clones !== 1 ? 's' : ''}/client`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-slate-100 mt-2">
+                    <IndianRupee className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                    <span className="font-semibold text-indigo-700">
+                      ₹{Number(plan.wholesale_rate).toFixed(2)}/min wholesale
+                    </span>
+                  </div>
+                </div>
+
+                {isCurrent ? (
+                  <div className="text-center text-xs text-indigo-600 font-medium py-2">Active</div>
+                ) : isUpgrade ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      toast.success(`To upgrade to ${plan.name}, contact support@voiceflow.ai`)
+                      onClose()
+                    }}
+                    className={[
+                      'w-full py-2 rounded-xl text-sm font-semibold transition-colors',
+                      isTop
+                        ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                        : 'bg-indigo-600 hover:bg-indigo-700 text-white',
+                    ].join(' ')}
+                  >
+                    Upgrade
+                  </button>
+                ) : (
+                  <div className="text-center text-xs text-slate-400 font-medium py-2">Lower tier</div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="px-6 pb-5 text-center text-xs text-slate-400">
+          To change your plan, email <a href="mailto:support@voiceflow.ai" className="text-indigo-600 hover:underline">support@voiceflow.ai</a>
+        </div>
+      </div>
     </div>
   )
 }
@@ -666,8 +776,10 @@ function SubclientsTab({ subclients, loading, wholesaleRate, planOptions, onRefr
 
 // ─── My Plan Tab ─────────────────────────────────────────────────────────────
 
-function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
-  if (!tenantPlan && agencyPlans.length === 0) {
+function MyPlanTab({ tenantPlan, subclients }) {
+  const [showUpgrade, setShowUpgrade] = useState(false)
+
+  if (!tenantPlan) {
     return (
       <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
         <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
@@ -679,16 +791,12 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
     )
   }
 
-  // Find matching plan details from agencyPlans or defaults
-  const planId = tenantPlan?.plan || tenantPlan?.id || 'agency_starter'
-  const planDetails = agencyPlans.find((p) => p.id === planId)
-    || AGENCY_PLAN_DEFAULTS.find((p) => p.id === planId)
-    || AGENCY_PLAN_DEFAULTS[0]
-
-  const usedSubclients = subclients.length
-  const maxSubclients = planDetails.sub_clients
-  const isAtMax = maxSubclients !== null && usedSubclients >= maxSubclients
+  const planId = tenantPlan.plan_id || 'agency_starter'
   const isAgencyPro = planId === 'agency_pro'
+  const usedSubclients = tenantPlan.sub_client_count ?? subclients.length
+  const maxSubclients = tenantPlan.sub_client_limit
+  const isAtMax = maxSubclients !== null && maxSubclients !== undefined && usedSubclients >= maxSubclients
+  const allPlans = tenantPlan.all_agency_plans || []
 
   return (
     <div className="px-5 py-5 space-y-5">
@@ -700,23 +808,23 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
           </div>
           <div>
             <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold ${planBadgeClass(planId)}`}>
-              {planDetails.name}
+              {tenantPlan.plan_name}
             </span>
             <p className="text-xs text-slate-500 mt-1.5">
-              Platform fee: <strong className="text-slate-700">₹{formatInr(planDetails.monthly_fee)}/month</strong>
+              Platform fee: <strong className="text-slate-700">₹{formatInr(tenantPlan.monthly_fee)}/month</strong>
             </p>
           </div>
         </div>
         <div className="text-right flex-shrink-0">
           {isAgencyPro ? (
-            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-xs font-medium cursor-not-allowed">
-              Contact support to change plan
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-500 text-xs font-medium">
+              Highest plan
             </span>
           ) : (
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-              onClick={() => toast.success('Contact support@voiceflow.ai to upgrade your plan')}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+              onClick={() => setShowUpgrade(true)}
             >
               <Zap className="w-3.5 h-3.5" aria-hidden="true" />
               Upgrade Plan
@@ -732,11 +840,9 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Sub-clients</p>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-bold text-slate-900 tabular-nums">{usedSubclients}</span>
-            <span className="text-sm text-slate-400 mb-0.5">
-              / {limitDisplay(maxSubclients)}
-            </span>
+            <span className="text-sm text-slate-400 mb-0.5">/ {limitDisplay(maxSubclients)}</span>
           </div>
-          {maxSubclients !== null && (
+          {maxSubclients != null && (
             <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all ${isAtMax ? 'bg-red-500' : 'bg-indigo-500'}`}
@@ -760,17 +866,17 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
         <div className="p-4 bg-white ring-1 ring-slate-200/70 rounded-xl">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Agents / Client</p>
           <span className="text-2xl font-bold text-slate-900">
-            {limitDisplay(planDetails.agents_per_client)}
+            {limitDisplay(tenantPlan.agents_per_client)}
           </span>
           <p className="text-[11px] text-slate-500 mt-1">Max agents per sub-client</p>
         </div>
 
-        {/* Wholesale rate */}
+        {/* Wholesale rate — live from API */}
         <div className="p-4 bg-white ring-1 ring-slate-200/70 rounded-xl">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Wholesale Rate</p>
           <div className="flex items-baseline gap-1">
             <span className="text-2xl font-bold text-slate-900">
-              ₹{Number(planDetails.wholesale_rate).toFixed(2)}
+              ₹{Number(tenantPlan.wholesale_rate).toFixed(2)}
             </span>
             <span className="text-sm text-slate-400">/min</span>
           </div>
@@ -781,24 +887,39 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
         <div className="p-4 bg-white ring-1 ring-slate-200/70 rounded-xl">
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Voice Clones / Client</p>
           <span className="text-2xl font-bold text-slate-900">
-            {limitDisplay(planDetails.voice_clones)}
+            {limitDisplay(tenantPlan.voice_clones)}
           </span>
           <p className="text-[11px] text-slate-500 mt-1">Custom voice clones per sub-client</p>
         </div>
       </div>
 
-      {/* Upgrade hints for non-pro plans */}
+      {/* Upgrade hint */}
       {!isAgencyPro && (
-        <div className="flex items-start gap-3 p-4 bg-indigo-50 rounded-xl ring-1 ring-indigo-100">
-          <Zap className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="text-xs text-indigo-800 space-y-0.5">
-            <p className="font-semibold">Want more capacity?</p>
-            <p>
-              Upgrade to Agency {planId === 'agency_starter' ? 'Growth or Pro' : 'Pro'} for
-              {planId === 'agency_starter' ? ' up to 50 sub-clients, 5 agents/client, and a lower wholesale rate of ₹3.00/min.' : ' unlimited sub-clients and ₹2.50/min wholesale rate.'}
-            </p>
+        <div className="flex items-center justify-between gap-3 p-4 bg-indigo-50 rounded-xl ring-1 ring-indigo-100">
+          <div className="flex items-start gap-3">
+            <Zap className="w-4 h-4 text-indigo-500 flex-shrink-0 mt-0.5" aria-hidden="true" />
+            <div className="text-xs text-indigo-800">
+              <p className="font-semibold">Want more capacity?</p>
+              <p className="mt-0.5">Upgrade to a higher plan for more sub-clients, agents per client, and a lower wholesale rate.</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowUpgrade(true)}
+            className="flex-shrink-0 text-xs font-semibold text-indigo-600 hover:text-indigo-800 underline underline-offset-2"
+          >
+            View plans
+          </button>
         </div>
+      )}
+
+      {/* Upgrade modal */}
+      {showUpgrade && allPlans.length > 0 && (
+        <UpgradePlanModal
+          currentPlanId={planId}
+          plans={allPlans}
+          onClose={() => setShowUpgrade(false)}
+        />
       )}
     </div>
   )
@@ -809,35 +930,31 @@ function MyPlanTab({ tenantPlan, agencyPlans, subclients }) {
 export default function TenantSubclientsPage() {
   const [activeTab, setActiveTab] = useState('subclients')
   const [subclients, setSubclients] = useState([])
-  const [agencyPlans, setAgencyPlans] = useState(AGENCY_PLAN_DEFAULTS)
-  const [tenantMe, setTenantMe] = useState(null)
+  const [tenantPlan, setTenantPlan] = useState(null)  // from /billing/tenant/plan
+  const [directPlans, setDirectPlans] = useState([])  // for sub-client modal dropdown
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [scRes, plansRes, meRes] = await Promise.allSettled([
+      const [scRes, planRes, directRes] = await Promise.allSettled([
         api.get('/api/v1/billing/tenant/sub-clients'),
-        api.get('/api/v1/admin/pricing/plans'),
-        api.get('/api/v1/tenants/me'),
+        api.get('/api/v1/billing/tenant/plan'),
+        api.get('/api/v1/billing/subscription-plans'),  // public — direct plans for sub-client modal
       ])
 
       if (scRes.status === 'fulfilled') {
         setSubclients(scRes.value.data?.sub_clients || scRes.value.data || [])
       }
-
-      if (plansRes.status === 'fulfilled') {
-        const ap = plansRes.value.data?.agency_plans || plansRes.value.data?.agency
-        if (Array.isArray(ap) && ap.length > 0) {
-          setAgencyPlans(ap)
-        }
+      if (planRes.status === 'fulfilled') {
+        setTenantPlan(planRes.value.data)
       }
-
-      if (meRes.status === 'fulfilled') {
-        setTenantMe(meRes.value.data)
+      if (directRes.status === 'fulfilled') {
+        const plans = directRes.value.data
+        if (Array.isArray(plans) && plans.length > 0) setDirectPlans(plans)
       }
     } catch {
-      // Individual failures handled above via allSettled
+      // Individual failures handled via allSettled
     } finally {
       setLoading(false)
     }
@@ -845,17 +962,8 @@ export default function TenantSubclientsPage() {
 
   useEffect(() => { load() }, [load])
 
-  // Derive wholesale rate from current tenant plan
-  const planId = tenantMe?.plan || 'agency_starter'
-  const currentPlan = agencyPlans.find((p) => p.id === planId)
-    || AGENCY_PLAN_DEFAULTS.find((p) => p.id === planId)
-    || AGENCY_PLAN_DEFAULTS[0]
-  const wholesaleRate = currentPlan?.wholesale_rate ?? 3.00
-
-  // Direct client plans for the sub-client modal dropdown
-  const directPlanOptions = agencyPlans.filter(
-    (p) => p.plan_type !== 'agency' && !p.id?.startsWith('agency')
-  )
+  // Wholesale rate comes directly from the tenant plan API — no hardcoded fallback
+  const wholesaleRate = tenantPlan?.wholesale_rate ?? 0
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -922,7 +1030,7 @@ export default function TenantSubclientsPage() {
               subclients={subclients}
               loading={loading}
               wholesaleRate={wholesaleRate}
-              planOptions={directPlanOptions.length > 0 ? directPlanOptions : [{ id: 'starter', name: 'Starter' }]}
+              planOptions={directPlans.length > 0 ? directPlans : [{ id: 'starter', name: 'Starter' }]}
               onRefresh={load}
             />
           </section>
@@ -937,8 +1045,7 @@ export default function TenantSubclientsPage() {
               </p>
             </div>
             <MyPlanTab
-              tenantPlan={tenantMe}
-              agencyPlans={agencyPlans}
+              tenantPlan={tenantPlan}
               subclients={subclients}
             />
           </section>

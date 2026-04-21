@@ -644,8 +644,8 @@ def admin_credit(req: AdminCreditRequest) -> dict[str, Any]:
 @router.get("/tenant/plan")
 def tenant_plan_info(tenant_id: str = Depends(_current_tenant)) -> dict[str, Any]:
     """
-    Return the agency platform plan for the current tenant.
-    Used by TenantSubclientsPage "My Plan" tab.
+    Return the agency platform plan for the current tenant + all agency plans
+    for the upgrade modal.  Used by TenantSubclientsPage "My Plan" tab.
     """
     try:
         with db() as conn:
@@ -662,22 +662,48 @@ def tenant_plan_info(tenant_id: str = Depends(_current_tenant)) -> dict[str, Any
             ).fetchone()
             plan = dict(plan_row) if plan_row else {}
 
-            # Sub-client usage
-            sub_count = conn.execute(
-                f"SELECT COUNT(*) FROM platform_tenants WHERE parent_tenant_id={_bp}",
-                (tenant_id,)
-            ).fetchone()[0]
+            # Sub-client usage — support both column naming conventions
+            sub_count = 0
+            for col in ("parent_agency_id", "parent_tenant_id"):
+                try:
+                    sub_count = conn.execute(
+                        f"SELECT COUNT(*) FROM platform_tenants WHERE {col}={_bp}",
+                        (tenant_id,)
+                    ).fetchone()[0]
+                    break
+                except Exception:
+                    pass
+
+            # All agency plans — for the upgrade modal
+            agency_rows = conn.execute(
+                f"SELECT * FROM plans WHERE plan_type={_bp} ORDER BY COALESCE(price,0) ASC",
+                ("agency",)
+            ).fetchall()
+            all_agency_plans = [
+                {
+                    "id": r["id"],
+                    "name": r["name"],
+                    "monthly_fee": float(r.get("price") or 0),
+                    "wholesale_rate": float(r.get("wholesale_rate") or 0),
+                    "sub_client_limit": r.get("sub_client_limit"),
+                    "agents_per_client": r.get("agents_per_client"),
+                    "voice_clones": r.get("voice_clones"),
+                    "is_active": bool(r.get("is_active", True)),
+                }
+                for r in agency_rows
+            ]
 
         return {
             "tenant_id": tenant_id,
             "plan_id": plan_id,
             "plan_name": plan.get("name") or plan_id,
             "monthly_fee": float(plan.get("price") or 0),
-            "wholesale_rate": float(plan.get("wholesale_rate") or 3.50),
-            "sub_client_limit": plan.get("sub_client_limit"),        # None = unlimited
+            "wholesale_rate": float(plan.get("wholesale_rate") or 0),
+            "sub_client_limit": plan.get("sub_client_limit"),
             "sub_client_count": sub_count,
-            "agents_per_client": plan.get("agents_per_client"),      # None = unlimited
-            "voice_clones": plan.get("voice_clones"),                # None = unlimited
+            "agents_per_client": plan.get("agents_per_client"),
+            "voice_clones": plan.get("voice_clones"),
+            "all_agency_plans": all_agency_plans,
         }
     except HTTPException:
         raise
