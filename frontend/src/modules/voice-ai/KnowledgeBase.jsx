@@ -1,11 +1,12 @@
 /**
- * Knowledge Base — redesigned for clarity
+ * Knowledge Base — scope-first flow
  *
  * Layout:
  *  1. Header
- *  2. Add Knowledge — 3 method cards (Upload · Scrape · Write)
- *     → clicking one expands the input panel inline
- *  3. Assign To — scope picker (Global / Campaign / Agent)
+ *  2. Step 1: Assign To — scope picker (Global / Campaign / Agent)
+ *     → must select scope (and agent/campaign if applicable) before uploading
+ *  3. Step 2: Add Knowledge — 3 method cards (Upload · Scrape · Write)
+ *     → disabled until scope assignment is complete
  *  4. Your Documents — filter tabs + document list
  */
 
@@ -104,52 +105,26 @@ function UploadRow({ file, progress, status, error }) {
   );
 }
 
-// ─── assign-to row ────────────────────────────────────────────────────────────
+// ─── scope readiness check ───────────────────────────────────────────────────
 
-function AssignTo({ scope, setScope, agentId, setAgentId, campaignId, setCampaignId, agents, campaigns }) {
-  return (
-    <div className="mt-5 pt-5 border-t border-slate-100">
-      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Assign to</p>
-      <div className="flex flex-wrap gap-2 mb-3">
-        {SCOPES.map(s => {
-          const Icon = s.icon;
-          const active = scope === s.id;
-          return (
-            <button key={s.id} onClick={() => setScope(s.id)}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-sm font-medium transition-all ${
-                active ? `${s.activeBg} ${s.color}` : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
-              }`}>
-              <Icon className="w-3.5 h-3.5" />
-              {s.label}
-              {active && <span className="text-[10px] font-normal opacity-70">— {s.desc}</span>}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap gap-3">
-        {scope !== 'global' && (
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Campaign</label>
-            <select value={campaignId || ''} onChange={e => setCampaignId(e.target.value || null)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800">
-              <option value="">— Select campaign —</option>
-              {campaigns.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-            </select>
-          </div>
-        )}
-        {scope === 'agent' && (
-          <div className="flex-1 min-w-[180px]">
-            <label className="block text-xs font-medium text-slate-500 mb-1">Agent</label>
-            <select value={agentId || ''} onChange={e => setAgentId(e.target.value || null)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white text-slate-800">
-              <option value="">— Select agent —</option>
-              {agents.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
-            </select>
-          </div>
-        )}
-      </div>
-    </div>
-  );
+function isScopeReady(scope, agentId, campaignId) {
+  if (scope === 'global') return true;
+  if (scope === 'campaign') return !!campaignId;
+  if (scope === 'agent') return !!agentId;
+  return false;
+}
+
+function scopeReadyLabel(scope, agentId, campaignId, agents, campaigns) {
+  if (scope === 'global') return 'Global — all agents will access this knowledge';
+  if (scope === 'campaign' && campaignId) {
+    const name = campaigns.find(c => String(c.id) === String(campaignId))?.name || 'Selected campaign';
+    return `Campaign: ${name}`;
+  }
+  if (scope === 'agent' && agentId) {
+    const name = agents.find(a => String(a.id) === String(agentId))?.name || 'Selected agent';
+    return `Agent: ${name}`;
+  }
+  return null;
 }
 
 // ─── main ─────────────────────────────────────────────────────────────────────
@@ -165,7 +140,7 @@ export default function KnowledgeBasePage() {
   const [activeMethod, setActiveMethod] = useState(null);
 
   // ── shared scope state for all methods ──
-  const [scope,      setScope]      = useState('agent');
+  const [scope,      setScope]      = useState('global');
   const [agentId,    setAgentId]    = useState(null);
   const [campaignId, setCampaignId] = useState(null);
   const [docType,    setDocType]    = useState('document');
@@ -346,6 +321,10 @@ export default function KnowledgeBasePage() {
     },
   ];
 
+  // ── scope readiness ──
+  const scopeReady = isScopeReady(scope, agentId, campaignId);
+  const readyLabel = scopeReadyLabel(scope, agentId, campaignId, agents, campaigns);
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 max-w-5xl">
@@ -356,18 +335,108 @@ export default function KnowledgeBasePage() {
           <BookOpen className="w-6 h-6 text-indigo-500" /> Knowledge Base
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          Add documents, FAQs, and scripts to train your AI agents. You can scope each piece of knowledge to all agents, a specific campaign, or a single agent.
+          Add documents, FAQs, and scripts to train your AI agents. First choose where this knowledge belongs, then add your content.
         </p>
       </div>
 
-      {/* ── 2. Add Knowledge ── */}
+      {/* ── 2. Step 1: Assign To (SCOPE-FIRST) ── */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Add Knowledge</p>
-            <p className="text-xs text-slate-400 mt-0.5">Choose how you want to add information</p>
+        <div className="px-6 py-4 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold">1</span>
+            <p className="text-sm font-semibold text-slate-800">Choose where this knowledge belongs</p>
           </div>
-          {/* Doc type selector — always visible */}
+          <p className="text-xs text-slate-400 mt-1 ml-8">Select scope and target before adding content</p>
+        </div>
+
+        <div className="px-6 py-5">
+          {/* Scope buttons */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {SCOPES.map(s => {
+              const Icon = s.icon;
+              const active = scope === s.id;
+              return (
+                <button key={s.id} onClick={() => { setScope(s.id); setAgentId(null); setCampaignId(null); }}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 text-sm font-medium transition-all ${
+                    active ? `${s.activeBg} ${s.color} border-current` : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'
+                  }`}>
+                  <Icon className="w-4 h-4" />
+                  {s.label}
+                  {active && <span className="text-[10px] font-normal opacity-70">— {s.desc}</span>}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Agent / Campaign dropdowns */}
+          <div className="flex flex-wrap gap-3">
+            {scope === 'campaign' && (
+              <div className="flex-1 min-w-[220px]">
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  Campaign <span className="text-red-500">*</span>
+                </label>
+                <select value={campaignId || ''} onChange={e => setCampaignId(e.target.value || null)}
+                  className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white text-slate-800 transition-colors ${
+                    !campaignId ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'
+                  }`}>
+                  <option value="">— Select campaign —</option>
+                  {campaigns.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+                </select>
+                {!campaignId && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Select a campaign to continue
+                  </p>
+                )}
+              </div>
+            )}
+            {scope === 'agent' && (
+              <div className="flex-1 min-w-[220px]">
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  Agent <span className="text-red-500">*</span>
+                </label>
+                <select value={agentId || ''} onChange={e => setAgentId(e.target.value || null)}
+                  className={`w-full px-3 py-2.5 text-sm border rounded-xl bg-white text-slate-800 transition-colors ${
+                    !agentId ? 'border-amber-300 ring-1 ring-amber-100' : 'border-slate-200'
+                  }`}>
+                  <option value="">— Select agent —</option>
+                  {agents.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+                </select>
+                {!agentId && (
+                  <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> Select an agent to continue
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Ready indicator */}
+          {scopeReady && readyLabel && (
+            <div className="mt-4 flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              <p className="text-xs font-medium text-emerald-700">{readyLabel}</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── 3. Step 2: Add Knowledge (gated on scope) ── */}
+      <div className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${
+        scopeReady ? 'border-slate-200 opacity-100' : 'border-slate-100 opacity-50 pointer-events-none'
+      }`}>
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+              scopeReady ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'
+            }`}>2</span>
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Add Knowledge</p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {scopeReady ? 'Choose how you want to add information' : 'Complete Step 1 first'}
+              </p>
+            </div>
+          </div>
+          {/* Doc type selector */}
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-400">Type:</span>
             <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
@@ -420,6 +489,18 @@ export default function KnowledgeBasePage() {
               className="overflow-hidden border-t border-slate-100"
             >
               <div className="px-6 py-5 space-y-4">
+
+                {/* Scope summary banner */}
+                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-xl">
+                  <Bot className="w-4 h-4 text-indigo-500 flex-shrink-0" />
+                  <p className="text-xs font-medium text-indigo-700">
+                    Adding to: {readyLabel}
+                  </p>
+                  <button onClick={() => { setActiveMethod(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                    className="ml-auto text-xs text-indigo-500 hover:text-indigo-700 font-medium underline">
+                    Change
+                  </button>
+                </div>
 
                 {/* ── Upload panel ── */}
                 {activeMethod === 'upload' && (
@@ -541,14 +622,6 @@ export default function KnowledgeBasePage() {
                     </button>
                   </div>
                 )}
-
-                {/* ── Assign to (shared for all methods) ── */}
-                <AssignTo
-                  scope={scope} setScope={setScope}
-                  agentId={agentId} setAgentId={setAgentId}
-                  campaignId={campaignId} setCampaignId={setCampaignId}
-                  agents={agents} campaigns={campaigns}
-                />
               </div>
             </motion.div>
           )}

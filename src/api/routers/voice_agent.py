@@ -199,6 +199,30 @@ async def test_voice_endpoint(
 # Knowledge Base Endpoints
 # ===========================
 
+
+def _validate_scope(scope: str, agent_id: str | None, campaign_id: str | None) -> None:
+    """Validate that scope has the required associated ID.
+
+    Raises HTTPException 422 if scope requires an ID that wasn't provided.
+    """
+    valid_scopes = ("global", "campaign", "agent")
+    if scope not in valid_scopes:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid scope '{scope}'. Must be one of: {', '.join(valid_scopes)}",
+        )
+    if scope == "agent" and not agent_id:
+        raise HTTPException(
+            status_code=422,
+            detail="agent_id is required when scope is 'agent'",
+        )
+    if scope == "campaign" and not campaign_id:
+        raise HTTPException(
+            status_code=422,
+            detail="campaign_id is required when scope is 'campaign'",
+        )
+
+
 @router.post("/knowledge", response_model=list[KnowledgeResponse], status_code=201)
 async def add_knowledge_endpoint(
     body: KnowledgeAddRequest,
@@ -206,6 +230,7 @@ async def add_knowledge_endpoint(
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
     """Upload a document or FAQ to the knowledge base. Auto-chunks and embeds."""
+    _validate_scope(body.scope, body.agent_id, body.campaign_id)
     tenant_id = _tenant_id_for(user)
     docs = await voice_agent_knowledge.add_document(
         db,
@@ -229,6 +254,7 @@ async def bulk_add_knowledge_endpoint(
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
     """Bulk upload documents/FAQs."""
+    _validate_scope(body.scope, body.agent_id, body.campaign_id)
     tenant_id = _tenant_id_for(user)
     count = await voice_agent_knowledge.bulk_add_documents(
         db,
@@ -307,6 +333,7 @@ async def upload_knowledge_file(
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
     """Upload PDF, DOCX, TXT, CSV, or Excel and add extracted text to the knowledge base."""
+    _validate_scope(scope, agent_id, campaign_id)
     tenant_id = _tenant_id_for(user)
     filename = file.filename or ""
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -388,6 +415,7 @@ async def scrape_url_knowledge(
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
     """Scrape a public URL and add the extracted text to the knowledge base."""
+    _validate_scope(scope, agent_id, campaign_id)
     import aiohttp as _aiohttp
     tenant_id = _tenant_id_for(user)
 

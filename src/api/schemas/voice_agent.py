@@ -6,7 +6,7 @@ KB-008: NO 'any' type — every field explicitly typed.
 """
 
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ── Voice Cloning ──────────────────────────────────────────────
 
@@ -50,6 +50,16 @@ class KnowledgeAddRequest(BaseModel):
     question: str | None = None
     answer: str | None = None
 
+    @model_validator(mode="after")
+    def validate_scope_ids(self):
+        if self.scope not in ("global", "campaign", "agent"):
+            raise ValueError(f"Invalid scope '{self.scope}'. Must be global, campaign, or agent")
+        if self.scope == "agent" and not self.agent_id:
+            raise ValueError("agent_id is required when scope is 'agent'")
+        if self.scope == "campaign" and not self.campaign_id:
+            raise ValueError("campaign_id is required when scope is 'campaign'")
+        return self
+
 
 class KnowledgeBulkRequest(BaseModel):
     tenant_id: str = Field("default")
@@ -57,6 +67,16 @@ class KnowledgeBulkRequest(BaseModel):
     agent_id: str | None = None
     campaign_id: str | None = None
     items: list[dict] = Field(..., min_length=1)
+
+    @model_validator(mode="after")
+    def validate_scope_ids(self):
+        if self.scope not in ("global", "campaign", "agent"):
+            raise ValueError(f"Invalid scope '{self.scope}'. Must be global, campaign, or agent")
+        if self.scope == "agent" and not self.agent_id:
+            raise ValueError("agent_id is required when scope is 'agent'")
+        if self.scope == "campaign" and not self.campaign_id:
+            raise ValueError("campaign_id is required when scope is 'campaign'")
+        return self
 
 
 class KnowledgeUpdateRequest(BaseModel):
