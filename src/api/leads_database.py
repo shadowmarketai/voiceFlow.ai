@@ -98,14 +98,15 @@ def get_leads_engine():
         # Fall back to main app's async engine
         try:
             from api.database import get_async_engine
-            _leads_engine = get_async_engine()
-            _using_shared_engine = True
-            if _leads_engine:
-                logger.info("Leads DB: sharing main app database (SQLite/Postgres)")
+            engine = get_async_engine()
+            if engine:
+                _leads_engine = engine
+                _using_shared_engine = True
+                logger.info("Leads DB: sharing main app async engine (URL: %s)", str(engine.url)[:40])
             else:
-                logger.warning("Leads DB: main async engine not available")
+                logger.error("Leads DB: get_async_engine() returned None — aiosqlite may not be installed")
         except Exception as exc:
-            logger.warning("Leads DB: could not get main async engine: %s", exc)
+            logger.error("Leads DB: could not get main async engine: %s", exc)
 
     return _leads_engine
 
