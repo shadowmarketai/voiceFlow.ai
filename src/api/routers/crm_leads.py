@@ -12,7 +12,6 @@ Endpoints for the leads database:
 """
 
 import logging
-import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
@@ -161,50 +160,8 @@ async def create_lead_endpoint(
     return await _lead_to_response(db, lead)
 
 
-@router.get("/{lead_id}", response_model=LeadResponse)
-async def get_lead_endpoint(
-    lead_id: str,
-    db: AsyncSession = Depends(get_leads_db),
-    user: dict = Depends(require_permission("voiceAI", "read")),
-):
-    """Get a single lead by ID."""
-    lead = await leads_service.get_lead(db, uuid.UUID(lead_id))
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return await _lead_to_response(db, lead)
-
-
-@router.put("/{lead_id}", response_model=LeadResponse)
-async def update_lead_endpoint(
-    lead_id: str,
-    body: LeadUpdateRequest,
-    db: AsyncSession = Depends(get_leads_db),
-    user: dict = Depends(require_permission("voiceAI", "update")),
-):
-    """Update a lead."""
-    lead = await leads_service.update_lead(
-        db, uuid.UUID(lead_id), body.model_dump(exclude_none=True)
-    )
-    if not lead:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return await _lead_to_response(db, lead)
-
-
-@router.delete("/{lead_id}")
-async def delete_lead_endpoint(
-    lead_id: str,
-    db: AsyncSession = Depends(get_leads_db),
-    user: dict = Depends(require_permission("voiceAI", "delete")),
-):
-    """Soft-delete a lead."""
-    deleted = await leads_service.delete_lead(db, uuid.UUID(lead_id))
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return {"status": "deleted", "lead_id": lead_id}
-
-
 # ===========================
-# Pipeline
+# Pipeline (MUST be before /{lead_id} routes)
 # ===========================
 
 @router.get("/pipeline/stats", response_model=PipelineStats)
@@ -218,7 +175,7 @@ async def pipeline_stats_endpoint(
 
 
 # ===========================
-# Import / Export
+# Import / Export (MUST be before /{lead_id} routes)
 # ===========================
 
 @router.post("/import", response_model=ImportResult, status_code=201)
@@ -264,7 +221,7 @@ async def export_leads_endpoint(
 
 
 # ===========================
-# Interactions
+# Interactions (MUST be before /{lead_id} routes)
 # ===========================
 
 @router.post("/interactions", status_code=201)
@@ -276,7 +233,7 @@ async def add_interaction_endpoint(
     """Log an interaction (call, chat, email, etc.) with a lead."""
     interaction = await leads_service.add_interaction(
         db,
-        lead_id=uuid.UUID(body.lead_id),
+        lead_id=body.lead_id,
         channel=body.channel,
         direction=body.direction,
         content=body.content,
@@ -296,6 +253,52 @@ async def add_interaction_endpoint(
     )
 
 
+# ===========================
+# Single Lead CRUD (/{lead_id} routes LAST)
+# ===========================
+
+@router.get("/{lead_id}", response_model=LeadResponse)
+async def get_lead_endpoint(
+    lead_id: str,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """Get a single lead by ID."""
+    lead = await leads_service.get_lead(db, lead_id)
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return await _lead_to_response(db, lead)
+
+
+@router.put("/{lead_id}", response_model=LeadResponse)
+async def update_lead_endpoint(
+    lead_id: str,
+    body: LeadUpdateRequest,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "update")),
+):
+    """Update a lead."""
+    lead = await leads_service.update_lead(
+        db, lead_id, body.model_dump(exclude_none=True)
+    )
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return await _lead_to_response(db, lead)
+
+
+@router.delete("/{lead_id}")
+async def delete_lead_endpoint(
+    lead_id: str,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "delete")),
+):
+    """Soft-delete a lead."""
+    deleted = await leads_service.delete_lead(db, lead_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {"status": "deleted", "lead_id": lead_id}
+
+
 @router.get("/{lead_id}/interactions", response_model=list[InteractionResponse])
 async def list_interactions_endpoint(
     lead_id: str,
@@ -305,7 +308,7 @@ async def list_interactions_endpoint(
 ):
     """Get all interactions for a lead."""
     interactions = await leads_service.list_interactions(
-        db, uuid.UUID(lead_id), limit=limit
+        db, lead_id, limit=limit
     )
     return [
         InteractionResponse(

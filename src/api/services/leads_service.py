@@ -14,7 +14,7 @@ import csv
 import io
 import logging
 import re
-import uuid
+import uuid as _uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select, update, and_, or_
@@ -215,7 +215,7 @@ async def capture_lead(
 # CRUD Operations
 # ============================================
 
-async def get_lead(db: AsyncSession, lead_id: uuid.UUID) -> Lead | None:
+async def get_lead(db: AsyncSession, lead_id: str) -> Lead | None:
     result = await db.execute(
         select(Lead).where(Lead.id == lead_id, Lead.deleted_at.is_(None))
     )
@@ -267,7 +267,7 @@ async def list_leads(
 
 async def update_lead(
     db: AsyncSession,
-    lead_id: uuid.UUID,
+    lead_id: str,
     updates: dict,
 ) -> Lead | None:
     """Update a lead's fields."""
@@ -294,7 +294,7 @@ async def update_lead(
     return lead
 
 
-async def delete_lead(db: AsyncSession, lead_id: uuid.UUID) -> bool:
+async def delete_lead(db: AsyncSession, lead_id: str) -> bool:
     """Soft-delete a lead."""
     lead = await get_lead(db, lead_id)
     if not lead:
@@ -333,7 +333,7 @@ async def get_pipeline_stats(db: AsyncSession, tenant_id: str) -> dict:
 
 async def add_interaction(
     db: AsyncSession,
-    lead_id: uuid.UUID,
+    lead_id: str,
     channel: str,
     direction: str = "inbound",
     content: str | None = None,
@@ -365,7 +365,7 @@ async def add_interaction(
 
 async def list_interactions(
     db: AsyncSession,
-    lead_id: uuid.UUID,
+    lead_id: str,
     limit: int = 50,
 ) -> list[LeadInteraction]:
     result = await db.execute(
@@ -479,7 +479,7 @@ async def export_csv(db: AsyncSession, tenant_id: str) -> str:
 # Tags & Custom Fields helpers
 # ============================================
 
-async def _set_tags(db: AsyncSession, lead_id: uuid.UUID, tags: list[str]):
+async def _set_tags(db: AsyncSession, lead_id: str, tags: list[str]):
     """Replace all tags for a lead."""
     if not tags:
         return
@@ -496,7 +496,7 @@ async def _set_tags(db: AsyncSession, lead_id: uuid.UUID, tags: list[str]):
     await db.flush()
 
 
-async def _set_custom_fields(db: AsyncSession, lead_id: uuid.UUID, fields: dict[str, str]):
+async def _set_custom_fields(db: AsyncSession, lead_id: str, fields: dict[str, str]):
     """Upsert custom fields for a lead."""
     if not fields:
         return
@@ -519,14 +519,14 @@ async def _set_custom_fields(db: AsyncSession, lead_id: uuid.UUID, fields: dict[
     await db.flush()
 
 
-async def get_lead_tags(db: AsyncSession, lead_id: uuid.UUID) -> list[str]:
+async def get_lead_tags(db: AsyncSession, lead_id: str) -> list[str]:
     result = await db.execute(
         select(LeadTag.tag).where(LeadTag.lead_id == lead_id)
     )
     return [row[0] for row in result.all()]
 
 
-async def get_lead_custom_fields(db: AsyncSession, lead_id: uuid.UUID) -> dict[str, str]:
+async def get_lead_custom_fields(db: AsyncSession, lead_id: str) -> dict[str, str]:
     result = await db.execute(
         select(LeadCustomField.field_key, LeadCustomField.field_value)
         .where(LeadCustomField.lead_id == lead_id)

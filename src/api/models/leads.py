@@ -23,12 +23,12 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -42,8 +42,8 @@ from api.models.leads_base import LeadsBase
 class Lead(LeadsBase):
     __tablename__ = "leads"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
 
@@ -125,15 +125,7 @@ class Lead(LeadsBase):
         Index("idx_leads_phone", "phone"),
         Index("idx_leads_email", "email"),
         Index("idx_leads_source_campaign", "tenant_id", "source", "source_campaign"),
-        Index(
-            "idx_leads_followup",
-            "next_followup_at",
-            postgresql_where="status NOT IN ('converted','lost')",
-        ),
-        UniqueConstraint(
-            "tenant_id", "phone",
-            name="uq_leads_tenant_phone",
-        ),
+        Index("idx_leads_followup", "next_followup_at"),
     )
 
 
@@ -144,11 +136,11 @@ class Lead(LeadsBase):
 class LeadInteraction(LeadsBase):
     __tablename__ = "lead_interactions"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    lead_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    lead_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
     )
     channel: Mapped[str] = mapped_column(
         String(50), nullable=False
@@ -157,7 +149,7 @@ class LeadInteraction(LeadsBase):
         String(10), default="inbound"
     )  # inbound, outbound
     content: Mapped[str | None] = mapped_column(Text)
-    metadata_json: Mapped[dict | None] = mapped_column(JSONB)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON)
     sentiment: Mapped[str | None] = mapped_column(String(20))
     intent_detected: Mapped[str | None] = mapped_column(String(100))
     created_at: Mapped[datetime] = mapped_column(
@@ -179,11 +171,11 @@ class LeadInteraction(LeadsBase):
 class LeadCustomField(LeadsBase):
     __tablename__ = "lead_custom_fields"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    lead_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    lead_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
     )
     field_key: Mapped[str] = mapped_column(String(100), nullable=False)
     field_value: Mapped[str | None] = mapped_column(Text)
@@ -205,8 +197,8 @@ class LeadCustomField(LeadsBase):
 class LeadTag(LeadsBase):
     __tablename__ = "lead_tags"
 
-    lead_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), primary_key=True
+    lead_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("leads.id", ondelete="CASCADE"), primary_key=True
     )
     tag: Mapped[str] = mapped_column(String(50), primary_key=True)
 
@@ -224,8 +216,8 @@ class LeadTag(LeadsBase):
 class CrmConnection(LeadsBase):
     __tablename__ = "crm_connections"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(
@@ -246,7 +238,7 @@ class CrmConnection(LeadsBase):
     webhook_url: Mapped[str | None] = mapped_column(String(500))
 
     # Field mapping: {our_field: their_field}
-    field_mapping: Mapped[dict | None] = mapped_column(JSONB)
+    field_mapping: Mapped[dict | None] = mapped_column(JSON)
 
     # Sync settings
     sync_direction: Mapped[str] = mapped_column(
@@ -276,8 +268,8 @@ class CrmConnection(LeadsBase):
 class AdSourceConnection(LeadsBase):
     __tablename__ = "ad_source_connections"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(
@@ -288,7 +280,7 @@ class AdSourceConnection(LeadsBase):
     auth_type: Mapped[str] = mapped_column(
         String(20), default="webhook"
     )  # oauth2, api_key, webhook
-    credentials: Mapped[dict | None] = mapped_column(JSONB)  # encrypted in prod
+    credentials: Mapped[dict | None] = mapped_column(JSON)  # encrypted in prod
 
     # Webhook config
     webhook_url: Mapped[str | None] = mapped_column(String(500))
@@ -300,7 +292,7 @@ class AdSourceConnection(LeadsBase):
 
     # Auto-assignment
     auto_assign_agent_id: Mapped[str | None] = mapped_column(String(255))
-    default_tags: Mapped[list | None] = mapped_column(JSONB)
+    default_tags: Mapped[list | None] = mapped_column(JSON)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -322,8 +314,8 @@ class AdSourceConnection(LeadsBase):
 class SyncLog(LeadsBase):
     __tablename__ = "sync_logs"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     connection_type: Mapped[str] = mapped_column(
@@ -340,7 +332,7 @@ class SyncLog(LeadsBase):
     records_created: Mapped[int] = mapped_column(Integer, default=0)
     records_updated: Mapped[int] = mapped_column(Integer, default=0)
     records_skipped: Mapped[int] = mapped_column(Integer, default=0)
-    errors: Mapped[list | None] = mapped_column(JSONB)
+    errors: Mapped[list | None] = mapped_column(JSON)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

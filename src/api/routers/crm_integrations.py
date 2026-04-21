@@ -109,7 +109,7 @@ async def delete_crm_connection(
 ):
     """Delete a CRM connection."""
     result = await db.execute(
-        select(CrmConnection).where(CrmConnection.id == uuid.UUID(connection_id))
+        select(CrmConnection).where(CrmConnection.id == connection_id)
     )
     conn = result.scalar_one_or_none()
     if not conn:
@@ -126,7 +126,7 @@ async def trigger_crm_sync(
 ):
     """Manually trigger a CRM sync (import leads from external CRM)."""
     result = await db.execute(
-        select(CrmConnection).where(CrmConnection.id == uuid.UUID(connection_id))
+        select(CrmConnection).where(CrmConnection.id == connection_id)
     )
     conn = result.scalar_one_or_none()
     if not conn:
@@ -367,7 +367,7 @@ async def delete_ad_source(
 ):
     """Delete an ad source connection."""
     result = await db.execute(
-        select(AdSourceConnection).where(AdSourceConnection.id == uuid.UUID(source_id))
+        select(AdSourceConnection).where(AdSourceConnection.id == source_id)
     )
     source = result.scalar_one_or_none()
     if not source:

@@ -1,17 +1,14 @@
 """
-VoiceFlow AI - Separate Leads Database Layer
-=============================================
-Dedicated database for leads, contacts, CRM connections, and ad source data.
-Isolated from the main app database for:
-  - DPDP/GDPR compliance (separate data lifecycle)
-  - Independent backup/export cycles
-  - No cross-tenant data leaks
-  - Scalable independently
+VoiceFlow AI - Leads Database Layer
+=====================================
+Manages the database engine/session for leads tables.
 
-Set LEADS_DATABASE_URL env var for PostgreSQL:
-  LEADS_DATABASE_URL=postgresql+asyncpg://user:pass@host:5433/shadowmarket_leads
+Strategy:
+  1. If LEADS_DATABASE_URL is set → use separate Postgres database
+  2. If main DATABASE_URL is Postgres → derive leads DB from it
+  3. If main DB is SQLite → use the main app's async engine (shared DB)
 
-Falls back to the main DATABASE_URL with a '_leads' suffix if not set.
+This ensures leads work on both production Postgres AND dev/staging SQLite.
 """
 
 import logging
@@ -36,22 +33,33 @@ POOL_SIZE = int(os.environ.get("LEADS_DB_POOL_SIZE", "5"))
 MAX_OVERFLOW = int(os.environ.get("LEADS_DB_MAX_OVERFLOW", "10"))
 ECHO_SQL = os.environ.get("DB_ECHO", "false").lower() == "true"
 
+# Track whether we're using a separate DB or sharing the main one
+_using_shared_engine = False
 
-def _get_leads_url() -> str:
-    """Derive the leads database async URL."""
+
+def _get_leads_url() -> str | None:
+    """Derive the leads database async URL.
+
+    Returns URL string for separate DB, or None to signal "use main DB engine".
+    """
     if _LEADS_DB_URL:
         url = _LEADS_DB_URL
-    elif _MAIN_DB_URL:
-        # Use same host but different database name
-        url = _MAIN_DB_URL.replace("/voiceflow", "/shadowmarket_leads")
-    else:
-        return ""
+        # Ensure async driver for PostgreSQL
+        if "postgresql" in url and "+asyncpg" not in url:
+            url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+            url = url.replace("postgresql://", "postgresql+asyncpg://")
+        return url
 
-    # Ensure async driver
-    if "postgresql://" in url and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://")
-    url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-    return url
+    if _MAIN_DB_URL and "postgresql" in _MAIN_DB_URL:
+        base = _MAIN_DB_URL.rsplit("/", 1)[0]
+        url = f"{base}/shadowmarket_leads"
+        if "+asyncpg" not in url:
+            url = url.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+            url = url.replace("postgresql://", "postgresql+asyncpg://")
+        return url
+
+    # SQLite or empty — signal to use the main app's async engine
+    return None
 
 
 # ============================================
@@ -63,13 +71,20 @@ _LeadsSessionLocal = None
 
 
 def get_leads_engine():
-    """Get or create the async engine for the leads database."""
-    global _leads_engine
-    if _leads_engine is None:
-        url = _get_leads_url()
-        if not url:
-            logger.warning("No LEADS_DATABASE_URL configured; leads DB disabled.")
-            return None
+    """Get or create the async engine for leads.
+
+    Falls back to the main app's async engine when no separate leads DB
+    is configured (SQLite mode).
+    """
+    global _leads_engine, _using_shared_engine
+
+    if _leads_engine is not None:
+        return _leads_engine
+
+    url = _get_leads_url()
+
+    if url:
+        # Separate Postgres database
         _leads_engine = create_async_engine(
             url,
             echo=ECHO_SQL,
@@ -77,6 +92,21 @@ def get_leads_engine():
             pool_size=POOL_SIZE,
             max_overflow=MAX_OVERFLOW,
         )
+        _using_shared_engine = False
+        logger.info("Leads DB: using separate database")
+    else:
+        # Fall back to main app's async engine
+        try:
+            from api.database import get_async_engine
+            _leads_engine = get_async_engine()
+            _using_shared_engine = True
+            if _leads_engine:
+                logger.info("Leads DB: sharing main app database (SQLite/Postgres)")
+            else:
+                logger.warning("Leads DB: main async engine not available")
+        except Exception as exc:
+            logger.warning("Leads DB: could not get main async engine: %s", exc)
+
     return _leads_engine
 
 
@@ -101,8 +131,10 @@ async def get_leads_db():
     """FastAPI dependency that yields an async session to the leads database."""
     factory = get_leads_session_factory()
     if factory is None:
-        raise RuntimeError(
-            "Leads database not configured. Set LEADS_DATABASE_URL."
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=503,
+            detail="Leads database not available. Contact support.",
         )
     async with factory() as session:
         try:
@@ -121,26 +153,27 @@ async def init_leads_db():
     """Create all leads tables if they don't exist."""
     engine = get_leads_engine()
     if engine is None:
-        logger.info("Leads DB not configured — skipping init.")
+        logger.warning("Leads DB engine not available — skipping init.")
         return
 
-    async with engine.begin() as conn:
-        await conn.run_sync(LeadsBase.metadata.create_all)
-
-    logger.info("Leads database tables created/verified.")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(LeadsBase.metadata.create_all)
+        logger.info("Leads database tables created/verified.")
+    except Exception as exc:
+        logger.warning("Leads DB table creation failed: %s", exc)
 
 
 async def ensure_leads_database_exists():
-    """Create the shadowmarket_leads database if it doesn't exist.
+    """Create the shadowmarket_leads database if using separate Postgres.
 
-    Connects to the default 'postgres' database to issue CREATE DATABASE.
-    Safe to call on every startup (idempotent).
+    Only needed when LEADS_DATABASE_URL or Postgres main DB is configured.
+    Skipped when sharing the main SQLite database.
     """
     url = _get_leads_url()
-    if not url:
+    if not url or "postgresql" not in url:
         return
 
-    # Connect to 'postgres' database to create the leads DB
     admin_url = url.rsplit("/", 1)[0] + "/postgres"
     try:
         admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
