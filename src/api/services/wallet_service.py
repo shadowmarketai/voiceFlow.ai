@@ -13,8 +13,11 @@ from typing import Any
 
 from sqlalchemy import select, text
 
-from api.database import get_engine
+from api.database import USE_POSTGRES, db, get_engine
 from api.models.billing_wallet import RatePlan, Wallet, WalletTransaction
+
+# Placeholder for raw SQL (used by get_rate_plan / update_rate_plan)
+_ph = "%s" if USE_POSTGRES else "?"
 
 
 class InsufficientFundsError(Exception):
@@ -190,6 +193,70 @@ def list_transactions(tenant_id: str, limit: int = 50, offset: int = 0) -> list[
 
 
 # ── Rate plans ─────────────────────────────────────────────────────────────
+# We use raw db() here (not SQLAlchemy get_engine) so that writes go to the
+# same volume-mounted SQLite file as the rest of the app.  If DATABASE_URL
+# is set in the environment, get_engine() may resolve to a DIFFERENT path
+# (e.g. sqlite:////app/voiceflow.db) while db() always uses /app/sqlite/
+# voiceflow.db when that directory exists.
+
+_RATE_PLAN_TABLE_CREATED = False
+
+
+def _ensure_rate_plan_table() -> None:
+    """Create billing_rate_plans via raw db() so it lives in the same file as everything else."""
+    global _RATE_PLAN_TABLE_CREATED
+    if _RATE_PLAN_TABLE_CREATED:
+        return
+    try:
+        with db() as conn:
+            if USE_POSTGRES:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS billing_rate_plans (
+                        tenant_id            TEXT PRIMARY KEY,
+                        stt_provider         TEXT NOT NULL DEFAULT 'deepgram_nova2',
+                        llm_provider         TEXT NOT NULL DEFAULT 'groq_llama3_8b',
+                        tts_provider         TEXT NOT NULL DEFAULT 'cartesia',
+                        telephony_provider   TEXT NOT NULL DEFAULT 'exotel',
+                        platform_fee_paise   BIGINT NOT NULL DEFAULT 100,
+                        ai_markup_pct        INTEGER NOT NULL DEFAULT 20,
+                        telephony_markup_pct INTEGER NOT NULL DEFAULT 10,
+                        min_floor_paise      BIGINT NOT NULL DEFAULT 250,
+                        lock_llm             BOOLEAN NOT NULL DEFAULT FALSE,
+                        lock_tts             BOOLEAN NOT NULL DEFAULT FALSE,
+                        tier                 TEXT NOT NULL DEFAULT 'starter',
+                        tenant_fee_paise     BIGINT NOT NULL DEFAULT 0,
+                        tenant_ai_markup_pct INTEGER NOT NULL DEFAULT 0,
+                        tenant_lock_llm      BOOLEAN NOT NULL DEFAULT FALSE,
+                        tenant_lock_tts      BOOLEAN NOT NULL DEFAULT FALSE,
+                        updated_at           TEXT
+                    )
+                """)
+            else:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS billing_rate_plans (
+                        tenant_id            TEXT PRIMARY KEY,
+                        stt_provider         TEXT NOT NULL DEFAULT 'deepgram_nova2',
+                        llm_provider         TEXT NOT NULL DEFAULT 'groq_llama3_8b',
+                        tts_provider         TEXT NOT NULL DEFAULT 'cartesia',
+                        telephony_provider   TEXT NOT NULL DEFAULT 'exotel',
+                        platform_fee_paise   INTEGER NOT NULL DEFAULT 100,
+                        ai_markup_pct        INTEGER NOT NULL DEFAULT 20,
+                        telephony_markup_pct INTEGER NOT NULL DEFAULT 10,
+                        min_floor_paise      INTEGER NOT NULL DEFAULT 250,
+                        lock_llm             INTEGER NOT NULL DEFAULT 0,
+                        lock_tts             INTEGER NOT NULL DEFAULT 0,
+                        tier                 TEXT NOT NULL DEFAULT 'starter',
+                        tenant_fee_paise     INTEGER NOT NULL DEFAULT 0,
+                        tenant_ai_markup_pct INTEGER NOT NULL DEFAULT 0,
+                        tenant_lock_llm      INTEGER NOT NULL DEFAULT 0,
+                        tenant_lock_tts      INTEGER NOT NULL DEFAULT 0,
+                        updated_at           TEXT
+                    )
+                """)
+    except Exception:
+        pass
+    _RATE_PLAN_TABLE_CREATED = True
+
 
 class _RatePlanDTO:
     """Simple dataclass-ish holder so router code can use attribute access."""
@@ -235,19 +302,36 @@ _DEFAULT_PLAN = {
 
 
 def get_rate_plan(tenant_id: str) -> _RatePlanDTO:
-    _ensure_tables()
-    engine = get_engine()
-    rp = RatePlan.__table__
-    with engine.begin() as conn:
-        row = conn.execute(select(rp).where(rp.c.tenant_id == tenant_id)).first()
+    _ensure_rate_plan_table()
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT * FROM billing_rate_plans WHERE tenant_id={_ph}", (tenant_id,)
+        ).fetchone()
         if row is None:
-            conn.execute(rp.insert().values(
-                tenant_id=tenant_id, **_DEFAULT_PLAN,
-                updated_at=datetime.utcnow(),
+            now = datetime.utcnow().isoformat()
+            conn.execute(f"""
+                INSERT INTO billing_rate_plans
+                  (tenant_id, stt_provider, llm_provider, tts_provider, telephony_provider,
+                   platform_fee_paise, ai_markup_pct, telephony_markup_pct, min_floor_paise,
+                   lock_llm, lock_tts, tier,
+                   tenant_fee_paise, tenant_ai_markup_pct, tenant_lock_llm, tenant_lock_tts,
+                   updated_at)
+                VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
+            """, (
+                tenant_id,
+                _DEFAULT_PLAN["stt_provider"], _DEFAULT_PLAN["llm_provider"],
+                _DEFAULT_PLAN["tts_provider"], _DEFAULT_PLAN["telephony_provider"],
+                _DEFAULT_PLAN["platform_fee_paise"], _DEFAULT_PLAN["ai_markup_pct"],
+                _DEFAULT_PLAN["telephony_markup_pct"], _DEFAULT_PLAN["min_floor_paise"],
+                int(bool(_DEFAULT_PLAN["lock_llm"])), int(bool(_DEFAULT_PLAN["lock_tts"])),
+                _DEFAULT_PLAN["tier"],
+                _DEFAULT_PLAN["tenant_fee_paise"], _DEFAULT_PLAN["tenant_ai_markup_pct"],
+                int(bool(_DEFAULT_PLAN["tenant_lock_llm"])), int(bool(_DEFAULT_PLAN["tenant_lock_tts"])),
+                now,
             ))
             data = {"tenant_id": tenant_id, **_DEFAULT_PLAN}
         else:
-            data = dict(row._mapping)
+            data = dict(row)
     return _RatePlanDTO(data)
 
 
@@ -259,17 +343,49 @@ def update_rate_plan(tenant_id: str, **updates) -> _RatePlanDTO:
         "tenant_fee_paise", "tenant_ai_markup_pct",
         "tenant_lock_llm", "tenant_lock_tts",
     }
-    clean = {k: v for k, v in updates.items() if k in allowed and v is not None}
-    _ensure_tables()
-    engine = get_engine()
-    rp = RatePlan.__table__
-    with engine.begin() as conn:
-        row = conn.execute(select(rp).where(rp.c.tenant_id == tenant_id)).first()
+    bool_fields = {"lock_llm", "lock_tts", "tenant_lock_llm", "tenant_lock_tts"}
+    clean: dict[str, Any] = {}
+    for k, v in updates.items():
+        if k in allowed and v is not None:
+            # Normalise booleans to int so SQLite stores them correctly
+            clean[k] = int(bool(v)) if k in bool_fields else v
+
+    _ensure_rate_plan_table()
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT tenant_id FROM billing_rate_plans WHERE tenant_id={_ph}", (tenant_id,)
+        ).fetchone()
         if row is None:
-            insert_vals = {**_DEFAULT_PLAN, **clean, "tenant_id": tenant_id, "updated_at": datetime.utcnow()}
-            conn.execute(rp.insert().values(**insert_vals))
-        else:
-            conn.execute(rp.update().where(rp.c.tenant_id == tenant_id).values(
-                **clean, updated_at=datetime.utcnow(),
+            merged = {**_DEFAULT_PLAN, **clean}
+            now = datetime.utcnow().isoformat()
+            conn.execute(f"""
+                INSERT INTO billing_rate_plans
+                  (tenant_id, stt_provider, llm_provider, tts_provider, telephony_provider,
+                   platform_fee_paise, ai_markup_pct, telephony_markup_pct, min_floor_paise,
+                   lock_llm, lock_tts, tier,
+                   tenant_fee_paise, tenant_ai_markup_pct, tenant_lock_llm, tenant_lock_tts,
+                   updated_at)
+                VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})
+            """, (
+                tenant_id,
+                merged["stt_provider"], merged["llm_provider"],
+                merged["tts_provider"], merged["telephony_provider"],
+                merged["platform_fee_paise"], merged["ai_markup_pct"],
+                merged["telephony_markup_pct"], merged["min_floor_paise"],
+                int(bool(merged["lock_llm"])), int(bool(merged["lock_tts"])),
+                merged["tier"],
+                merged["tenant_fee_paise"], merged["tenant_ai_markup_pct"],
+                int(bool(merged["tenant_lock_llm"])), int(bool(merged["tenant_lock_tts"])),
+                now,
             ))
+        else:
+            if clean:
+                now = datetime.utcnow().isoformat()
+                set_clause = ", ".join(f"{k}={_ph}" for k in clean)
+                set_clause += f", updated_at={_ph}"
+                vals = list(clean.values()) + [now, tenant_id]
+                conn.execute(
+                    f"UPDATE billing_rate_plans SET {set_clause} WHERE tenant_id={_ph}",
+                    vals
+                )
     return get_rate_plan(tenant_id)
