@@ -18,7 +18,8 @@ import { defaultTheme } from '../config/theme';
 import {
   LayoutDashboard, Bot, Wand2, BookOpen, Mic, Globe,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
-  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users, UserPlus, Link2,
+  FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
+  UserPlus, Link2, TrendingUp, IndianRupee, Download,
   Search, Menu, LogOut, User, HelpCircle,
   ChevronDown, ChevronsLeft, ChevronsRight, Command, KeyRound, Sparkles,
   Bell, X, Building2, DollarSign, Network,
@@ -46,8 +47,11 @@ const userNavSections = [
   {
     label: 'CRM',
     items: [
-      { icon: UserPlus, name: 'Contacts & Leads', path: '/voice/crm-contacts' },
-      { icon: Link2,    name: 'Integrations',     path: '/voice/crm-integrations' },
+      { icon: UserPlus,    name: 'Contacts',      path: '/voice/crm-contacts' },
+      { icon: TrendingUp,  name: 'Leads',         path: '/voice/crm-leads' },
+      { icon: IndianRupee, name: 'Deals',         path: '/voice/crm-deals' },
+      { icon: Download,    name: 'Import',        path: '/voice/crm-import' },
+      { icon: Link2,       name: 'Integrations',  path: '/voice/crm-integrations' },
     ],
   },
   {
@@ -65,12 +69,6 @@ const userNavSections = [
       { icon: FlaskConical,  name: 'Testing',       path: '/voice/testing' },
       { icon: Gauge,         name: 'Quality',         path: '/voice/quality',         superAdminOnly: true },
       { icon: BarChart3,     name: 'Combo Benchmark', path: '/voice/combo-benchmark', superAdminOnly: true },
-    ],
-  },
-  {
-    label: 'CONNECT',
-    items: [
-      { icon: Puzzle, name: 'Integrations', path: '/voice/integrations' },
     ],
   },
   {

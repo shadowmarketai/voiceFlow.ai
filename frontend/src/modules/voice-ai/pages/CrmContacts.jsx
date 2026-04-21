@@ -159,7 +159,7 @@ export default function CrmContactsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Users className="w-6 h-6 text-indigo-500" /> Contacts & Leads
+            <Users className="w-6 h-6 text-indigo-500" /> Contacts
           </h1>
           <p className="text-sm text-slate-500 mt-1">
             {total} total contacts from all sources

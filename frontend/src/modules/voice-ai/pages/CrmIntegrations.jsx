@@ -35,6 +35,15 @@ const AD_PROVIDERS = [
   { id: 'website', name: 'Website Form', icon: '🌐', auth: 'webhook', desc: 'Embed JS snippet on your site' },
 ];
 
+const TOOL_PROVIDERS = [
+  { id: 'google_calendar', name: 'Google Calendar', icon: '📅', auth: 'oauth2', desc: 'Schedule follow-ups & meetings' },
+  { id: 'whatsapp', name: 'WhatsApp Business', icon: '💬', auth: 'api_key', desc: 'Send follow-up messages' },
+  { id: 'slack', name: 'Slack', icon: '💼', auth: 'webhook', desc: 'Get lead notifications in Slack' },
+  { id: 'zapier', name: 'Zapier', icon: '⚡', auth: 'webhook', desc: 'Connect 5000+ apps' },
+  { id: 'n8n', name: 'n8n', icon: '🔗', auth: 'webhook', desc: 'Self-hosted automation' },
+  { id: 'telegram', name: 'Telegram Bot', icon: '📨', auth: 'api_key', desc: 'Lead alerts via Telegram' },
+];
+
 export default function CrmIntegrationsPage() {
   const [crmConnections, setCrmConnections] = useState([]);
   const [adSources, setAdSources] = useState([]);
@@ -145,6 +154,7 @@ export default function CrmIntegrationsPage() {
         {[
           { id: 'crm', label: 'CRM Connectors', count: crmConnections.length },
           { id: 'ads', label: 'Ad Sources', count: adSources.length },
+          { id: 'tools', label: 'Tools & Automation', count: 0 },
           { id: 'logs', label: 'Sync Logs', count: syncLogs.length },
         ].map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
@@ -314,6 +324,49 @@ export default function CrmIntegrationsPage() {
                       </div>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tools & Automation Tab */}
+          {activeTab === 'tools' && (
+            <div className="space-y-4">
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+                <div className="px-6 py-3 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-800">Tools & Automation</p>
+                  <p className="text-xs text-slate-400 mt-0.5">Connect calendars, messaging, and automation tools</p>
+                </div>
+                <div className="grid grid-cols-2 gap-4 p-6">
+                  {TOOL_PROVIDERS.map(prov => (
+                    <div key={prov.id}
+                      className="flex items-center justify-between p-4 rounded-xl border-2 border-slate-200 hover:border-indigo-200 transition-all">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">{prov.icon}</span>
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">{prov.name}</p>
+                          <p className="text-xs text-slate-400">{prov.desc}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => {
+                        if (prov.auth === 'oauth2') {
+                          crmIntegrationsAPI.oauthAuthorize(prov.id)
+                            .then(({ data }) => { window.open(data.auth_url, '_blank'); })
+                            .catch(() => toast.error('OAuth not configured yet'));
+                        } else {
+                          crmIntegrationsAPI.createAdSource({
+                            provider: prov.id, display_name: prov.name,
+                            auth_type: prov.auth, default_tags: [prov.id],
+                          })
+                            .then(() => { toast.success(`${prov.name} enabled!`); loadData(); })
+                            .catch(err => toast.error(err.response?.data?.detail || 'Failed'));
+                        }
+                      }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium">
+                        <Link2 className="w-3 h-3" /> Connect
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
