@@ -16,7 +16,7 @@ import HeaderWalletPill from '../components/HeaderWalletPill';
 import ErrorBoundary from '../components/ErrorBoundary';
 import { defaultTheme } from '../config/theme';
 import {
-  LayoutDashboard, Bot, Wand2, BookOpen, Mic, Globe,
+  LayoutDashboard, Bot, Wand2, BookOpen, Mic, Globe, Phone,
   PhoneOutgoing, MessageSquare, Radio, BarChart3, FileAudio,
   FlaskConical, Gauge, Puzzle, Code, CreditCard, Wallet, Settings, Users,
   UserPlus, Link2, TrendingUp, IndianRupee, Download,
@@ -55,8 +55,9 @@ const userNavSections = [
   {
     label: 'DEPLOY',
     items: [
-      { icon: Globe,         name: 'Channels',   path: '/voice/channels' },
-      { icon: PhoneOutgoing, name: 'Campaigns',  path: '/voice/campaigns' },
+      { icon: Globe,         name: 'Channels',       path: '/voice/channels' },
+      { icon: Phone,         name: 'Phone Numbers',  path: '/voice/phone-numbers' },
+      { icon: PhoneOutgoing, name: 'Campaigns',      path: '/voice/campaigns' },
     ],
   },
   {

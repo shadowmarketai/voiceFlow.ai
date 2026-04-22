@@ -869,6 +869,7 @@ async def _handle_turn_parallel(
     """
     Process one audio turn via the parallel pipeline (Track A):
     STT → LLM → TTS → send audio back.
+    Non-interruptible version (legacy fallback).
     """
     # Transcribe
     transcription = await _transcribe_audio(audio, language=session.language)
@@ -929,6 +930,134 @@ async def _handle_turn_parallel(
             "format": "mp3",
             "message_id": assistant_msg.id,
         }))
+
+
+async def _handle_turn_parallel_interruptible(
+    websocket: WebSocket,
+    audio: bytes,
+    session: Any,
+    agent: dict[str, Any],
+    task_tracker: Any | None = None,
+    interrupt_mgr: Any | None = None,
+) -> None:
+    """
+    Interruptible parallel pipeline (Track A) with task tracking.
+
+    Each async operation is wrapped in a tracked task so the interruption
+    manager can cancel mid-flight if the user barges in.
+
+    Flow:
+      1. STT (tracked task — cancellable)
+      2. LLM (tracked task — cancellable)
+      3. TTS (tracked task — cancellable)
+      4. Send audio chunks back
+
+    If interrupt_mgr or task_tracker is None, behaves identically to
+    _handle_turn_parallel (non-interruptible fallback).
+    """
+    sid = session.session_id
+
+    # Fallback to non-interruptible if manager not available
+    if not task_tracker:
+        await _handle_turn_parallel(websocket, audio, session, agent)
+        return
+
+    # ── Step 1: STT (cancellable) ─────────────────────────────────────
+    stt_task = asyncio.create_task(
+        _transcribe_audio(audio, language=session.language),
+    )
+    task_tracker.track(sid, stt_task)
+
+    try:
+        transcription = await stt_task
+    except asyncio.CancelledError:
+        logger.info("STT cancelled by interrupt (session=%s)", sid)
+        return
+
+    await websocket.send_text(json.dumps({
+        "type": "transcription",
+        "text": transcription["text"],
+        "language": transcription["language"],
+        "confidence": transcription["confidence"],
+    }))
+
+    user_msg = ConversationMessage(
+        role=MessageRole.USER,
+        text=transcription["text"],
+        language=transcription["language"],
+        confidence=transcription["confidence"],
+        emotion=transcription.get("emotion"),
+    )
+    session.messages.append(user_msg)
+
+    # ── Step 2: LLM (cancellable) ─────────────────────────────────────
+    llm_messages = [
+        {"role": m.role.value, "content": m.text}
+        for m in session.messages
+        if m.role != MessageRole.SYSTEM
+    ]
+    llm_task = asyncio.create_task(
+        _generate_llm_response(
+            messages=llm_messages,
+            system_prompt=agent["system_prompt"],
+            language=session.language,
+        ),
+    )
+    task_tracker.track(sid, llm_task)
+
+    try:
+        response_text = await llm_task
+    except asyncio.CancelledError:
+        logger.info("LLM cancelled by interrupt (session=%s)", sid)
+        return
+
+    assistant_msg = ConversationMessage(
+        role=MessageRole.ASSISTANT,
+        text=response_text,
+        language=session.language,
+        emotion="friendly",
+    )
+    session.messages.append(assistant_msg)
+
+    await websocket.send_text(json.dumps({
+        "type": "text_response",
+        "text": response_text,
+        "emotion": "friendly",
+        "message_id": assistant_msg.id,
+    }))
+
+    # Update interrupt manager with what agent is about to say
+    if interrupt_mgr:
+        interrupt_mgr.set_agent_text(response_text)
+
+    # ── Step 3: TTS (cancellable) ─────────────────────────────────────
+    tts_task = asyncio.create_task(
+        _synthesize_audio(
+            text=response_text,
+            language=session.language,
+            voice_id=agent.get("voice"),
+        ),
+    )
+    task_tracker.track(sid, tts_task)
+
+    try:
+        audio_b64 = await tts_task
+    except asyncio.CancelledError:
+        logger.info("TTS cancelled by interrupt (session=%s)", sid)
+        return
+
+    if audio_b64:
+        await websocket.send_text(json.dumps({
+            "type": "audio_response",
+            "audio": audio_b64,
+            "text": response_text,
+            "emotion": "friendly",
+            "format": "mp3",
+            "message_id": assistant_msg.id,
+        }))
+
+    # Clean up completed tasks
+    task_tracker.clear(sid)
 
 
 async def _handle_turn_s2s(
@@ -1127,6 +1256,35 @@ async def voice_conversation_ws(
     # Audio buffer for chunked audio streaming
     audio_buffer: list[bytes] = []
 
+    # ── Interruption manager setup ────────────────────────
+    # Provides real barge-in: 3-layer false interrupt filtering
+    # (duration gate → backchannel check → confidence gate)
+    interrupt_mgr = None
+    task_tracker = None
+    agent_is_speaking = False
+    try:
+        from voice_engine.interruption_manager import (
+            InterruptAction,
+            InterruptionManager,
+            SessionTaskTracker,
+        )
+        from voice_engine.vad.vad_engine import VADEngine
+
+        _vad = VADEngine(provider="auto", threshold=0.5)
+        interrupt_mgr = InterruptionManager(
+            vad_engine=_vad,
+            language=session.language,
+        )
+        task_tracker = SessionTaskTracker()
+        logger.info("Interruption manager enabled for session=%s", session_id)
+    except Exception as exc:
+        logger.warning(
+            "Interruption manager not available (session=%s): %s — "
+            "falling back to buffer-only interrupt",
+            session_id,
+            exc,
+        )
+
     try:
         while True:
             raw = await websocket.receive_text()
@@ -1191,12 +1349,17 @@ async def voice_conversation_ws(
                 }))
 
                 # Synthesize and send audio (non-blocking)
+                agent_is_speaking = True
+                if interrupt_mgr:
+                    interrupt_mgr.reset()
                 audio_b64 = await _synthesize_audio(
                     text=response_text,
                     language=session.language,
                     voice_id=agent.get("voice"),
                 )
                 if audio_b64:
+                    if interrupt_mgr:
+                        interrupt_mgr.set_agent_text(response_text)
                     await websocket.send_text(json.dumps({
                         "type": "audio_response",
                         "audio": audio_b64,
@@ -1205,6 +1368,7 @@ async def voice_conversation_ws(
                         "format": "mp3",
                         "message_id": assistant_msg.id,
                     }))
+                agent_is_speaking = False
 
             # ── Audio chunk ──────────────────────────────────
             elif msg_type == "audio_chunk":
@@ -1214,7 +1378,6 @@ async def voice_conversation_ws(
 
                 try:
                     decoded = base64.b64decode(audio_data)
-                    audio_buffer.append(decoded)
                 except Exception:
                     await websocket.send_text(json.dumps({
                         "type": "error",
@@ -1222,11 +1385,73 @@ async def voice_conversation_ws(
                     }))
                     continue
 
+                # ── Barge-in detection during agent playback ──
+                if agent_is_speaking and interrupt_mgr:
+                    decision = await interrupt_mgr.check(decoded)
+
+                    if decision.action == InterruptAction.INTERRUPT:
+                        # Real interrupt confirmed — cancel everything
+                        agent_is_speaking = False
+
+                        if task_tracker:
+                            cancelled = await task_tracker.cancel_all(session_id)
+                            logger.info(
+                                "Interrupt: cancelled %d tasks (session=%s)",
+                                cancelled,
+                                session_id,
+                            )
+
+                        # Notify client to stop playback
+                        await websocket.send_text(json.dumps({
+                            "type": "interrupted",
+                            "message": "Barge-in detected",
+                            "reason": decision.reason,
+                            "agent_partial_text": decision.agent_partial_text,
+                        }))
+
+                        # Inject interrupt context into conversation
+                        if decision.agent_partial_text:
+                            interrupt_note = ConversationMessage(
+                                role=MessageRole.SYSTEM,
+                                text=(
+                                    f"[Agent was interrupted. Agent had said: "
+                                    f"'{decision.agent_partial_text}'. "
+                                    f"User interrupted with: "
+                                    f"'{decision.transcript or '[speech]'}']"
+                                ),
+                                language=session.language,
+                            )
+                            session.messages.append(interrupt_note)
+
+                        # Feed accumulated audio as the start of new input
+                        if decision.accumulated_audio:
+                            audio_buffer.clear()
+                            audio_buffer.append(decision.accumulated_audio)
+
+                        continue
+
+                    if decision.action == InterruptAction.WAIT:
+                        # Still checking — buffer audio but don't process yet
+                        audio_buffer.append(decoded)
+                        continue
+
+                    # IGNORE — not speech, just buffer normally
+                    # (don't add to buffer during playback if it's noise)
+                    continue
+
+                # Normal mode — agent not speaking, buffer audio
+                audio_buffer.append(decoded)
+
             # ── End turn (process buffered audio) ────────────
             elif msg_type == "end_turn":
                 if audio_buffer:
                     combined_audio = b"".join(audio_buffer)
                     audio_buffer.clear()
+
+                    # Mark agent as speaking before processing
+                    agent_is_speaking = True
+                    if interrupt_mgr:
+                        interrupt_mgr.reset()
 
                     # Premium/enterprise tiers route through S2S orchestrator
                     # for low-latency full-duplex audio (Track B/C/D).
@@ -1242,19 +1467,36 @@ async def voice_conversation_ws(
                             client_tier=client_tier,
                         )
                     else:
-                        await _handle_turn_parallel(
+                        await _handle_turn_parallel_interruptible(
                             websocket=websocket,
                             audio=combined_audio,
                             session=session,
                             agent=agent,
+                            task_tracker=task_tracker,
+                            interrupt_mgr=interrupt_mgr,
                         )
 
-            # ── Interrupt (clear audio buffer) ───────────────
+                    agent_is_speaking = False
+
+            # ── Interrupt (explicit client interrupt) ────────
             elif msg_type == "interrupt":
+                agent_is_speaking = False
                 audio_buffer.clear()
+
+                if task_tracker:
+                    cancelled = await task_tracker.cancel_all(session_id)
+                    logger.info(
+                        "Explicit interrupt: cancelled %d tasks (session=%s)",
+                        cancelled,
+                        session_id,
+                    )
+
+                if interrupt_mgr:
+                    interrupt_mgr.reset()
+
                 await websocket.send_text(json.dumps({
                     "type": "interrupted",
-                    "message": "Audio buffer cleared",
+                    "message": "Audio buffer cleared, tasks cancelled",
                 }))
 
             else:
@@ -1272,6 +1514,10 @@ async def voice_conversation_ws(
             exc,
         )
     finally:
+        # Clean up interrupt tracking
+        if task_tracker:
+            task_tracker.cleanup_session(session_id)
+
         # Mark session as ended
         if session_id in _sessions:
             _sessions[session_id].ended_at = (

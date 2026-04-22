@@ -32,6 +32,15 @@ class MakeCallRequest(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
+class RealtimeCallRequest(BaseModel):
+    from_number: str
+    to_number: str
+    agent_id: str
+    tenant_id: str = ""
+    language: str = "en"
+    provider: str | None = None
+
+
 class BulkCallRequest(BaseModel):
     phone_numbers: list[str]
     from_number: str
@@ -64,6 +73,39 @@ class WebRTCCandidateRequest(BaseModel):
 
 
 # ── Standard Call Endpoints ─────────────────────────────────────
+
+@telephony_router.post("/call/realtime")
+async def make_realtime_call(request: RealtimeCallRequest, req: Request):
+    """Make outbound call with live AI agent (real-time voice engine).
+
+    This initiates a phone call where the AI voice agent handles the
+    conversation in real-time using STT → LLM → TTS pipeline with
+    barge-in support.
+
+    The call audio streams through our realtime bridge WebSocket.
+    No recording download needed — conversation happens live.
+    """
+    # Build the stream URL pointing to our realtime bridge
+    host = req.headers.get("host", "localhost:8000")
+    scheme = "wss" if req.url.scheme == "https" else "ws"
+    stream_url = (
+        f"{scheme}://{host}/api/v1/telephony/stream/twilio/ws"
+        f"?agent_id={request.agent_id}"
+        f"&language={request.language}"
+        f"&tenant_id={request.tenant_id}"
+    )
+
+    result = await telephony_manager.make_realtime_call(
+        from_number=request.from_number,
+        to_number=request.to_number,
+        stream_url=stream_url,
+        agent_id=request.agent_id,
+        preferred_provider=request.provider,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("error"))
+    return result
+
 
 @telephony_router.post("/call")
 async def make_call(request: MakeCallRequest):

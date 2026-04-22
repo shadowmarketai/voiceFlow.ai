@@ -130,6 +130,61 @@ class TelephonyManager:
         # Absolute fallback
         return priority[0] if priority else "telecmi"
 
+    async def make_realtime_call(
+        self,
+        from_number: str,
+        to_number: str,
+        stream_url: str,
+        agent_id: str = "",
+        preferred_provider: str | None = None,
+        **kwargs,
+    ) -> dict[str, Any]:
+        """Make outbound call connected to the real-time voice engine bridge.
+
+        Instead of a webhook URL, this connects the call's audio stream
+        directly to our realtime_bridge WebSocket so the AI agent can
+        converse live with the caller.
+
+        Args:
+            from_number: Caller ID (your purchased number)
+            to_number:   Destination (lead's phone)
+            stream_url:  WebSocket URL of our realtime bridge
+                         e.g. wss://yourdomain.com/api/v1/telephony/stream/twilio/ws
+            agent_id:    Voice agent to handle the call
+        """
+        provider_name = self.select_provider(
+            to_number, preferred_provider, call_type="ai_agent",
+        )
+        provider = self._providers[provider_name]
+
+        # Twilio supports Media Streams natively
+        if provider_name == "twilio" and hasattr(provider, "make_call_with_stream"):
+            result = await provider.make_call_with_stream(
+                from_number=from_number,
+                to_number=to_number,
+                stream_url=stream_url,
+                agent_id=agent_id,
+                **kwargs,
+            )
+            if result.get("success"):
+                result["provider"] = provider_name
+                result["realtime"] = True
+                return result
+
+        # For other providers: make standard call + connect via webhook
+        # The webhook TwiML/response will redirect to our stream
+        result = await provider.make_call(
+            from_number=from_number,
+            to_number=to_number,
+            webhook_url=stream_url.replace("ws://", "http://").replace("wss://", "https://"),
+            agent_id=agent_id,
+            **kwargs,
+        )
+        if result.get("success"):
+            result["provider"] = provider_name
+            result["realtime"] = False  # connected via webhook fallback
+        return result
+
     async def make_call(
         self,
         from_number: str,

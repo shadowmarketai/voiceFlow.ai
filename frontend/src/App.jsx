@@ -26,6 +26,7 @@ const VoiceAgentBuilderPage = lazy(() => import('./modules/voice-ai/pages/AgentB
 const VoiceKnowledgeBasePage = lazy(() => import('./modules/voice-ai/KnowledgeBase'))
 const VoiceStudioPage = lazy(() => import('./modules/voice-ai/VoiceStudio'))
 const ChannelsPage = lazy(() => import('./modules/voice-ai/pages/Channels'))
+const PhoneNumbersPage = lazy(() => import('./modules/voice-ai/pages/PhoneNumbers'))
 const CampaignsPage = lazy(() => import('./modules/voice-ai/Campaigns'))
 const CallLogsPage = lazy(() => import('./modules/voice-ai/CallLogs'))
 const LiveCallsPage = lazy(() => import('./modules/voice-ai/LiveCalls'))
@@ -172,6 +173,7 @@ function App() {
           <Route path="voice/knowledge" element={<S><VoiceKnowledgeBasePage /></S>} />
           <Route path="voice/studio" element={<S><VoiceStudioPage /></S>} />
           <Route path="voice/channels" element={<S><ChannelsPage /></S>} />
+          <Route path="voice/phone-numbers" element={<S><PhoneNumbersPage /></S>} />
           <Route path="voice/campaigns" element={<S><CampaignsPage /></S>} />
           <Route path="voice/call-logs" element={<S><CallLogsPage /></S>} />
           <Route path="voice/live-calls" element={<S><LiveCallsPage /></S>} />

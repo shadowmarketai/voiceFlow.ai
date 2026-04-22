@@ -729,6 +729,24 @@ export const telephonyAPI = {
 
   // Get all provider statuses
   getProviders: () => api.get('/api/v1/telephony/providers'),
+
+  // Buy a phone number from a provider
+  buyNumber: (provider, country = 'IN') =>
+    api.post(`/api/v1/telephony/numbers/buy`, { provider, country }),
+
+  // Save provider credentials
+  connectProvider: (provider, credentials) =>
+    api.post(`/api/v1/telephony/providers/${provider}/connect`, credentials),
+
+  // Disconnect a provider
+  disconnectProvider: (provider) =>
+    api.post(`/api/v1/telephony/providers/${provider}/disconnect`),
+
+  // Make real-time AI agent call (live voice engine)
+  makeRealtimeCall: (data) => api.post('/api/v1/telephony/call/realtime', data),
+
+  // List active real-time calls
+  getActiveCalls: () => api.get('/api/v1/telephony/stream/active'),
 };
 
 // ============================================

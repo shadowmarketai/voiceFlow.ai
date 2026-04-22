@@ -595,6 +595,14 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Telephony router not available: %s", exc)
 
+    # ── Telephony Real-Time Bridge (live phone ↔ voice engine) ─
+    try:
+        from integrations.telephony.realtime_bridge import realtime_bridge_router
+        application.include_router(realtime_bridge_router)
+        logger.info("Telephony realtime bridge loaded (Twilio streams + generic)")
+    except Exception as exc:
+        logger.warning("Telephony realtime bridge not available: %s", exc)
+
     # ── API Key Management ──────────────────────────────────
     try:
         from api.routers.api_keys import router as api_keys_router
