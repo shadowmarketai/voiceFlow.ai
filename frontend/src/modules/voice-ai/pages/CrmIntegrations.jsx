@@ -271,7 +271,7 @@ export default function CrmIntegrationsPage() {
       return;
     }
     const redirectUri = encodeURIComponent(window.location.origin + '/voice/crm-integrations?fb=callback');
-    const scope = 'pages_show_list,pages_read_engagement,leads_retrieval';
+    const scope = 'pages_show_list,pages_read_engagement,pages_manage_ads';
     window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=token`;
   };
 
