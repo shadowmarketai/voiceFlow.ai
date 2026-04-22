@@ -307,6 +307,13 @@ def _register_lifecycle(application: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Fine-tune scheduler not started: %s", exc)
 
+        # IndiaMart lead poller (polls every 5 min for all active connections)
+        try:
+            from api.services.indiamart_poller import start_indiamart_poller
+            start_indiamart_poller()
+        except Exception as exc:
+            logger.warning("IndiaMart poller not started: %s", exc)
+
         logger.info("%s ready!", settings.APP_NAME)
 
     @application.on_event("shutdown")

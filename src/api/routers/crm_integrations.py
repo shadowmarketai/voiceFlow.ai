@@ -1087,6 +1087,75 @@ async def facebook_pull_leads(
 
 
 # ============================================
+# IndiaMart Manual Sync
+# ============================================
+
+@router.post("/ad-sources/{source_id}/sync")
+async def trigger_ad_source_sync(
+    source_id: str,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Manually trigger a sync for an ad source (IndiaMart, etc.)."""
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.id == source_id,
+            AdSourceConnection.tenant_id == tenant_id,
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Ad source not found")
+
+    if conn.provider == "indiamart":
+        from api.services.indiamart_poller import poll_indiamart_for_tenant
+        stats = await poll_indiamart_for_tenant(db, conn)
+        return {
+            "status": "success",
+            "provider": "indiamart",
+            **stats,
+        }
+
+    return {"status": "error", "detail": f"Manual sync not supported for {conn.provider}"}
+
+
+@router.post("/ad-sources/indiamart/test")
+async def test_indiamart_key(
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "read")),
+):
+    """Test the saved IndiaMart CRM key by fetching recent leads."""
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.provider == "indiamart",
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.is_active.is_(True),
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        raise HTTPException(status_code=404, detail="No active IndiaMart connection found")
+
+    credentials = conn.credentials or {}
+    crm_key = credentials.get("api_key") or credentials.get("crm_key")
+    if not crm_key:
+        raise HTTPException(status_code=400, detail="No CRM key configured")
+
+    from api.services.indiamart_poller import fetch_indiamart_leads
+    try:
+        records = await fetch_indiamart_leads(crm_key)
+        return {
+            "status": "success",
+            "records_found": len(records),
+            "sample": records[:2] if records else [],
+        }
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
+
+
+# ============================================
 # Sync Logs
 # ============================================
 

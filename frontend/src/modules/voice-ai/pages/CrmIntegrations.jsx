@@ -25,11 +25,10 @@ const INTEGRATIONS = [
     type: 'api_key',
     fields: [
       { key: 'account_name', label: 'Account Name', required: true },
-      { key: 'mobile', label: 'Mobile', required: true },
+      { key: 'mobile', label: 'Mobile / Email', required: true },
       { key: 'api_key', label: 'CRM Key', required: true, secret: true },
     ],
-    desc: 'Paste your IndiaMart CRM key to auto-import buyer inquiries',
-    showWebhook: true,
+    desc: 'Paste your IndiaMart CRM key — leads sync automatically every 5 minutes with full details',
   },
   {
     id: 'tradeindia', name: 'TradeIndia', icon: '🇮🇳',
@@ -753,8 +752,8 @@ document.querySelector('form').addEventListener('submit', function(e) {
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Account Name</th>
                       <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Status</th>
-                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Assign To</th>
-                      <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Action</th>
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-slate-500">Last Sync</th>
+                      <th className="text-right px-4 py-2 text-xs font-semibold text-slate-500">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -767,15 +766,42 @@ document.querySelector('form').addEventListener('submit', function(e) {
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded text-xs font-medium">
                             <CheckCircle2 className="w-3 h-3" /> Active
                           </span>
+                          {conn.provider === 'indiamart' && (
+                            <span className="ml-1.5 inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-600 rounded text-[10px] font-medium">
+                              <RefreshCw className="w-2.5 h-2.5" /> Auto-sync every 5 min
+                            </span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-500">
-                          {conn.auto_assign_agent_id || '—'}
+                          {conn.last_poll_at ? (
+                            <span title={conn.last_poll_at}>
+                              {new Date(conn.last_poll_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}
+                            </span>
+                          ) : 'Never'}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button onClick={() => handleDelete(conn)}
-                            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            {conn.provider === 'indiamart' && (
+                              <button onClick={async () => {
+                                  try {
+                                    toast.loading('Syncing IndiaMart leads...', { id: 'im-sync' });
+                                    const { data } = await crmIntegrationsAPI.syncAdSource(conn.id);
+                                    toast.success(`Synced! ${data.created || 0} new, ${data.updated || 0} updated`, { id: 'im-sync' });
+                                    loadData();
+                                  } catch (err) {
+                                    toast.error(err.response?.data?.detail || 'Sync failed', { id: 'im-sync' });
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-600 hover:bg-indigo-50 border border-indigo-200"
+                                title="Sync now">
+                                <RefreshCw className="w-3 h-3" /> Sync Now
+                              </button>
+                            )}
+                            <button onClick={() => handleDelete(conn)}
+                              className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

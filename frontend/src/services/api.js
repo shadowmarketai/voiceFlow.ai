@@ -934,6 +934,8 @@ export const crmIntegrationsAPI = {
   listAdSources: () => api.get('/api/v1/crm-integrations/ad-sources'),
   createAdSource: (data) => api.post('/api/v1/crm-integrations/ad-sources', data),
   deleteAdSource: (id) => api.delete(`/api/v1/crm-integrations/ad-sources/${id}`),
+  syncAdSource: (id) => api.post(`/api/v1/crm-integrations/ad-sources/${id}/sync`),
+  testIndiamart: () => api.post('/api/v1/crm-integrations/ad-sources/indiamart/test'),
 
   // Facebook Lead Ads
   facebookSaveToken: (accessToken) => api.post('/api/v1/crm-integrations/facebook/token', { access_token: accessToken }),
