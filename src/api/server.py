@@ -202,6 +202,17 @@ def _register_lifecycle(application: FastAPI) -> None:
 
         logger.info("Initializing %s...", settings.APP_NAME)
 
+        # Migrate SQLite DB from /app/sqlite/ to /app/data/ (persisted volume)
+        try:
+            import shutil
+            old_db = "/app/sqlite/voiceflow.db"
+            new_db = "/app/data/voiceflow.db"
+            if os.path.exists(old_db) and not os.path.exists(new_db) and os.path.isdir("/app/data"):
+                shutil.copy2(old_db, new_db)
+                logger.info("Migrated SQLite DB from %s to %s", old_db, new_db)
+        except Exception as exc:
+            logger.warning("DB migration check: %s", exc)
+
         # Initialize database
         try:
             from api.database import init_db

@@ -52,7 +52,9 @@ def _get_database_url() -> str:
     if DATABASE_URL:
         return DATABASE_URL
     # Use volume-mounted path in Docker, project root otherwise
-    if os.path.isdir("/app/sqlite"):
+    if os.path.isdir("/app/data"):
+        db_path = "/app/data/voiceflow.db"
+    elif os.path.isdir("/app/sqlite"):
         db_path = "/app/sqlite/voiceflow.db"
     else:
         db_path = os.path.abspath(
