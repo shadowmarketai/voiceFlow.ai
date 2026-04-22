@@ -164,10 +164,47 @@ async def init_leads_db():
     except Exception as exc:
         logger.warning("Leads DB table creation failed: %s", exc)
 
-    # Run lightweight migrations for new columns on existing tables
+    # Run lightweight migrations for new columns on existing tables.
+    # The legacy init_db() creates a minimal `leads` table; the ORM model
+    # (models/leads.py) has many more columns.  Add them if missing.
+    _leads_columns = [
+        ("tenant_id", "VARCHAR(255)"),
+        ("phone_country", "VARCHAR(2)"),
+        ("business_name", "VARCHAR(200)"),
+        ("business_type", "VARCHAR(100)"),
+        ("business_size", "VARCHAR(50)"),
+        ("location_city", "VARCHAR(100)"),
+        ("location_state", "VARCHAR(100)"),
+        ("location_country", "VARCHAR(2)"),
+        ("source_campaign", "VARCHAR(200)"),
+        ("source_medium", "VARCHAR(50)"),
+        ("referrer_url", "TEXT"),
+        ("utm_source", "VARCHAR(100)"),
+        ("utm_medium", "VARCHAR(100)"),
+        ("utm_campaign", "VARCHAR(100)"),
+        ("intent", "VARCHAR(100)"),
+        ("budget_range", "VARCHAR(50)"),
+        ("timeline", "VARCHAR(50)"),
+        ("lead_score", "INTEGER DEFAULT 0"),
+        ("qualification", "VARCHAR(20) DEFAULT 'cold'"),
+        ("disposition", "VARCHAR(30)"),
+        ("converted_user_id", "VARCHAR(255)"),
+        ("converted_at", "TIMESTAMP"),
+        ("deal_value", "NUMERIC(12,2)"),
+        ("consent_given", "BOOLEAN DEFAULT 0"),
+        ("consent_source", "VARCHAR(100)"),
+        ("consent_at", "TIMESTAMP"),
+        ("marketing_optin", "BOOLEAN DEFAULT 0"),
+        ("last_contacted_at", "TIMESTAMP"),
+        ("next_followup_at", "TIMESTAMP"),
+        ("deleted_at", "TIMESTAMP"),
+        ("is_deleted", "BOOLEAN DEFAULT 0"),
+        ("deleted_by", "INTEGER"),
+        ("user_id", "INTEGER"),
+    ]
     try:
         async with engine.begin() as conn:
-            for col_name, col_type in [("disposition", "VARCHAR(30)"), ("notes", "TEXT")]:
+            for col_name, col_type in _leads_columns:
                 try:
                     await conn.execute(text(f"ALTER TABLE leads ADD COLUMN {col_name} {col_type}"))
                     logger.info("Added column leads.%s", col_name)
