@@ -857,18 +857,54 @@ async def facebook_pull_leads(
                     leads_data = await resp.json()
 
             for fb_lead in leads_data.get("data", []):
-                field_data = {f["name"]: f["values"][0] if f.get("values") else ""
+                field_data = {f["name"].lower(): f["values"][0] if f.get("values") else ""
                               for f in fb_lead.get("field_data", [])}
 
+                # Map all common Facebook form field name variants
+                name = (
+                    field_data.get("full_name") or field_data.get("full name")
+                    or field_data.get("name") or field_data.get("first_name", "")
+                )
+                last_name = field_data.get("last_name") or field_data.get("last name") or ""
+                if last_name and name:
+                    name = f"{name} {last_name}"
+
                 lead_data = {
-                    "name": field_data.get("full_name") or field_data.get("name", ""),
-                    "email": field_data.get("email", ""),
-                    "phone": field_data.get("phone_number") or field_data.get("phone", ""),
+                    "name": name,
+                    "email": (
+                        field_data.get("email") or field_data.get("email_address")
+                        or field_data.get("work_email") or ""
+                    ),
+                    "phone": (
+                        field_data.get("phone_number") or field_data.get("phone")
+                        or field_data.get("mobile_number") or field_data.get("mobile")
+                        or field_data.get("contact_number") or ""
+                    ),
+                    "business_name": (
+                        field_data.get("company_name") or field_data.get("company")
+                        or field_data.get("business_name") or field_data.get("organization")
+                        or ""
+                    ),
+                    "location_city": field_data.get("city") or field_data.get("location") or "",
+                    "location_state": field_data.get("state") or field_data.get("province") or "",
+                    "location_country": field_data.get("country") or "",
                     "source": "facebook",
                     "source_campaign": f"form_{fid}",
                     "source_medium": "paid",
                     "tags": ["facebook", "lead_ad", "imported"],
                 }
+
+                # Collect any unmapped fields as custom_fields
+                known_keys = {
+                    "full_name", "full name", "name", "first_name", "last_name", "last name",
+                    "email", "email_address", "work_email",
+                    "phone_number", "phone", "mobile_number", "mobile", "contact_number",
+                    "company_name", "company", "business_name", "organization",
+                    "city", "location", "state", "province", "country",
+                }
+                custom_fields = {k: v for k, v in field_data.items() if k not in known_keys and v}
+                if custom_fields:
+                    lead_data["custom_fields"] = custom_fields
 
                 # Skip leads with no contact info
                 if not lead_data["email"] and not lead_data["phone"] and not lead_data["name"]:
