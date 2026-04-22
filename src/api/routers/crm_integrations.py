@@ -566,7 +566,7 @@ async def facebook_save_token(
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    "https://graph.facebook.com/v19.0/oauth/access_token",
+                    "https://graph.facebook.com/v21.0/oauth/access_token",
                     params={
                         "grant_type": "fb_exchange_token",
                         "client_id": fb_app_id,
@@ -627,7 +627,7 @@ async def facebook_get_pages(
     token = conn.credentials["access_token"]
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            "https://graph.facebook.com/v19.0/me/accounts",
+            "https://graph.facebook.com/v21.0/me/accounts",
             params={"access_token": token, "fields": "id,name,access_token"},
         ) as resp:
             if resp.status != 200:
@@ -662,7 +662,7 @@ async def facebook_get_forms(
     token = conn.credentials["access_token"]
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            f"https://graph.facebook.com/v19.0/{page_id}/leadgen_forms",
+            f"https://graph.facebook.com/v21.0/{page_id}/leadgen_forms",
             params={"access_token": token, "fields": "id,name,status"},
         ) as resp:
             if resp.status != 200:
@@ -770,6 +770,128 @@ async def facebook_unsubscribe_form(
     await db.commit()
 
     return {"status": "removed"}
+
+
+@router.post("/facebook/pull-leads")
+async def facebook_pull_leads(
+    request: Request,
+    db: AsyncSession = Depends(get_leads_db),
+    user: dict = Depends(require_permission("voiceAI", "create")),
+):
+    """Pull all existing leads from subscribed Facebook Lead Ad forms into the CRM."""
+    import aiohttp
+
+    tenant_id = _tenant_id(user)
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn or not conn.credentials:
+        raise HTTPException(status_code=400, detail="Facebook not connected")
+
+    user_token = conn.credentials.get("access_token")
+    if not user_token:
+        raise HTTPException(status_code=400, detail="No Facebook access token")
+
+    body = await request.json()
+    page_id = body.get("page_id")
+    form_id = body.get("form_id")
+
+    if not page_id:
+        raise HTTPException(status_code=400, detail="page_id required")
+
+    # Get page access token
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://graph.facebook.com/v21.0/me/accounts",
+            params={"access_token": user_token, "fields": "id,name,access_token"},
+        ) as resp:
+            if resp.status != 200:
+                error = await resp.text()
+                raise HTTPException(status_code=400, detail=f"Facebook API error: {error}")
+            pages_data = await resp.json()
+
+    page_token = None
+    for p in pages_data.get("data", []):
+        if p["id"] == page_id:
+            page_token = p.get("access_token")
+            break
+
+    if not page_token:
+        raise HTTPException(status_code=400, detail="Page not found or no access")
+
+    # If form_id provided, pull leads from that specific form
+    # Otherwise pull from all forms on the page
+    form_ids = []
+    if form_id:
+        form_ids = [form_id]
+    else:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"https://graph.facebook.com/v21.0/{page_id}/leadgen_forms",
+                params={"access_token": page_token, "fields": "id,name,status"},
+            ) as resp:
+                if resp.status == 200:
+                    forms_data = await resp.json()
+                    form_ids = [f["id"] for f in forms_data.get("data", [])]
+
+    total_imported = 0
+    total_skipped = 0
+
+    for fid in form_ids:
+        # Paginate through all leads for each form
+        url = f"https://graph.facebook.com/v21.0/{fid}/leads"
+        params = {"access_token": page_token, "fields": "id,created_time,field_data", "limit": "100"}
+
+        while url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as resp:
+                    if resp.status != 200:
+                        logger.warning("Failed to fetch leads for form %s: %s", fid, await resp.text())
+                        break
+                    leads_data = await resp.json()
+
+            for fb_lead in leads_data.get("data", []):
+                field_data = {f["name"]: f["values"][0] if f.get("values") else ""
+                              for f in fb_lead.get("field_data", [])}
+
+                lead_data = {
+                    "name": field_data.get("full_name") or field_data.get("name", ""),
+                    "email": field_data.get("email", ""),
+                    "phone": field_data.get("phone_number") or field_data.get("phone", ""),
+                    "source": "facebook",
+                    "source_campaign": f"form_{fid}",
+                    "source_medium": "paid",
+                    "tags": ["facebook", "lead_ad", "imported"],
+                }
+
+                # Skip leads with no contact info
+                if not lead_data["email"] and not lead_data["phone"] and not lead_data["name"]:
+                    total_skipped += 1
+                    continue
+
+                _lead, is_new = await leads_service.capture_lead(db, tenant_id, lead_data)
+                if is_new:
+                    total_imported += 1
+                else:
+                    total_skipped += 1
+
+            # Next page
+            paging = leads_data.get("paging", {})
+            url = paging.get("next")
+            params = {}  # next URL already has params
+
+    await db.commit()
+
+    return {
+        "status": "done",
+        "imported": total_imported,
+        "skipped": total_skipped,
+        "message": f"Imported {total_imported} new leads, {total_skipped} skipped (duplicates or empty)",
+    }
 
 
 # ============================================

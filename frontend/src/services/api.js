@@ -942,6 +942,7 @@ export const crmIntegrationsAPI = {
   facebookSubscribe: (data) => api.post('/api/v1/crm-integrations/facebook/subscribe', data),
   facebookListForms: () => api.get('/api/v1/crm-integrations/facebook/subscribed-forms'),
   facebookDeleteForm: (formId) => api.delete(`/api/v1/crm-integrations/facebook/forms/${formId}`),
+  facebookPullLeads: (data) => api.post('/api/v1/crm-integrations/facebook/pull-leads', data),
 
   // Sync logs
   listSyncLogs: (limit = 50) => api.get('/api/v1/crm-integrations/sync-logs', { params: { limit } }),

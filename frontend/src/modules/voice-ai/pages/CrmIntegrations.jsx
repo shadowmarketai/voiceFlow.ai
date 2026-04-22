@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import {
   Settings, Puzzle, Copy, Trash2, Edit2, CheckCircle2, Loader2,
-  Plus, Save, TestTube, ExternalLink, RefreshCw, X, AlertCircle,
+  Plus, Save, TestTube, ExternalLink, RefreshCw, X, AlertCircle, Download,
 } from 'lucide-react';
 import { crmIntegrationsAPI } from '../../../services/api';
 
@@ -224,6 +224,8 @@ export default function CrmIntegrationsPage() {
   const [fbSelectedForm, setFbSelectedForm] = useState('');
   const [fbSubscribedForms, setFbSubscribedForms] = useState([]);
   const [fbLoading, setFbLoading] = useState(false);
+  const [fbPulling, setFbPulling] = useState(false);
+  const [fbPullResult, setFbPullResult] = useState(null);
 
   const activeIntegration = INTEGRATIONS.find(i => i.id === activeId);
 
@@ -269,8 +271,8 @@ export default function CrmIntegrationsPage() {
       return;
     }
     const redirectUri = encodeURIComponent(window.location.origin + '/voice/crm-integrations?fb=callback');
-    const scope = 'pages_manage_ads,pages_manage_metadata,pages_read_engagement,leads_retrieval';
-    window.location.href = `https://www.facebook.com/v19.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=token`;
+    const scope = 'pages_show_list,pages_read_engagement,leads_retrieval';
+    window.location.href = `https://www.facebook.com/v21.0/dialog/oauth?client_id=${appId}&redirect_uri=${redirectUri}&scope=${scope}&response_type=token`;
   };
 
   // Handle FB callback (token in URL hash)
@@ -346,6 +348,20 @@ export default function CrmIntegrationsPage() {
       toast.success('Form removed');
       loadFbForms();
     } catch { toast.error('Failed to remove'); }
+  };
+
+  const handleFbPullLeads = async (pageId, formId) => {
+    setFbPulling(true);
+    setFbPullResult(null);
+    try {
+      const { data } = await crmIntegrationsAPI.facebookPullLeads({ page_id: pageId, form_id: formId || undefined });
+      setFbPullResult(data);
+      toast.success(`Imported ${data.imported} leads!`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to pull leads');
+    } finally {
+      setFbPulling(false);
+    }
   };
 
   // Reset form when switching integration
@@ -657,6 +673,23 @@ document.querySelector('form').addEventListener('submit', function(e) {
                           <Plus className="w-4 h-4" /> Subscribe to Form
                         </button>
                       )}
+
+                      {/* Pull All Leads from selected page */}
+                      {fbSelectedPage && (
+                        <div className="pt-2 border-t border-slate-100">
+                          <button onClick={() => handleFbPullLeads(fbSelectedPage, fbSelectedForm || null)}
+                            disabled={fbPulling}
+                            className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium hover:bg-emerald-700 disabled:opacity-50">
+                            {fbPulling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                            {fbPulling ? 'Pulling Leads...' : fbSelectedForm ? 'Pull Leads from Form' : 'Pull All Leads from Page'}
+                          </button>
+                          {fbPullResult && (
+                            <p className="mt-2 text-sm text-emerald-600 font-medium">
+                              {fbPullResult.imported} imported, {fbPullResult.skipped} skipped
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -690,7 +723,13 @@ document.querySelector('form').addEventListener('submit', function(e) {
                         <td className="px-4 py-3 font-medium text-slate-700">{f.page_name}</td>
                         <td className="px-4 py-3 text-slate-600">{f.form_name}</td>
                         <td className="px-4 py-3 text-xs text-slate-400 font-mono">{f.form_id}</td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-3 text-right flex items-center justify-end gap-1">
+                          <button onClick={() => handleFbPullLeads(f.page_id, f.form_id)}
+                            disabled={fbPulling}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 disabled:opacity-50"
+                            title="Pull leads from this form">
+                            {fbPulling ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Pull Leads'}
+                          </button>
                           <button onClick={() => handleFbDeleteForm(f.form_id)}
                             className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50">
                             <Trash2 className="w-4 h-4" />
