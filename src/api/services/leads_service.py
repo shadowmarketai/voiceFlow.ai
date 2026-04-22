@@ -228,6 +228,7 @@ async def list_leads(
     status: str | None = None,
     qualification: str | None = None,
     source: str | None = None,
+    disposition: str | None = None,
     search: str | None = None,
     page: int = 1,
     per_page: int = 50,
@@ -244,6 +245,11 @@ async def list_leads(
         query = query.where(Lead.qualification == qualification)
     if source:
         query = query.where(Lead.source == source)
+    if disposition:
+        if disposition == "unwanted":
+            query = query.where(Lead.disposition.in_(["not_interested", "wrong_enquiry", "dnc"]))
+        else:
+            query = query.where(Lead.disposition == disposition)
     if search:
         search_filter = or_(
             Lead.name.ilike(f"%{search}%"),
@@ -309,7 +315,7 @@ async def delete_lead(db: AsyncSession, lead_id: str) -> bool:
 # ============================================
 
 async def get_pipeline_stats(db: AsyncSession, tenant_id: str) -> dict:
-    """Get lead counts by status."""
+    """Get lead counts by status and disposition."""
     result = await db.execute(
         select(Lead.status, func.count(Lead.id))
         .where(Lead.tenant_id == tenant_id, Lead.deleted_at.is_(None))
@@ -317,6 +323,22 @@ async def get_pipeline_stats(db: AsyncSession, tenant_id: str) -> dict:
     )
     stats = {row[0]: row[1] for row in result.all()}
     total = sum(stats.values())
+
+    # Disposition counts
+    disp_result = await db.execute(
+        select(Lead.disposition, func.count(Lead.id))
+        .where(
+            Lead.tenant_id == tenant_id,
+            Lead.deleted_at.is_(None),
+            Lead.disposition.isnot(None),
+            Lead.disposition != "",
+        )
+        .group_by(Lead.disposition)
+    )
+    disp_stats = {row[0]: row[1] for row in disp_result.all()}
+
+    unwanted = disp_stats.get("not_interested", 0) + disp_stats.get("wrong_enquiry", 0) + disp_stats.get("dnc", 0)
+
     return {
         "new": stats.get("new", 0),
         "contacted": stats.get("contacted", 0),
@@ -324,6 +346,15 @@ async def get_pipeline_stats(db: AsyncSession, tenant_id: str) -> dict:
         "converted": stats.get("converted", 0),
         "lost": stats.get("lost", 0),
         "total": total,
+        "dispositions": {
+            "follow_up": disp_stats.get("follow_up", 0),
+            "callback": disp_stats.get("callback", 0),
+            "site_visit": disp_stats.get("site_visit", 0),
+            "quotation_sent": disp_stats.get("quotation_sent", 0),
+            "negotiation": disp_stats.get("negotiation", 0),
+            "booked": disp_stats.get("booked", 0),
+            "unwanted": unwanted,
+        },
     }
 
 

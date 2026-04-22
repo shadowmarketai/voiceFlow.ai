@@ -26,6 +26,30 @@ const STATUS_COLORS = {
   lost: 'bg-red-100 text-red-700 border-red-200',
 };
 
+const DISPOSITION_LABELS = {
+  follow_up: 'Follow Up',
+  not_interested: 'Not Interested',
+  wrong_enquiry: 'Wrong Enquiry',
+  callback: 'Callback',
+  site_visit: 'Site Visit',
+  quotation_sent: 'Quotation Sent',
+  negotiation: 'Negotiation',
+  booked: 'Booked',
+  dnc: 'DNC',
+};
+
+const DISPOSITION_COLORS = {
+  follow_up: 'bg-blue-50 text-blue-600',
+  not_interested: 'bg-red-50 text-red-600',
+  wrong_enquiry: 'bg-orange-50 text-orange-600',
+  callback: 'bg-amber-50 text-amber-600',
+  site_visit: 'bg-teal-50 text-teal-600',
+  quotation_sent: 'bg-indigo-50 text-indigo-600',
+  negotiation: 'bg-purple-50 text-purple-600',
+  booked: 'bg-emerald-50 text-emerald-600',
+  dnc: 'bg-gray-50 text-gray-600',
+};
+
 const QUAL_COLORS = {
   cold: 'bg-slate-100 text-slate-600',
   warm: 'bg-amber-100 text-amber-700',
@@ -49,6 +73,7 @@ export default function CrmContactsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState('');
+  const [dispositionFilter, setDispositionFilter] = useState('');
   const [pipeline, setPipeline] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -64,6 +89,7 @@ export default function CrmContactsPage() {
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
       if (sourceFilter) params.source = sourceFilter;
+      if (dispositionFilter) params.disposition = dispositionFilter;
       const { data } = await crmLeadsAPI.list(params);
       setLeads(data.leads || []);
       setTotal(data.total || 0);
@@ -72,7 +98,7 @@ export default function CrmContactsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, perPage, search, statusFilter, sourceFilter]);
+  }, [page, perPage, search, statusFilter, sourceFilter, dispositionFilter]);
 
   const loadPipeline = useCallback(async () => {
     try {
@@ -249,10 +275,31 @@ export default function CrmContactsPage() {
             { key: 'total', label: 'Total', color: 'border-slate-400 bg-slate-50' },
           ].map(s => (
             <button key={s.key}
-              onClick={() => setStatusFilter(statusFilter === s.key && s.key !== 'total' ? '' : s.key === 'total' ? '' : s.key)}
-              className={`p-3 rounded-xl border-l-4 ${s.color} ${statusFilter === s.key ? 'ring-2 ring-indigo-300' : ''} transition-all hover:shadow-sm cursor-pointer`}>
+              onClick={() => { setStatusFilter(statusFilter === s.key && s.key !== 'total' ? '' : s.key === 'total' ? '' : s.key); setDispositionFilter(''); setPage(1); }}
+              className={`p-3 rounded-xl border-l-4 ${s.color} ${statusFilter === s.key && !dispositionFilter ? 'ring-2 ring-indigo-300' : ''} transition-all hover:shadow-sm cursor-pointer`}>
               <p className="text-2xl font-bold text-slate-800">{pipeline[s.key] || 0}</p>
               <p className="text-xs text-slate-500 font-medium">{s.label}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Disposition Tabs */}
+      {pipeline?.dispositions && (
+        <div className="flex gap-2 flex-wrap">
+          {[
+            { key: 'follow_up', label: 'Follow Up', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+            { key: 'callback', label: 'Callback', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+            { key: 'site_visit', label: 'Site Visit', color: 'bg-teal-50 text-teal-700 border-teal-200' },
+            { key: 'quotation_sent', label: 'Quotation Sent', color: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+            { key: 'negotiation', label: 'Negotiation', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+            { key: 'booked', label: 'Booked', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+            { key: 'unwanted', label: 'Unwanted', color: 'bg-red-50 text-red-700 border-red-200' },
+          ].map(d => (
+            <button key={d.key}
+              onClick={() => { setDispositionFilter(dispositionFilter === d.key ? '' : d.key); setStatusFilter(''); setPage(1); }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${d.color} ${dispositionFilter === d.key ? 'ring-2 ring-indigo-300 shadow-sm' : 'opacity-80 hover:opacity-100'} transition-all`}>
+              {d.label} <span className="ml-1 font-bold">{pipeline.dispositions[d.key] || 0}</span>
             </button>
           ))}
         </div>
@@ -366,6 +413,11 @@ export default function CrmContactsPage() {
                         <span className={`ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${QUAL_COLORS[lead.qualification] || ''}`}>
                           {lead.qualification}
                         </span>
+                        {lead.disposition && (
+                          <span className={`ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${DISPOSITION_COLORS[lead.disposition] || 'bg-slate-50 text-slate-500'}`}>
+                            {DISPOSITION_LABELS[lead.disposition] || lead.disposition}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">

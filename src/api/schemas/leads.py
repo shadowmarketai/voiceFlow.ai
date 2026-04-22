@@ -180,6 +180,16 @@ class ImportResult(BaseModel):
 
 # ── Pipeline Stats ───────────────────────────────────────────────
 
+class DispositionStats(BaseModel):
+    follow_up: int = 0
+    callback: int = 0
+    site_visit: int = 0
+    quotation_sent: int = 0
+    negotiation: int = 0
+    booked: int = 0
+    unwanted: int = 0
+
+
 class PipelineStats(BaseModel):
     new: int = 0
     contacted: int = 0
@@ -187,6 +197,7 @@ class PipelineStats(BaseModel):
     converted: int = 0
     lost: int = 0
     total: int = 0
+    dispositions: DispositionStats = DispositionStats()
 
 
 # ── CRM Connection ───────────────────────────────────────────────
