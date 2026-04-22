@@ -47,8 +47,7 @@ const userNavSections = [
   {
     label: 'CRM',
     items: [
-      { icon: UserPlus,    name: 'Contacts',      path: '/voice/crm-contacts' },
-      { icon: TrendingUp,  name: 'Leads',         path: '/voice/crm-leads' },
+      { icon: UserPlus,    name: 'Leads',         path: '/voice/crm-contacts' },
       { icon: IndianRupee, name: 'Deals',         path: '/voice/crm-deals' },
       { icon: Download,    name: 'Import',        path: '/voice/crm-import' },
       { icon: Link2,       name: 'Integrations',  path: '/voice/crm-integrations' },

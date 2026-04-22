@@ -83,7 +83,11 @@ class Lead(LeadsBase):
     status: Mapped[str] = mapped_column(
         String(30), default="new"
     )  # new, contacted, nurturing, converted, lost
+    disposition: Mapped[str | None] = mapped_column(
+        String(30)
+    )  # follow_up, not_interested, wrong_enquiry, callback, site_visit, quotation_sent
     assigned_to: Mapped[str | None] = mapped_column(String(100))
+    notes: Mapped[str | None] = mapped_column(Text)
 
     # ── Conversion link (soft FK to app DB) ──
     converted_user_id: Mapped[str | None] = mapped_column(String(255))

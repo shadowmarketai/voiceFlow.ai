@@ -16,6 +16,7 @@ import {
   UserPlus, Globe, Megaphone, ShoppingBag, RefreshCw,
 } from 'lucide-react';
 import { crmLeadsAPI } from '../../../services/api';
+import LeadDetailDrawer from '../components/LeadDetailDrawer';
 
 const STATUS_COLORS = {
   new: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -54,6 +55,7 @@ export default function CrmContactsPage() {
   const [showAddLead, setShowAddLead] = useState(false);
   const [addingLead, setAddingLead] = useState(false);
   const [newLead, setNewLead] = useState({ name: '', phone: '', email: '', business_name: '', location_city: '', business_type: '', source: 'manual' });
+  const [selectedLeadId, setSelectedLeadId] = useState(null);
 
   const loadLeads = useCallback(async () => {
     setLoading(true);
@@ -159,10 +161,10 @@ export default function CrmContactsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-            <Users className="w-6 h-6 text-indigo-500" /> Contacts
+            <Users className="w-6 h-6 text-indigo-500" /> Leads
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {total} total contacts from all sources
+            {total} total leads from all sources
           </p>
         </div>
         <div className="flex gap-2">
@@ -335,7 +337,8 @@ export default function CrmContactsPage() {
                 {leads.map(lead => {
                   const SourceIcon = SOURCE_ICONS[lead.source] || Globe;
                   return (
-                    <tr key={lead.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                    <tr key={lead.id} onClick={() => setSelectedLeadId(lead.id)}
+                      className="border-b border-slate-50 hover:bg-indigo-50/50 transition-colors cursor-pointer">
                       <td className="px-4 py-3">
                         <p className="font-medium text-slate-800">{lead.name || '—'}</p>
                         <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
@@ -381,10 +384,25 @@ export default function CrmContactsPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <button onClick={() => handleDelete(lead.id)}
-                          className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {lead.phone && (
+                            <a href={`tel:${lead.phone}`} onClick={e => e.stopPropagation()}
+                              className="p-1.5 rounded-lg text-slate-300 hover:text-blue-500 hover:bg-blue-50 transition-colors" title="Call">
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          {lead.phone && (
+                            <a href={`https://wa.me/${lead.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="p-1.5 rounded-lg text-slate-300 hover:text-emerald-500 hover:bg-emerald-50 transition-colors" title="WhatsApp">
+                              <Globe className="w-3.5 h-3.5" />
+                            </a>
+                          )}
+                          <button onClick={e => { e.stopPropagation(); handleDelete(lead.id); }}
+                            className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -409,6 +427,15 @@ export default function CrmContactsPage() {
           </>
         )}
       </div>
+
+      {/* Lead Detail Drawer */}
+      {selectedLeadId && (
+        <LeadDetailDrawer
+          leadId={selectedLeadId}
+          onClose={() => setSelectedLeadId(null)}
+          onUpdate={() => { loadLeads(); loadPipeline(); }}
+        />
+      )}
     </div>
   );
 }

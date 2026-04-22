@@ -984,7 +984,7 @@ async def facebook_pull_leads(
     for fid in form_ids:
         # Paginate through all leads for each form
         url = f"https://graph.facebook.com/v21.0/{fid}/leads"
-        params = {"access_token": page_token, "fields": "id,created_time,field_data", "limit": "100"}
+        params = {"access_token": page_token, "fields": "id,created_time,field_data,ad_id,ad_name,campaign_name,form_id", "limit": "100"}
 
         while url:
             async with aiohttp.ClientSession() as session:
@@ -1027,12 +1027,12 @@ async def facebook_pull_leads(
                     "location_state": field_data.get("state") or field_data.get("province") or "",
                     "location_country": field_data.get("country") or "",
                     "source": "facebook",
-                    "source_campaign": f"form_{fid}",
+                    "source_campaign": fb_lead.get("campaign_name") or fb_lead.get("ad_name") or f"form_{fid}",
                     "source_medium": "paid",
                     "tags": ["facebook", "lead_ad", "imported"],
                 }
 
-                # Collect any unmapped fields as custom_fields
+                # Collect ALL form fields + FB metadata as custom_fields
                 known_keys = {
                     "full_name", "full name", "name", "first_name", "last_name", "last name",
                     "email", "email_address", "work_email",
@@ -1041,8 +1041,24 @@ async def facebook_pull_leads(
                     "city", "location", "state", "province", "country",
                 }
                 custom_fields = {k: v for k, v in field_data.items() if k not in known_keys and v}
-                if custom_fields:
-                    lead_data["custom_fields"] = custom_fields
+                # Add Facebook metadata
+                custom_fields["fb_lead_id"] = fb_lead.get("id", "")
+                custom_fields["fb_created_time"] = fb_lead.get("created_time", "")
+                custom_fields["fb_form_id"] = fid
+                custom_fields["fb_platform"] = "facebook"
+                if fb_lead.get("ad_name"):
+                    custom_fields["fb_ad_name"] = fb_lead["ad_name"]
+                if fb_lead.get("campaign_name"):
+                    custom_fields["fb_campaign_name"] = fb_lead["campaign_name"]
+                if fb_lead.get("form_id"):
+                    custom_fields["fb_form_id"] = fb_lead["form_id"]
+                # Get form name from our forms list if available
+                for sf in (conn.credentials or {}).get("subscribed_forms", []):
+                    if sf.get("form_id") == fid:
+                        custom_fields["fb_form_name"] = sf.get("form_name", "")
+                        custom_fields["fb_page_name"] = sf.get("page_name", "")
+                        break
+                lead_data["custom_fields"] = custom_fields
 
                 # Skip leads with no contact info
                 if not lead_data["email"] and not lead_data["phone"] and not lead_data["name"]:

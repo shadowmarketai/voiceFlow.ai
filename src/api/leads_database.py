@@ -164,6 +164,18 @@ async def init_leads_db():
     except Exception as exc:
         logger.warning("Leads DB table creation failed: %s", exc)
 
+    # Run lightweight migrations for new columns on existing tables
+    try:
+        async with engine.begin() as conn:
+            for col_name, col_type in [("disposition", "VARCHAR(30)"), ("notes", "TEXT")]:
+                try:
+                    await conn.execute(text(f"ALTER TABLE leads ADD COLUMN {col_name} {col_type}"))
+                    logger.info("Added column leads.%s", col_name)
+                except Exception:
+                    pass  # Column already exists
+    except Exception as exc:
+        logger.debug("Column migration check: %s", exc)
+
 
 async def ensure_leads_database_exists():
     """Create the shadowmarket_leads database if using separate Postgres.

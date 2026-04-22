@@ -84,9 +84,11 @@ class LeadUpdateRequest(BaseModel):
     location_city: str | None = None
     location_state: str | None = None
     status: str | None = None
+    disposition: str | None = None
     qualification: str | None = None
     lead_score: int | None = None
     assigned_to: str | None = None
+    notes: str | None = None
     next_followup_at: datetime | None = None
     tags: list[str] | None = None
     custom_fields: dict[str, str] | None = None
@@ -119,7 +121,9 @@ class LeadResponse(BaseModel):
     lead_score: int
     qualification: str
     status: str
+    disposition: str | None = None
     assigned_to: str | None = None
+    notes: str | None = None
     converted_at: str | None = None
     deal_value: float | None = None
     consent_given: bool
