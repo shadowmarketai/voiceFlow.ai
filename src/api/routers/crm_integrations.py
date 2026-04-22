@@ -639,6 +639,23 @@ async def facebook_get_pages(
     return {"pages": pages}
 
 
+async def _get_fb_page_token(user_token: str, page_id: str) -> str:
+    """Get the page access token for a specific page using the user token."""
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://graph.facebook.com/v21.0/me/accounts",
+            params={"access_token": user_token, "fields": "id,access_token"},
+        ) as resp:
+            if resp.status != 200:
+                raise HTTPException(status_code=400, detail="Failed to get page token")
+            data = await resp.json()
+    for p in data.get("data", []):
+        if p["id"] == page_id:
+            return p["access_token"]
+    raise HTTPException(status_code=400, detail="Page not found or no access")
+
+
 @router.get("/facebook/forms/{page_id}")
 async def facebook_get_forms(
     page_id: str,
@@ -659,11 +676,13 @@ async def facebook_get_forms(
     if not conn or not conn.credentials:
         raise HTTPException(status_code=400, detail="Facebook not connected")
 
-    token = conn.credentials["access_token"]
+    user_token = conn.credentials["access_token"]
+    page_token = await _get_fb_page_token(user_token, page_id)
+
     async with aiohttp.ClientSession() as session:
         async with session.get(
             f"https://graph.facebook.com/v21.0/{page_id}/leadgen_forms",
-            params={"access_token": token, "fields": "id,name,status"},
+            params={"access_token": page_token, "fields": "id,name,status"},
         ) as resp:
             if resp.status != 200:
                 error = await resp.text()
@@ -804,24 +823,7 @@ async def facebook_pull_leads(
         raise HTTPException(status_code=400, detail="page_id required")
 
     # Get page access token
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
-            "https://graph.facebook.com/v21.0/me/accounts",
-            params={"access_token": user_token, "fields": "id,name,access_token"},
-        ) as resp:
-            if resp.status != 200:
-                error = await resp.text()
-                raise HTTPException(status_code=400, detail=f"Facebook API error: {error}")
-            pages_data = await resp.json()
-
-    page_token = None
-    for p in pages_data.get("data", []):
-        if p["id"] == page_id:
-            page_token = p.get("access_token")
-            break
-
-    if not page_token:
-        raise HTTPException(status_code=400, detail="Page not found or no access")
+    page_token = await _get_fb_page_token(user_token, page_id)
 
     # If form_id provided, pull leads from that specific form
     # Otherwise pull from all forms on the page
