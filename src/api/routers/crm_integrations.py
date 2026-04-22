@@ -331,16 +331,37 @@ async def create_ad_source(
     db: AsyncSession = Depends(get_leads_db),
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
-    """Create a new ad source connection."""
+    """Create or update an ad source connection (upsert by tenant+provider)."""
     tenant_id = _tenant_id(user)
 
-    # Generate webhook URL for this tenant + provider
-    webhook_secret = hashlib.sha256(
-        f"{tenant_id}:{body.provider}:{os.urandom(16).hex()}".encode()
-    ).hexdigest()[:32]
+    # Check if connection already exists for this tenant+provider
+    existing = (await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == body.provider,
+        )
+    )).scalar_one_or_none()
 
     base_url = os.environ.get("APP_URL", "https://voice.shadowmarket.ai")
     webhook_url = f"{base_url}/api/v1/crm-integrations/webhooks/{body.provider}/{tenant_id}"
+
+    if existing:
+        # Update existing connection
+        existing.display_name = body.display_name or existing.display_name
+        existing.auth_type = body.auth_type
+        existing.credentials = body.credentials
+        existing.webhook_url = webhook_url
+        existing.polling_interval_minutes = body.polling_interval_minutes
+        existing.auto_assign_agent_id = body.auto_assign_agent_id
+        existing.default_tags = body.default_tags
+        existing.is_active = True
+        await db.flush()
+        return _adsource_to_response(existing)
+
+    # Generate webhook secret for new connection
+    webhook_secret = hashlib.sha256(
+        f"{tenant_id}:{body.provider}:{os.urandom(16).hex()}".encode()
+    ).hexdigest()[:32]
 
     source = AdSourceConnection(
         tenant_id=tenant_id,
