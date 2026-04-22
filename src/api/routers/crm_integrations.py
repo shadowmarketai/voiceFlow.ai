@@ -380,37 +380,118 @@ async def delete_ad_source(
 # Webhook Receivers (for ad platforms)
 # ============================================
 
+@router.get("/webhooks/facebook/{tenant_id}")
+async def facebook_webhook_verify(
+    tenant_id: str,
+    request: Request,
+):
+    """Handle Facebook webhook verification challenge."""
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    verify_token = os.environ.get("FACEBOOK_WEBHOOK_VERIFY_TOKEN", "voiceflow_fb_verify")
+    if mode == "subscribe" and token == verify_token:
+        logger.info("Facebook webhook verified for tenant %s", tenant_id)
+        return int(challenge)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
 @router.post("/webhooks/facebook/{tenant_id}")
 async def facebook_webhook(
     tenant_id: str,
     request: Request,
     db: AsyncSession = Depends(get_leads_db),
 ):
-    """Receive Facebook Lead Ad form submissions."""
+    """Receive Facebook Lead Ad form submissions and fetch full lead data."""
+    import aiohttp
+
     body = await request.json()
     logger.info("Facebook webhook for tenant %s: %s", tenant_id, body)
 
-    # Parse Facebook Lead Ads payload
+    # Get the stored FB token for this tenant
+    result = await db.execute(
+        select(AdSourceConnection).where(
+            AdSourceConnection.tenant_id == tenant_id,
+            AdSourceConnection.provider == "facebook",
+        )
+    )
+    conn = result.scalar_one_or_none()
+
     entries = body.get("entry", [])
     created = 0
 
     for entry in entries:
+        page_id = str(entry.get("id", ""))
         changes = entry.get("changes", [])
         for change in changes:
             if change.get("field") != "leadgen":
                 continue
             value = change.get("value", {})
-            lead_data = {
-                "name": value.get("full_name"),
-                "email": value.get("email"),
-                "phone": value.get("phone_number"),
-                "source": "facebook",
-                "source_campaign": value.get("ad_name") or value.get("campaign_name"),
-                "source_medium": "paid",
-                "tags": ["facebook", "lead_ad"],
-            }
-            await leads_service.capture_lead(db, tenant_id, lead_data)
-            created += 1
+            leadgen_id = value.get("leadgen_id")
+
+            if not leadgen_id or not conn or not conn.credentials:
+                # Fallback: use whatever data is in the webhook payload
+                lead_data = {
+                    "name": value.get("full_name", ""),
+                    "email": value.get("email", ""),
+                    "phone": value.get("phone_number", ""),
+                    "source": "facebook",
+                    "source_campaign": value.get("ad_name") or value.get("campaign_name"),
+                    "source_medium": "paid",
+                    "tags": ["facebook", "lead_ad"],
+                }
+                await leads_service.capture_lead(db, tenant_id, lead_data)
+                created += 1
+                continue
+
+            # Fetch full lead data from Graph API using page token
+            try:
+                user_token = conn.credentials["access_token"]
+                page_token = await _get_fb_page_token(user_token, page_id)
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"https://graph.facebook.com/v21.0/{leadgen_id}",
+                        params={"access_token": page_token, "fields": "id,created_time,field_data,ad_id,ad_name,campaign_name,form_id"},
+                    ) as resp:
+                        if resp.status != 200:
+                            logger.warning("Failed to fetch lead %s: %s", leadgen_id, await resp.text())
+                            continue
+                        lead_detail = await resp.json()
+
+                field_data = {f["name"].lower(): f["values"][0] if f.get("values") else ""
+                              for f in lead_detail.get("field_data", [])}
+
+                name = (
+                    field_data.get("full_name") or field_data.get("full name")
+                    or field_data.get("name") or field_data.get("first_name", "")
+                )
+                last_name = field_data.get("last_name") or field_data.get("last name") or ""
+                if last_name and name:
+                    name = f"{name} {last_name}"
+
+                lead_data = {
+                    "name": name,
+                    "email": field_data.get("email") or field_data.get("email_address") or field_data.get("work_email") or "",
+                    "phone": field_data.get("phone_number") or field_data.get("phone") or field_data.get("mobile_number") or field_data.get("mobile") or "",
+                    "business_name": field_data.get("company_name") or field_data.get("company") or field_data.get("business_name") or "",
+                    "location_city": field_data.get("city") or field_data.get("location") or "",
+                    "location_state": field_data.get("state") or "",
+                    "location_country": field_data.get("country") or "",
+                    "source": "facebook",
+                    "source_campaign": lead_detail.get("ad_name") or lead_detail.get("campaign_name") or f"form_{lead_detail.get('form_id', '')}",
+                    "source_medium": "paid",
+                    "tags": ["facebook", "lead_ad"],
+                }
+
+                await leads_service.capture_lead(db, tenant_id, lead_data)
+                created += 1
+
+            except Exception as exc:
+                logger.error("Error fetching FB lead %s: %s", leadgen_id, exc)
+                continue
 
     await db.commit()
     return {"status": "ok", "leads_created": created}
@@ -721,6 +802,23 @@ async def facebook_subscribe_form(
     conn = result.scalar_one_or_none()
     if not conn or not conn.credentials:
         raise HTTPException(status_code=400, detail="Facebook not connected")
+
+    # Subscribe the page to leadgen webhooks via Graph API
+    import aiohttp
+    try:
+        user_token = conn.credentials["access_token"]
+        page_token = await _get_fb_page_token(user_token, page_id)
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"https://graph.facebook.com/v21.0/{page_id}/subscribed_apps",
+                params={"access_token": page_token, "subscribed_fields": "leadgen"},
+            ) as resp:
+                if resp.status == 200:
+                    logger.info("Page %s subscribed to leadgen webhooks", page_id)
+                else:
+                    logger.warning("Failed to subscribe page %s to webhooks: %s", page_id, await resp.text())
+    except Exception as exc:
+        logger.warning("Webhook subscription failed for page %s: %s", page_id, exc)
 
     # Store the form subscription in credentials
     creds = conn.credentials or {}
