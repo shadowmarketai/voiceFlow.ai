@@ -848,11 +848,13 @@ _lock = threading.Lock()
 if not USE_POSTGRES:
     import sqlite3
 
-    # Use /app/sqlite/voiceflow.db when running in Docker (volume-mounted),
+    # Use /app/data/voiceflow.db when running in Docker (volume-mounted),
     # fall back to project root for local development.
-    _SQLITE_DOCKER_PATH = "/app/sqlite/voiceflow.db"
-    if os.path.isdir("/app/sqlite"):
+    _SQLITE_DOCKER_PATH = "/app/data/voiceflow.db"
+    if os.path.isdir("/app/data"):
         _DB_PATH = _SQLITE_DOCKER_PATH
+    elif os.path.isdir("/app/sqlite"):
+        _DB_PATH = "/app/sqlite/voiceflow.db"
     else:
         _DB_PATH = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "voiceflow.db")
