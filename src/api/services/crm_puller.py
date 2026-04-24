@@ -59,11 +59,12 @@ async def _refresh_zoho_token(conn: CrmConnection, db: AsyncSession) -> bool:
 
 async def pull_zoho_leads(conn: CrmConnection, db: AsyncSession) -> dict:
     """Pull leads from Zoho CRM and ingest into VoiceFlow."""
-    if not conn.access_token:
-        return {"error": "No access token. Reconnect Zoho.", "created": 0, "updated": 0}
+    token = conn.api_key or conn.access_token
+    if not token:
+        return {"error": "No API token. Add your Zoho API Token in settings.", "created": 0, "updated": 0}
 
-    domain = conn.api_domain or "https://www.zohoapis.in"
-    headers = {"Authorization": f"Zoho-oauthtoken {conn.access_token}"}
+    domain = conn.api_domain or (conn.field_mapping or {}).get("api_domain") or "https://www.zohoapis.in"
+    headers = {"Authorization": f"Zoho-oauthtoken {token}"}
 
     created = updated = page = 0
     has_more = True
@@ -161,11 +162,12 @@ def _map_zoho_lead(item: dict) -> dict:
 
 async def pull_hubspot_leads(conn: CrmConnection, db: AsyncSession) -> dict:
     """Pull contacts from HubSpot and ingest into VoiceFlow."""
-    if not conn.access_token:
-        return {"error": "No access token. Reconnect HubSpot.", "created": 0, "updated": 0}
+    token = conn.api_key or conn.access_token
+    if not token:
+        return {"error": "No API token. Add your HubSpot Private App Token in settings.", "created": 0, "updated": 0}
 
     headers = {
-        "Authorization": f"Bearer {conn.access_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 
@@ -248,12 +250,13 @@ def _map_hubspot_contact(contact_id: str, props: dict) -> dict:
 
 async def pull_salesforce_leads(conn: CrmConnection, db: AsyncSession) -> dict:
     """Pull Lead records from Salesforce and ingest into VoiceFlow."""
-    if not conn.access_token:
-        return {"error": "No access token. Reconnect Salesforce.", "created": 0, "updated": 0}
+    token = conn.api_key or conn.access_token
+    if not token:
+        return {"error": "No access token. Add your Salesforce Access Token in settings.", "created": 0, "updated": 0}
 
-    domain = conn.api_domain or "https://login.salesforce.com"
+    domain = conn.api_domain or (conn.field_mapping or {}).get("api_domain") or "https://login.salesforce.com"
     headers = {
-        "Authorization": f"Bearer {conn.access_token}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
 

@@ -86,11 +86,15 @@ async def create_crm_connection(
     if result.scalar_one_or_none():
         raise HTTPException(status_code=409, detail=f"CRM connection for {body.provider} already exists")
 
+    # Extract api_domain from field_mapping if not a top-level field
+    api_domain = (body.field_mapping or {}).get("api_domain") or None
+
     conn = CrmConnection(
         tenant_id=tenant_id,
         provider=body.provider,
         display_name=body.display_name or body.provider.title(),
         api_key=body.api_key,
+        api_domain=api_domain,
         webhook_url=body.webhook_url,
         field_mapping=body.field_mapping,
         sync_direction=body.sync_direction,

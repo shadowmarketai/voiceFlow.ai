@@ -214,6 +214,7 @@ export default function CrmIntegrationsPage() {
   const [saving, setSaving] = useState(false);
   const [formData, setFormData] = useState({});
   const [agents, setAgents] = useState([]);
+  const [syncingId, setSyncingId] = useState(null);
 
   // Facebook-specific state
   const [fbConnected, setFbConnected] = useState(false);
@@ -795,6 +796,34 @@ document.querySelector('form').addEventListener('submit', function(e) {
                                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-indigo-600 hover:bg-indigo-50 border border-indigo-200"
                                 title="Sync now">
                                 <RefreshCw className="w-3 h-3" /> Sync Now
+                              </button>
+                            )}
+                            {['zoho', 'hubspot', 'salesforce'].includes(conn.provider) && (
+                              <button
+                                onClick={async () => {
+                                  setSyncingId(conn.id);
+                                  try {
+                                    toast.loading(`Syncing ${conn.display_name || conn.provider} leads...`, { id: `sync-${conn.id}` });
+                                    const { data } = await crmIntegrationsAPI.triggerSync(conn.id);
+                                    if (data.error) {
+                                      toast.error(data.error, { id: `sync-${conn.id}` });
+                                    } else {
+                                      toast.success(`Synced! ${data.created || 0} new, ${data.updated || 0} updated`, { id: `sync-${conn.id}` });
+                                    }
+                                    loadData();
+                                  } catch (err) {
+                                    toast.error(err.response?.data?.detail || 'Sync failed', { id: `sync-${conn.id}` });
+                                  } finally {
+                                    setSyncingId(null);
+                                  }
+                                }}
+                                disabled={syncingId === conn.id}
+                                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-emerald-600 hover:bg-emerald-50 border border-emerald-200 disabled:opacity-50"
+                                title="Pull leads from CRM now">
+                                {syncingId === conn.id
+                                  ? <Loader2 className="w-3 h-3 animate-spin" />
+                                  : <RefreshCw className="w-3 h-3" />}
+                                Sync Now
                               </button>
                             )}
                             <button onClick={() => handleDelete(conn)}
