@@ -266,7 +266,11 @@ def start_indiamart_poller():
         logger.warning("IndiaMart poller: leads DB not available, skipping")
         return
 
-    asyncio.get_event_loop().create_task(
-        indiamart_poll_loop(factory)
-    )
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(indiamart_poll_loop(factory))
+    except RuntimeError:
+        # No running loop — fallback (shouldn't happen in FastAPI startup)
+        asyncio.get_event_loop().create_task(indiamart_poll_loop(factory))
+
     logger.info("IndiaMart background poller scheduled")

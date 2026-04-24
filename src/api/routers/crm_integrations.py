@@ -125,6 +125,8 @@ async def trigger_crm_sync(
     user: dict = Depends(require_permission("voiceAI", "create")),
 ):
     """Manually trigger a CRM sync (import leads from external CRM)."""
+    from api.services.crm_puller import pull_leads_from_crm
+
     result = await db.execute(
         select(CrmConnection).where(CrmConnection.id == connection_id)
     )
@@ -133,27 +135,50 @@ async def trigger_crm_sync(
         raise HTTPException(status_code=404, detail="Connection not found")
 
     # Log sync start
+    now = datetime.now(timezone.utc)
     sync_log = SyncLog(
         tenant_id=conn.tenant_id,
         connection_type="crm",
         provider=conn.provider,
         direction="import",
-        status="in_progress",
+        status="running",
+        started_at=now,
+        records_processed=0,
     )
     db.add(sync_log)
+    await db.flush()
 
-    # TODO: Implement actual CRM API calls per provider
-    # For now, mark as completed with placeholder
-    sync_log.status = "success"
+    try:
+        pull_result = await pull_leads_from_crm(conn, db)
+    except Exception as exc:
+        logger.error("CRM sync failed for %s: %s", conn.provider, exc)
+        sync_log.status = "failed"
+        sync_log.errors = [str(exc)[:500]]
+        sync_log.completed_at = datetime.now(timezone.utc)
+        conn.last_sync_status = "failed"
+        await db.flush()
+        raise HTTPException(status_code=502, detail=f"CRM sync error: {exc}")
+
+    error = pull_result.get("error")
+    records = pull_result.get("created", 0) + pull_result.get("updated", 0)
+
+    sync_log.status = "failed" if error else "success"
+    sync_log.records_processed = records
+    sync_log.records_created = pull_result.get("created", 0)
+    sync_log.records_updated = pull_result.get("updated", 0)
+    sync_log.errors = [error] if error else None
     sync_log.completed_at = datetime.now(timezone.utc)
     conn.last_sync_at = datetime.now(timezone.utc)
-    conn.last_sync_status = "success"
+    conn.last_sync_status = "failed" if error else "success"
     await db.flush()
 
     return {
-        "status": "sync_triggered",
+        "status": "failed" if error else "success",
         "provider": conn.provider,
         "sync_id": str(sync_log.id),
+        "created": pull_result.get("created", 0),
+        "updated": pull_result.get("updated", 0),
+        "error": error,
     }
 
 
