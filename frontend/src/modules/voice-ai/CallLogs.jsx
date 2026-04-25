@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
  Search, Download, Calendar, List, Clock, Phone, PhoneIncoming, PhoneOutgoing,
  CheckCircle2, AlertTriangle, XCircle, Info, ChevronLeft, ChevronRight,
- ArrowUpDown, ArrowUp, ArrowDown, Filter
+ ArrowUpDown, ArrowUp, ArrowDown, Filter, FileText, X, Printer
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { voiceAgentAPI, agentsAPI } from '../../services/api';
@@ -12,6 +12,22 @@ import ResizablePanel from './components/ResizablePanel';
 import DialectBadge from './components/DialectBadge';
 import EmotionIndicator from './components/EmotionIndicator';
 import GenZBadge from './components/GenZBadge';
+
+// ── Transcript parser ────────────────────────────────────────────────────────
+// Backend stores transcript as a plain string: "User: ...\nAgent: ..."
+// Convert to the { speaker, text } array expected by the UI.
+function parseTranscript(raw) {
+ if (!raw) return [];
+ if (Array.isArray(raw)) return raw; // already structured
+ return raw
+   .split('\n')
+   .filter(line => line.trim())
+   .map(line => {
+     if (/^[Uu]ser:\s/.test(line))  return { speaker: 'customer', text: line.replace(/^[Uu]ser:\s*/, '') };
+     if (/^[Aa]gent:\s/.test(line)) return { speaker: 'agent',    text: line.replace(/^[Aa]gent:\s*/, '') };
+     return { speaker: 'agent', text: line };
+   });
+}
 
 // ── Mock Data ────────────────────────────────────────────────────────────────
 const mockCalls = [
@@ -170,6 +186,7 @@ export default function CallLogsPage() {
  const [sortDir, setSortDir] = useState('asc');
  const [currentPage, setCurrentPage] = useState(1);
  const [apiCalls, setApiCalls] = useState([]);
+ const [transcriptModal, setTranscriptModal] = useState(null);
 
  // Load agents list
  useEffect(() => {
@@ -219,7 +236,7 @@ export default function CallLogsPage() {
          genZTerms: [],
          codeMixLanguages: '',
          codeMixRatio: 0,
-         transcript: r.transcript || [],
+         transcript: parseTranscript(r.transcript),
        }));
        setApiCalls(mapped);
        return;
@@ -253,7 +270,7 @@ export default function CallLogsPage() {
        genZTerms: [],
        codeMixLanguages: '',
        codeMixRatio: 0,
-       transcript: r.transcript || [],
+       transcript: parseTranscript(r.transcript),
      }));
      setApiCalls(mapped);
    } catch {}
@@ -309,10 +326,10 @@ export default function CallLogsPage() {
  }, [search, dateFilter, sortField, sortDir]);
 
  // ── Pagination ───────────────────────────────────────────────────────────
- const totalItems = 156; // simulated total
- const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
- const paginatedCalls = filtered.slice(0, ITEMS_PER_PAGE);
- const showingStart = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+ const totalItems = filtered.length;
+ const totalPages = Math.max(1, Math.ceil(totalItems / ITEMS_PER_PAGE));
+ const paginatedCalls = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+ const showingStart = totalItems === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
  const showingEnd = Math.min(currentPage * ITEMS_PER_PAGE, totalItems);
 
  // ── Sort toggle ──────────────────────────────────────────────────────────
@@ -476,15 +493,15 @@ export default function CallLogsPage() {
  <thead>
  <tr className="bg-slate-50 text-left">
  {[
- { label: 'Contact', field: 'name' },
- { label: 'Agent', field: 'agent' },
- { label: 'Duration', field: 'duration' },
- { label: 'Dialect', field: 'dialect' },
- { label: 'Emotion', field: 'emotion' },
- { label: 'GenZ', field: 'genZScore' },
- { label: 'Outcome', field: 'outcome' },
- { label: 'Time', field: 'time' },
- { label: 'Actions', field: null },
+ { label: 'Contact',   field: 'name' },
+ { label: 'Agent',     field: 'agent' },
+ { label: 'Timestamp', field: 'time' },
+ { label: 'Duration',  field: 'duration' },
+ { label: 'Language',  field: 'language' },
+ { label: 'Sentiment', field: 'sentiment' },
+ { label: 'Emotion',   field: 'emotion' },
+ { label: 'Outcome',   field: 'outcome' },
+ { label: 'Transcript', field: null },
  ].map(col => (
  <th
  key={col.label}
@@ -508,6 +525,7 @@ export default function CallLogsPage() {
  onClick={() => setSelectedCall(call)}
  className="hover:bg-slate-50 cursor-pointer transition-colors"
  >
+ {/* Contact */}
  <td className="px-4 py-3">
  <div className="flex items-center gap-3">
  <div className="w-8 h-8 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center flex-shrink-0">
@@ -519,22 +537,9 @@ export default function CallLogsPage() {
  </div>
  </div>
  </td>
- <td className="px-4 py-3 text-slate-600">{call.agent}</td>
- <td className="px-4 py-3 text-slate-600 font-mono">{call.duration}</td>
- <td className="px-4 py-3">
- <DialectBadge dialect={call.dialect} confidence={call.dialectConfidence} />
- </td>
- <td className="px-4 py-3">
- <EmotionIndicator emotion={call.emotion} confidence={call.emotionConfidence} showBar={false} />
- </td>
- <td className="px-4 py-3">
- {call.genZScore > 0 ? <GenZBadge score={call.genZScore} terms={call.genZTerms} /> : <span className="text-xs text-slate-400">--</span>}
- </td>
- <td className="px-4 py-3">
- <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cfg.badge}`}>
- {call.outcome}
- </span>
- </td>
+ {/* Agent */}
+ <td className="px-4 py-3 text-slate-600 text-sm">{call.agent}</td>
+ {/* Timestamp */}
  <td className="px-4 py-3">
  <div className="flex items-center gap-1 text-slate-500">
  {call.direction === 'inbound' ? <PhoneIncoming className="w-3.5 h-3.5" /> : <PhoneOutgoing className="w-3.5 h-3.5" />}
@@ -542,12 +547,42 @@ export default function CallLogsPage() {
  </div>
  <p className="text-xs text-slate-400 mt-0.5">{call.date}</p>
  </td>
+ {/* Duration */}
+ <td className="px-4 py-3 text-slate-600 font-mono text-sm">{call.duration}</td>
+ {/* Language */}
+ <td className="px-4 py-3">
+ <span className="inline-flex items-center px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-xs font-medium">
+ {call.language}
+ </span>
+ </td>
+ {/* Sentiment */}
+ <td className="px-4 py-3">
+ <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+ call.sentiment === 'positive' ? 'bg-emerald-100 text-emerald-700' :
+ call.sentiment === 'negative' ? 'bg-red-100 text-red-700' :
+ 'bg-slate-100 text-slate-600'
+ }`}>
+ {call.sentiment}
+ </span>
+ </td>
+ {/* Emotion */}
+ <td className="px-4 py-3">
+ <EmotionIndicator emotion={call.emotion} confidence={call.emotionConfidence} showBar={false} />
+ </td>
+ {/* Outcome */}
+ <td className="px-4 py-3">
+ <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cfg.badge}`}>
+ {call.outcome}
+ </span>
+ </td>
+ {/* View transcript */}
  <td className="px-4 py-3">
  <button
- onClick={e => { e.stopPropagation(); setSelectedCall(call); }}
- className="text-xs text-indigo-600 hover:underline font-medium"
+ onClick={e => { e.stopPropagation(); setTranscriptModal(call); }}
+ className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium whitespace-nowrap"
  >
- View
+ <FileText className="w-3.5 h-3.5" />
+ View transcript
  </button>
  </td>
  </tr>
@@ -596,6 +631,148 @@ export default function CallLogsPage() {
  />
  </ResizablePanel>
  )}
+
+ {/* ── Transcript Modal ─────────────────────────────────────────────── */}
+ {transcriptModal && (
+ <TranscriptModal call={transcriptModal} onClose={() => setTranscriptModal(null)} />
+ )}
  </div>
+ );
+}
+
+// ── TranscriptModal ──────────────────────────────────────────────────────────
+
+function TranscriptModal({ call, onClose }) {
+ const handlePrint = () => window.print();
+
+ const sentimentColor =
+ call.sentiment === 'positive' ? 'text-emerald-600' :
+ call.sentiment === 'negative' ? 'text-red-600' :
+ 'text-slate-500';
+
+ return (
+ <>
+   {/* Print stylesheet — hides everything except the modal content */}
+   <style>{`
+     @media print {
+       body * { visibility: hidden !important; }
+       #vm-transcript-root, #vm-transcript-root * { visibility: visible !important; }
+       #vm-transcript-root {
+         position: fixed !important; inset: 0 !important;
+         background: white !important; padding: 24px !important;
+         overflow: visible !important; z-index: 9999 !important;
+       }
+       .vm-no-print { display: none !important; }
+     }
+   `}</style>
+
+   {/* Backdrop */}
+   <div
+     className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 vm-no-print-backdrop"
+     onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+   >
+     {/* Modal */}
+     <div
+       id="vm-transcript-root"
+       className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col mx-4"
+     >
+       {/* Header */}
+       <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 vm-no-print">
+         <h2 className="font-bold text-lg text-slate-900 flex items-center gap-2">
+           <FileText className="w-5 h-5 text-indigo-500" />
+           Transcript — {call.name}
+         </h2>
+         <div className="flex items-center gap-2">
+           <button
+             onClick={handlePrint}
+             className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+           >
+             <Printer className="w-4 h-4" />
+             Export PDF
+           </button>
+           <button
+             onClick={onClose}
+             className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+           >
+             <X className="w-5 h-5" />
+           </button>
+         </div>
+       </div>
+
+       {/* Print-only title */}
+       <div className="hidden px-6 pt-6 pb-2" style={{ display: 'none' }} id="vm-print-header">
+         <h1 className="text-xl font-bold text-slate-900">Call Transcript — {call.name}</h1>
+       </div>
+
+       {/* Meta bar */}
+       <div className="px-6 py-3 bg-slate-50 border-b border-slate-100 flex flex-wrap gap-4 text-sm text-slate-600">
+         <span className="flex items-center gap-1">
+           <Calendar className="w-3.5 h-3.5 text-slate-400" />
+           {call.date} {call.time}
+         </span>
+         <span className="flex items-center gap-1">
+           <Clock className="w-3.5 h-3.5 text-slate-400" />
+           {call.duration}
+         </span>
+         <span className="flex items-center gap-1">
+           🌐 {call.language}
+         </span>
+         <span className={`flex items-center gap-1 font-medium ${sentimentColor}`}>
+           💬 {call.sentiment}
+         </span>
+         {call.agent && (
+           <span className="flex items-center gap-1 text-slate-500">
+             🤖 {call.agent}
+           </span>
+         )}
+       </div>
+
+       {/* Conversation */}
+       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+         {call.transcript.length === 0 ? (
+           <p className="text-center text-sm text-slate-400 py-10">No transcript recorded for this call.</p>
+         ) : (
+           call.transcript.map((line, i) => {
+             const isAgent = line.speaker === 'agent';
+             return (
+               <div key={i} className={`flex gap-2 ${isAgent ? 'flex-row-reverse' : 'flex-row'}`}>
+                 <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${
+                   isAgent ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'
+                 }`}>
+                   {isAgent ? 'A' : 'U'}
+                 </div>
+                 <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
+                   isAgent
+                     ? 'bg-indigo-600 text-white rounded-tr-sm'
+                     : 'bg-slate-100 text-slate-800 rounded-tl-sm'
+                 }`}>
+                   {line.text}
+                   {line.time && (
+                     <span className={`block text-xs mt-1 ${isAgent ? 'text-indigo-200' : 'text-slate-400'}`}>
+                       {line.time}
+                     </span>
+                   )}
+                 </div>
+               </div>
+             );
+           })
+         )}
+       </div>
+
+       {/* Footer */}
+       <div className="px-6 py-3 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex items-center justify-between vm-no-print">
+         <p className="text-xs text-slate-400">
+           {call.transcript.length} message{call.transcript.length !== 1 ? 's' : ''}
+         </p>
+         <button
+           onClick={onClose}
+           className="px-4 py-1.5 text-sm font-medium rounded-lg border border-slate-200 text-slate-600 hover:bg-white transition-colors"
+         >
+           Close
+         </button>
+       </div>
+     </div>
+   </div>
+ </>
  );
 }
