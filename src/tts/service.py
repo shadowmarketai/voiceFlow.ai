@@ -27,9 +27,12 @@ from tts.config import (
 from tts.engines.ai4b_fastpitch import AI4BFastPitchEngine
 from tts.engines.base import BaseTTSEngine
 from tts.engines.bhashini_tts_engine import BhashiniTTSEngine
+from tts.engines.cartesia import CartesiaEngine
+from tts.engines.elevenlabs import ElevenLabsEngine
 from tts.engines.indic_parler import IndicParlerTTSEngine
 from tts.engines.indicf5 import IndicF5Engine
 from tts.engines.openvoice import OpenVoiceV2Engine
+from tts.engines.sarvam_tts import SarvamTTSEngine
 from tts.engines.svara import SvaraTTSEngine
 from tts.engines.xtts import XTTSv2Engine
 
@@ -63,6 +66,11 @@ class TTSService:
         # Initialize engines (lazy loaded)
         self.engines: dict[TTSEngine, BaseTTSEngine] = {}
         self._engine_classes = {
+            # API-based engines (no GPU, primary for production)
+            TTSEngine.ELEVENLABS:     ElevenLabsEngine,
+            TTSEngine.CARTESIA:       CartesiaEngine,
+            TTSEngine.SARVAM_TTS:     SarvamTTSEngine,
+            # Self-hosted engines (GPU-based, fallback)
             TTSEngine.INDIC_PARLER:   IndicParlerTTSEngine,
             TTSEngine.OPENVOICE_V2:   OpenVoiceV2Engine,
             TTSEngine.XTTS_V2:        XTTSv2Engine,
@@ -117,44 +125,47 @@ class TTSService:
         emotion: str | None = None,
         use_case: str | None = None,
         detected_customer_emotion: str | None = None,
-        prefer_low_latency: bool = False
+        prefer_low_latency: bool = False,
     ) -> TTSEngine:
-        """
-        Intelligently select the best TTS engine based on context
-        
-        Priority:
-        1. Use case mapping (if specified)
-        2. Customer emotion response mapping
-        3. Language quality matrix
-        4. Latency preference
-        """
+        """Select the best TTS engine based on context.
 
-        # 0. Bhashini-only languages (not covered by any other engine)
+        Priority:
+        0. Bhashini-only languages (Bodo, Dogri, Sindhi, etc.) → Bhashini
+        1. Latency preference → Cartesia (English) or Sarvam TTS (Indian)
+        2. Use-case mapping
+        3. Customer emotion mapping (empathy, etc.)
+        4. Language quality matrix (highest score wins)
+        5. Language family default:
+              English → ElevenLabs
+              Indian  → Sarvam TTS
+        """
+        lang = (language or "en").lower()[:2]
+
+        # 0. Rare Indian langs only Bhashini supports
         if language in self._BHASHINI_ONLY_LANGS:
             return TTSEngine.BHASHINI
 
-        # 1. Check use case mapping
-        if use_case and use_case in USE_CASE_ENGINE_MAPPING:
-            mapping = USE_CASE_ENGINE_MAPPING[use_case]
-            return mapping["primary"]
-
-        # 2. Check emotion response mapping
-        if detected_customer_emotion and detected_customer_emotion in EMOTION_RESPONSE_MAPPING:
-            mapping = EMOTION_RESPONSE_MAPPING[detected_customer_emotion]
-            return mapping["engine"]
-
-        # 3. Check language quality matrix
-        if language in LANGUAGE_ENGINE_QUALITY:
-            quality_scores = LANGUAGE_ENGINE_QUALITY[language]
-            best_engine = max(quality_scores, key=quality_scores.get)
-            return best_engine
-
-        # 4. Latency preference
+        # 1. Low-latency override — Cartesia for EN, Sarvam for Indian
         if prefer_low_latency:
-            return TTSEngine.AI4B_FASTPITCH
+            return TTSEngine.CARTESIA if lang == "en" else TTSEngine.SARVAM_TTS
 
-        # Default
-        return TTSEngine.INDIC_PARLER
+        # 2. Use-case mapping
+        if use_case and use_case in USE_CASE_ENGINE_MAPPING:
+            return USE_CASE_ENGINE_MAPPING[use_case]["primary"]
+
+        # 3. Emotion-aware engine selection
+        if detected_customer_emotion and detected_customer_emotion in EMOTION_RESPONSE_MAPPING:
+            return EMOTION_RESPONSE_MAPPING[detected_customer_emotion]["engine"]
+
+        # 4. Language quality matrix — highest score wins
+        if lang in LANGUAGE_ENGINE_QUALITY:
+            quality_scores = LANGUAGE_ENGINE_QUALITY[lang]
+            return max(quality_scores, key=quality_scores.get)
+
+        # 5. Language family defaults
+        if lang == "en":
+            return TTSEngine.ELEVENLABS
+        return TTSEngine.SARVAM_TTS
 
     def get_emotion_for_response(
         self,
@@ -169,12 +180,16 @@ class TTSService:
         return EMOTION_RESPONSE_MAPPING["neutral"]
 
     # Fallback order when a selected engine fails.
-    # Bhashini and AI4B FastPitch come early — both are API-only (no GPU needed)
-    # and cover the widest language range, so they rarely fail on coverage grounds.
+    # API-based engines (ElevenLabs, Cartesia, Sarvam) come first — no GPU,
+    # always available as long as API keys are set. Self-hosted engines follow
+    # as fallback for when API keys are absent or API is down.
     ENGINE_FALLBACK_ORDER = [
-        TTSEngine.INDIC_PARLER,
-        TTSEngine.BHASHINI,
-        TTSEngine.AI4B_FASTPITCH,
+        TTSEngine.ELEVENLABS,       # MOS 4.8 — try first (English primary)
+        TTSEngine.CARTESIA,         # MOS 4.7 — fastest (English real-time)
+        TTSEngine.SARVAM_TTS,       # MOS 4.4 — best Indian API (Indian primary)
+        TTSEngine.INDIC_PARLER,     # MOS 4.3 — self-hosted Indian
+        TTSEngine.BHASHINI,         # API — 22+ langs, free
+        TTSEngine.AI4B_FASTPITCH,   # Self-hosted — lowest latency fallback
         TTSEngine.OPENVOICE_V2,
         TTSEngine.INDICF5,
         TTSEngine.SVARA,

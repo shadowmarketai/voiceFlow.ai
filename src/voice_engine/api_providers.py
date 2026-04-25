@@ -3,13 +3,27 @@ API-based Voice Providers — Full Production Pipeline
 =====================================================
 All cloud-based — no local ML models, no GPU needed.
 
-STT chain: Deepgram → Sarvam AI → Bhashini (AI4Bharat) → Groq Whisper → OpenAI Whisper
-LLM chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub
-TTS chain: ElevenLabs → Sarvam AI → OpenAI TTS → Deepgram Aura → Google Cloud → Edge TTS (free)
+STT chain: Sarvam AI (primary, all Indian langs) → Deepgram Nova-2 (EN/fallback)
+           → Groq Whisper → OpenAI Whisper
+           Ensemble: Sarvam-only for Indic, Deepgram-only for English
 
-Env vars needed:
-  DEEPGRAM_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, ELEVENLABS_API_KEY,
-  ANTHROPIC_API_KEY, GOOGLE_API_KEY, SARVAM_API_KEY, DEEPSEEK_API_KEY
+LLM chain: Gemini 2.5 Pro (primary) → Groq → OpenAI → Anthropic → DeepSeek → stub
+           Streaming: Gemini SSE → Groq SSE → OpenAI SSE → DeepSeek SSE → fallback batch
+
+TTS chain (English):  ElevenLabs Turbo v2.5 → Cartesia Sonic-2 → OpenAI TTS
+                       → Deepgram Aura → Google Cloud → Edge TTS (free)
+TTS chain (Indian):   Sarvam TTS bulbul:v2 → ElevenLabs → OpenAI TTS
+                       → Google Cloud → Edge TTS (free)
+
+Env vars needed (required):
+  GOOGLE_API_KEY       — Gemini 2.5 Pro LLM + Google Cloud TTS fallback
+  SARVAM_API_KEY       — STT (Indian langs) + TTS (Indian langs)
+  ELEVENLABS_API_KEY   — TTS (English primary, MOS 4.8)
+  CARTESIA_API_KEY     — TTS (English real-time, MOS 4.7, 80ms TTFA)
+
+Env vars needed (optional fallbacks):
+  DEEPGRAM_API_KEY, GROQ_API_KEY, OPENAI_API_KEY,
+  ANTHROPIC_API_KEY, DEEPSEEK_API_KEY,
   BHASHINI_USER_ID, BHASHINI_API_KEY (FREE — register at bhashini.gov.in)
 """
 
@@ -31,16 +45,96 @@ logger = logging.getLogger(__name__)
 # STT (Speech-to-Text) — 4 providers
 # ═════════════════════════════════════════════════════════════════
 
+async def transcribe_deepgram_stream(
+    audio_bytes: bytes,
+    api_key: str,
+    language: str | None = None,
+) -> AsyncGenerator[tuple[bool, str, float], None]:
+    """Stream pre-captured audio bytes to Deepgram's live WebSocket API.
+
+    Yields ``(is_final, text, confidence)`` tuples as Deepgram processes each
+    incoming chunk.  Sending a buffered recording in 4 KB slices simulates
+    real-time streaming and lets Deepgram return *interim* transcripts before
+    it has seen the full audio — enabling speculative LLM firing.
+
+    Falls back silently (no yields) if the WebSocket connection fails so the
+    caller can degrade gracefully to the REST path.
+    """
+    import json as _json
+
+    import websockets
+
+    lang_param = f"&language={language}" if language else ""
+    # Auth via query param — avoids websockets version differences in header
+    # kwarg names (extra_headers vs additional_headers changed across versions).
+    url = (
+        f"wss://api.deepgram.com/v1/listen"
+        f"?token={api_key}"
+        f"&model=nova-2&punctuate=true&smart_format=true"
+        f"&interim_results=true&encoding=linear16&sample_rate=16000&channels=1"
+        f"{lang_param}"
+    )
+
+    CHUNK = 4096  # 4 KB per send — small enough for quick interim results
+
+    try:
+        async with websockets.connect(
+            url,
+            ping_interval=None,
+            open_timeout=5,
+        ) as ws:
+            # Producer coroutine: send audio in chunks, then close the stream
+            async def _send_audio() -> None:
+                for offset in range(0, len(audio_bytes), CHUNK):
+                    await ws.send(audio_bytes[offset : offset + CHUNK])
+                    await asyncio.sleep(0)  # yield control so receiver runs
+                await ws.send(_json.dumps({"type": "CloseStream"}))
+
+            send_task = asyncio.create_task(_send_audio())
+            try:
+                async for raw in ws:
+                    try:
+                        data = _json.loads(raw)
+                    except (_json.JSONDecodeError, TypeError):
+                        continue
+
+                    if data.get("type") != "Results":
+                        continue
+
+                    ch = (data.get("channel") or {})
+                    alt = (ch.get("alternatives") or [{}])[0]
+                    text: str = alt.get("transcript", "")
+                    confidence: float = float(alt.get("confidence") or 0.0)
+                    is_final: bool = bool(data.get("is_final"))
+
+                    if text:
+                        yield (is_final, text, confidence)
+
+                    # speech_final means Deepgram detected an utterance boundary
+                    if data.get("speech_final"):
+                        break
+            finally:
+                send_task.cancel()
+
+    except Exception as exc:
+        logger.debug("Deepgram streaming WS unavailable (%s) — skipping speculative path", exc)
+
+
 async def transcribe_audio_api(
     audio_bytes: bytes,
     language: str | None = None,
     provider: str = "auto",
 ) -> dict[str, Any]:
-    """Transcribe audio. Chain: Deepgram → Sarvam → Groq Whisper → OpenAI Whisper."""
+    """Transcribe audio. Chain: Sarvam AI → Deepgram → Groq Whisper → OpenAI Whisper.
+
+    Sarvam AI is primary — it handles all Indian languages natively (en-IN, ta-IN,
+    hi-IN, te-IN, kn-IN, ml-IN, etc.) and returns accurate Devanagari / Tamil script
+    instead of transliterated English that Deepgram produces for Indic audio.
+    """
 
     providers = [
-        ("deepgram", "DEEPGRAM_API_KEY", _deepgram_stt),
         ("sarvam", "SARVAM_API_KEY", _sarvam_stt),
+        ("deepgram", "DEEPGRAM_API_KEY", _deepgram_stt),
         ("groq", "GROQ_API_KEY", _groq_stt),
         ("openai", "OPENAI_API_KEY", _openai_stt),
     ]
@@ -325,11 +419,16 @@ async def call_llm_api(
     provider: str = "auto",
     model: str = None,
 ) -> dict[str, Any]:
-    """Call LLM. Chain: Groq → Gemini → OpenAI → Anthropic → Deepseek → stub."""
+    """Call LLM. Chain: Gemini 2.5 Pro → Groq → OpenAI → Anthropic → Deepseek → stub.
+
+    Gemini 2.5 Pro is primary — best quality-cost balance for Indian context,
+    supports code-switching, and handles Indic-accented English well.
+    Falls back to Groq for speed if Gemini key is not set.
+    """
 
     providers_list = [
-        ("groq", "GROQ_API_KEY", _groq_llm),
         ("gemini", "GOOGLE_API_KEY", _gemini_llm),
+        ("groq", "GROQ_API_KEY", _groq_llm),
         ("openai", "OPENAI_API_KEY", _openai_llm),
         ("anthropic", "ANTHROPIC_API_KEY", _anthropic_llm),
         ("deepseek", "DEEPSEEK_API_KEY", _deepseek_llm),
@@ -359,19 +458,75 @@ async def call_llm_stream(
     user_message: str,
     provider: str = "auto",
     model: str = None,
+    history: list | None = None,
 ) -> AsyncGenerator[str, None]:
-    """Async generator of partial text chunks. Falls back to full-response
-    for providers that don't support streaming.
+    """Async generator of partial text chunks.
 
     Streaming paths:
+      - gemini      -> SSE /streamGenerateContent (native Gemini streaming)
       - groq        -> SSE /chat/completions?stream=true  (OpenAI-compat)
       - openai      -> SSE /chat/completions?stream=true
       - deepseek    -> SSE /chat/completions?stream=true
 
     Non-streaming paths fall back to call_llm_api() — the whole response is
     yielded as a single chunk so the downstream pipeline still works.
+
+    history: optional list of prior {"role": ..., "content": ...} messages
+             inserted between system prompt and current user message so the
+             model has conversation context for multi-turn calls.
     """
-    providers_list = [
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_message})
+
+    # ── Gemini streaming (primary) ──────────────────────────────────────────
+    if provider in ("auto", "gemini"):
+        gemini_key = os.environ.get("GOOGLE_API_KEY", "")
+        if gemini_key:
+            chosen_model = model or "gemini-2.5-pro"
+            url = (
+                f"https://generativelanguage.googleapis.com/v1beta/models/"
+                f"{chosen_model}:streamGenerateContent?alt=sse&key={gemini_key}"
+            )
+            gemini_contents = []
+            # Map OpenAI-style history to Gemini contents format
+            for msg in messages:
+                role = "user" if msg["role"] in ("user", "system") else "model"
+                gemini_contents.append({"role": role, "parts": [{"text": msg["content"]}]})
+            try:
+                async with httpx.AsyncClient(timeout=30) as client, client.stream(
+                    "POST", url,
+                    json={"contents": gemini_contents,
+                          "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7}},
+                ) as resp:
+                    if resp.status_code == 200:
+                        async for raw_line in resp.aiter_lines():
+                            if not raw_line or not raw_line.startswith("data:"):
+                                continue
+                            payload = raw_line[5:].strip()
+                            if not payload or payload == "[DONE]":
+                                continue
+                            try:
+                                obj = json.loads(payload)
+                                parts = (obj.get("candidates", [{}])[0]
+                                           .get("content", {})
+                                           .get("parts", []))
+                                for part in parts:
+                                    text = part.get("text", "")
+                                    if text:
+                                        yield text
+                            except (KeyError, IndexError, json.JSONDecodeError):
+                                continue
+                        return
+                    else:
+                        body = await resp.aread()
+                        logger.warning("Gemini stream HTTP %s: %s", resp.status_code, body[:200])
+            except Exception as e:
+                logger.warning("Gemini stream failed, trying next: %s", e)
+
+    # ── OpenAI-compatible streaming (Groq / OpenAI / DeepSeek) ─────────────
+    openai_compat = [
         ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions",
          model or "llama-3.1-8b-instant"),
         ("openai", "OPENAI_API_KEY", "https://api.openai.com/v1/chat/completions",
@@ -380,7 +535,7 @@ async def call_llm_stream(
          model or "deepseek-chat"),
     ]
 
-    for name, env_key, url, chosen_model in providers_list:
+    for name, env_key, url, chosen_model in openai_compat:
         if provider not in ("auto", name):
             continue
         api_key = os.environ.get(env_key, "")
@@ -392,10 +547,7 @@ async def call_llm_stream(
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model": chosen_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_message},
-                    ],
+                    "messages": messages,
                     "max_tokens": 200,
                     "temperature": 0.7,
                     "stream": True,
@@ -442,13 +594,18 @@ async def _groq_llm(system_prompt: str, user_message: str, api_key: str, model: 
 
 
 async def _gemini_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
-    """Google Gemini 2.5 Flash — fast, free tier."""
-    chosen = model or "gemini-2.5-flash"
+    """Google Gemini 2.5 Pro — best quality Indian-context LLM, handles code-switching."""
+    chosen = model or "gemini-2.5-pro"
+    # Use system_instruction + user turn for proper role separation
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": user_message}]}],
+        "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7},
+    }
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             f"https://generativelanguage.googleapis.com/v1beta/models/{chosen}:generateContent?key={api_key}",
-            json={"contents": [{"parts": [{"text": f"{system_prompt}\n\nUser: {user_message}"}]}],
-                  "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7}},
+            json=payload,
         )
         resp.raise_for_status()
         return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -516,29 +673,68 @@ _ELEVENLABS_VOICE_MAP = {
 }
 
 
+_CARTESIA_VOICE_MAP = {
+    # Default Indian-accented English voices on Cartesia
+    "priya":   "694f9389-aac1-45b6-b726-9d9369183238",
+    "meera":   "156fb8d2-335b-4950-9cb3-a2d33befec77",
+    "arjun":   "a0e99841-438c-4a64-b679-ae501e7d6091",
+    "default": "694f9389-aac1-45b6-b726-9d9369183238",
+}
+
+_INDIC_TTS_LANGS = {"ta", "te", "kn", "ml", "hi", "bn", "mr", "gu", "pa", "or", "as"}
+
+
 async def synthesize_speech_api(
     text: str,
     language: str = "en",
     voice_id: str | None = None,
     provider: str = "auto",
     speed: float = 1.0,
+    emotion: str | None = None,
+    stability: float = 0.65,
+    similarity_boost: float = 0.80,
 ) -> dict[str, Any]:
-    """Synthesize speech. Chain: ElevenLabs → Sarvam → OpenAI → Deepgram Aura → Google Cloud → Edge TTS."""
-    t_start = time.time()
+    """Synthesize speech.
 
-    # Resolve voice: if it's an OpenAI voice name, skip ElevenLabs (it won't recognise it)
+    Chain (English):    ElevenLabs Turbo v2.5 → Cartesia Sonic-2 → OpenAI → Edge TTS
+    Chain (Indian):     Sarvam TTS → ElevenLabs → OpenAI → Edge TTS
+    Chain (rare langs): Google Cloud TTS → Edge TTS
+
+    ElevenLabs Turbo v2.5 gives MOS 4.8 for English.
+    Cartesia Sonic-2 gives MOS 4.7 with 80ms TTFA — best for real-time.
+    Sarvam TTS gives MOS 4.4 for Indian languages natively.
+    """
+    t_start = time.time()
+    lang = (language or "en").lower()[:2]
+    is_indic = lang in _INDIC_TTS_LANGS
+
+    # Resolve ElevenLabs voice ID
     resolved_voice = voice_id
     is_openai_voice = voice_id and voice_id.lower() in _OPENAI_VOICES
     if voice_id and voice_id.lower() in _ELEVENLABS_VOICE_MAP:
         resolved_voice = _ELEVENLABS_VOICE_MAP[voice_id.lower()]
 
-    providers_list = [
-        ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], resolved_voice, speed)),
-        ("sarvam", "SARVAM_API_KEY", lambda: _sarvam_tts(text, os.environ["SARVAM_API_KEY"], language, speed)),
-        ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
-        ("deepgram", "DEEPGRAM_API_KEY", lambda: _deepgram_tts(text, os.environ["DEEPGRAM_API_KEY"], voice_id)),
-        ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
-    ]
+    if is_indic and provider == "auto":
+        # Indic chain: Sarvam → ElevenLabs → OpenAI → Edge TTS
+        providers_list = [
+            ("sarvam", "SARVAM_API_KEY", lambda: _sarvam_tts(text, os.environ["SARVAM_API_KEY"], language, speed)),
+            ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], resolved_voice, speed, stability, similarity_boost)),
+            ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
+            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
+        ]
+    else:
+        # English chain: ElevenLabs → Cartesia → OpenAI → Deepgram → Edge TTS
+        providers_list = [
+            ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], resolved_voice, speed, stability, similarity_boost)),
+            ("cartesia", "CARTESIA_API_KEY", lambda: _cartesia_tts(text, os.environ["CARTESIA_API_KEY"], voice_id, language, speed)),
+            ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
+            ("deepgram", "DEEPGRAM_API_KEY", lambda: _deepgram_tts(text, os.environ["DEEPGRAM_API_KEY"], voice_id)),
+            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
+        ]
+
+    # Override: if caller pinned a specific provider
+    if provider not in ("auto",) and not is_indic:
+        pass  # will be filtered in the loop below by provider != name check
 
     # If the voice is an OpenAI voice name, put OpenAI first
     if is_openai_voice and provider == "auto":
@@ -569,19 +765,72 @@ async def synthesize_speech_api(
             "error": "No TTS provider available"}
 
 
-async def _elevenlabs_tts(text: str, api_key: str, voice_id: str | None, speed: float) -> dict[str, Any]:
-    """ElevenLabs — highest quality, voice cloning, 29+ languages."""
-    vid = voice_id or "21m00Tcm4TlvDq8ikWAM"  # Rachel
+async def _elevenlabs_tts(
+    text: str,
+    api_key: str,
+    voice_id: str | None,
+    speed: float,
+    stability: float = 0.65,
+    similarity_boost: float = 0.80,
+) -> dict[str, Any]:
+    """ElevenLabs Turbo v2.5 — MOS 4.8, best quality, 29+ languages, voice cloning."""
+    vid = voice_id or "21m00Tcm4TlvDq8ikWAM"  # Rachel (Indian-accented English)
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"https://api.elevenlabs.io/v1/text-to-speech/{vid}",
             headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-            json={"text": text, "model_id": "eleven_flash_v2_5",
-                  "voice_settings": {"stability": 0.5, "similarity_boost": 0.75, "speed": speed}},
+            json={
+                "text": text,
+                "model_id": "eleven_turbo_v2_5",        # upgraded: best quality + speed
+                "voice_settings": {
+                    "stability": stability,               # 0.65 = conversational, natural variation
+                    "similarity_boost": similarity_boost, # 0.80 = close to reference voice
+                    "style": 0.15,                        # slight style expression
+                    "use_speaker_boost": True,
+                    "speed": speed,
+                },
+                "output_format": "pcm_22050",             # raw PCM for lowest latency
+            },
         )
         resp.raise_for_status()
-    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "mp3",
-            "provider": "elevenlabs", "sample_rate": 44100}
+    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "pcm",
+            "provider": "elevenlabs", "sample_rate": 22050}
+
+
+async def _cartesia_tts(
+    text: str,
+    api_key: str,
+    voice_id: str | None,
+    language: str,
+    speed: float,
+) -> dict[str, Any]:
+    """Cartesia Sonic-2 — MOS 4.7, 80ms TTFA, best for real-time English agents."""
+    vid = _CARTESIA_VOICE_MAP.get((voice_id or "").lower(), _CARTESIA_VOICE_MAP["default"])
+    lang_code = (language or "en").lower()[:2]
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.cartesia.ai/tts/bytes",
+            headers={
+                "X-API-Key": api_key,
+                "Cartesia-Version": "2024-06-10",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model_id": "sonic-2",
+                "transcript": text,
+                "voice": {"mode": "id", "id": vid},
+                "output_format": {
+                    "container": "raw",
+                    "encoding": "pcm_s16le",
+                    "sample_rate": 22050,
+                },
+                "language": lang_code,
+                "speed": speed,
+            },
+        )
+        resp.raise_for_status()
+    return {"audio_base64": base64.b64encode(resp.content).decode(), "format": "pcm",
+            "provider": "cartesia", "sample_rate": 22050}
 
 
 async def _sarvam_tts(text: str, api_key: str, language: str, speed: float) -> dict[str, Any]:

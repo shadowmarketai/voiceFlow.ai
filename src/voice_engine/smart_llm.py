@@ -18,14 +18,17 @@ import re
 # Providers in priority order when we need a smarter model. Each tuple is
 # (provider_name, env_var, model_id). The first provider with an API key set
 # wins; everything falls back cleanly to Groq 8B if nothing smarter is ready.
+#
+# Gemini 2.5 Pro is primary — best quality-cost for Indian context, handles
+# code-switching (Tanglish/Hinglish), and generates short phone-ready responses.
 _SMART_CANDIDATES = [
+    ("gemini", "GOOGLE_API_KEY", "gemini-2.5-pro"),
+    ("anthropic", "ANTHROPIC_API_KEY", "claude-haiku-4-5-20251001"),
     ("groq", "GROQ_API_KEY", "llama-3.3-70b-versatile"),
-    ("anthropic", "ANTHROPIC_API_KEY", "claude-3-5-haiku-latest"),
     ("openai", "OPENAI_API_KEY", "gpt-4o-mini"),
-    ("gemini", "GOOGLE_API_KEY", "gemini-2.5-flash"),
 ]
 
-_FAST_MODEL = ("groq", "GROQ_API_KEY", "llama-3.1-8b-instant")
+_FAST_MODEL = ("gemini", "GOOGLE_API_KEY", "gemini-2.5-flash")
 
 # Heuristics below were tuned against 500 real turns from voice.shadowmarket.ai
 # and Vapi's public conversation corpus.
@@ -74,7 +77,8 @@ def pick_model(
             return smart[0], smart[2], f"smart_model:{reason}"
         # fall through to fast if no smart provider configured
 
-    fast = _first_configured([_FAST_MODEL])
+    # Fast model: Gemini Flash first, fall back to Groq 8B if no GOOGLE_API_KEY
+    fast = _first_configured([_FAST_MODEL, ("groq", "GROQ_API_KEY", "llama-3.1-8b-instant")])
     if fast:
         return fast[0], fast[2], "fast_model"
 

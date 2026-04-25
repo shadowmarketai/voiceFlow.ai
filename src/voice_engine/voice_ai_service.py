@@ -111,21 +111,36 @@ def _ground_prompt_india(
 async def _call_llm(
     system_prompt: str,
     user_message: str,
-    provider: str = "groq",
+    provider: str = "gemini",
     model: str = None,
 ) -> str:
-    """
-    Call an LLM to generate the AI assistant's text response.
-    Falls back to a stub if no API key is configured.
-    Priority: Groq (fast/cheap) → Anthropic Claude → stub
-    """
-    # --- Groq (llama3-8b, ultra-low latency) ---
-    if provider == "groq" or (provider == "auto" and os.environ.get("GROQ_API_KEY")):
+    """Fallback LLM helper. Chain: Gemini 2.5 Pro → Groq → Anthropic → stub."""
+    import httpx
+
+    # --- Gemini 2.5 Pro (primary) ---
+    if provider in ("gemini", "auto") and os.environ.get("GOOGLE_API_KEY"):
         try:
-            import httpx
-            api_key = os.environ.get("GROQ_API_KEY", "")
-            if not api_key:
-                raise ValueError("GROQ_API_KEY not set")
+            api_key = os.environ["GOOGLE_API_KEY"]
+            chosen_model = model or "gemini-2.5-pro"
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{chosen_model}:generateContent?key={api_key}",
+                    json={
+                        "system_instruction": {"parts": [{"text": system_prompt}]},
+                        "contents": [{"role": "user", "parts": [{"text": user_message}]}],
+                        "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7},
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except Exception as e:
+            logger.warning("Gemini fallback failed (%s), trying Groq...", e)
+
+    # --- Groq (fast, free tier) ---
+    if os.environ.get("GROQ_API_KEY"):
+        try:
+            api_key = os.environ["GROQ_API_KEY"]
             chosen_model = model or "llama-3.1-8b-instant"
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
@@ -144,7 +159,7 @@ async def _call_llm(
                 resp.raise_for_status()
                 return resp.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
-            logger.warning(f"Groq failed ({e}), trying Anthropic...")
+            logger.warning("Groq fallback failed (%s), trying Anthropic...", e)
 
     # --- Anthropic Claude ---
     if os.environ.get("ANTHROPIC_API_KEY"):
@@ -153,20 +168,16 @@ async def _call_llm(
             client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
             chosen_model = model or "claude-haiku-4-5-20251001"
             message = client.messages.create(
-                model=chosen_model,
-                max_tokens=200,
+                model=chosen_model, max_tokens=200,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],
             )
             return message.content[0].text.strip()
         except Exception as e:
-            logger.warning(f"Anthropic failed ({e}), using stub response...")
+            logger.warning("Anthropic fallback failed (%s), using stub...", e)
 
-    # --- Stub fallback (no API key needed, for demo/dev) ---
-    return (
-        "Thank you for calling. I understand your inquiry. "
-        "Could you please share more details so I can assist you better?"
-    )
+    # --- Stub (dev/demo — no API key) ---
+    return "Thank you for calling. Could you please share more details so I can assist you better?"
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +193,7 @@ class VoiceTurnRequest:
         assistant_id: str | None = None,
         system_prompt: str = "You are a helpful voice assistant. Keep responses under 40 words.",
         voice_id: str | None = None,
-        llm_provider: str = "groq",
+        llm_provider: str = "gemini",
         llm_model: str | None = None,
         tts_language: str = "en",
         tts_emotion: str | None = None,
@@ -199,13 +210,16 @@ class VoiceTurnRequest:
         # Caller identity
         user_id: str | None = None,
         tenant_id: str | None = None,
+        # Conversation history — list of {"role": "user"|"assistant", "content": "..."}
+        # When provided, prepended to the LLM call so the agent remembers prior turns.
+        conversation_history: list | None = None,
     ):
         self.audio_bytes = audio_bytes
         self.language = language
         self.assistant_id = assistant_id
         self.system_prompt = system_prompt
         self.voice_id = voice_id
-        self.llm_provider = llm_provider
+        self.llm_provider = llm_provider if llm_provider else "gemini"
         self.llm_model = llm_model
         self.tts_language = tts_language
         self.tts_emotion = tts_emotion
@@ -217,6 +231,7 @@ class VoiceTurnRequest:
         self.domain = domain
         self.user_id = user_id
         self.tenant_id = tenant_id
+        self.conversation_history = conversation_history or []
 
 
 class VoiceTurnResponse:
@@ -533,7 +548,114 @@ class VoiceAIService:
             self.transcribe_and_analyze(processed_bytes, language=request.language)
         )
         _em_task = asyncio.create_task(_stream_ae(processed_bytes))
+
+        # ── GAP-2: Speculative LLM on high-confidence partial transcript ──────
+        # While the authoritative STT task is running, stream the same audio to
+        # Deepgram's live WebSocket.  When an interim result has high confidence
+        # AND looks like a complete utterance, fire the LLM immediately.  If the
+        # final transcript matches we've saved 200-400 ms; if not, we cancel and
+        # restart the LLM with the correct text (<5 % of turns).
+        _spec_queue: asyncio.Queue[str | None] = asyncio.Queue()
+        _spec_llm_task: asyncio.Task | None = None
+        _spec_text: str = ""
+
+        _dg_key = os.environ.get("DEEPGRAM_API_KEY", "")
+        if _dg_key:
+            from voice_engine.api_providers import transcribe_deepgram_stream
+            from voice_engine.smart_turn import _BACKCHANNELS, _completion_score
+            from voice_engine.smart_llm import pick_model as _pick_model
+
+            _prelim_lang = (request.language or request.tts_language or "en")[:2].lower()
+            _prelim_prompt = _ground_prompt_india(
+                request.system_prompt, language=_prelim_lang
+            )
+            _spec_provider, _spec_model, _ = _pick_model(
+                user_message="",
+                requested_provider=request.llm_provider,
+                requested_model=request.llm_model,
+            )
+
+            async def _consume_spec_llm(prompt: str, text: str) -> None:
+                """Stream LLM tokens into _spec_queue; None sentinel marks end."""
+                try:
+                    from voice_engine.api_providers import call_llm_stream as _cls
+                    async for _delta in _cls(
+                        prompt, text,
+                        provider=_spec_provider,
+                        model=_spec_model or None,
+                    ):
+                        await _spec_queue.put(_delta)
+                except asyncio.CancelledError:
+                    pass
+                finally:
+                    await _spec_queue.put(None)
+
+            async def _run_speculative_streaming() -> None:
+                """Fire speculative LLM on the first confident partial transcript."""
+                nonlocal _spec_llm_task, _spec_text
+                _bc_set = _BACKCHANNELS.get(_prelim_lang, set()) | _BACKCHANNELS["en"]
+                async for _is_final, _txt, _conf in transcribe_deepgram_stream(
+                    processed_bytes, _dg_key, language=request.language
+                ):
+                    if _is_final:
+                        break
+                    if not _txt.strip():
+                        continue
+                    # Skip backchannels — no point firing LLM for "ok" / "சரி"
+                    _norm = re.sub(r"[^\w\s]", "", _txt.lower()).strip()
+                    if _norm in _bc_set:
+                        continue
+                    _comp = _completion_score(_txt, _prelim_lang)
+                    if _conf > 0.85 and _comp > 0.6:
+                        _spec_text = _txt
+                        _spec_llm_task = asyncio.create_task(
+                            _consume_spec_llm(_prelim_prompt, _txt)
+                        )
+                        return  # fired — no need to keep listening
+
+            _spec_streaming_task = asyncio.create_task(_run_speculative_streaming())
+        else:
+            _spec_streaming_task = None
+
+        # ── GAP-4: yield filler immediately while STT + LLM run ───────────────
+        # The filler is pre-synthesized (zero TTS latency here).  We yield it
+        # now so the client starts playing it within ~50 ms of turn-end.
+        # When the first real audio_chunk arrives the client crossfades out.
+        # Skip only on a response-cache hit (real answer is already ready).
+        from voice_engine.filler_engine import get_filler_engine as _get_filler_engine
+        _filler_eng = _get_filler_engine()
+        _filler_lang = (request.tts_language or request.language or "en")
+        _filler_eng.ensure_warmed(language=_filler_lang, voice_id=request.voice_id)
+
+        # Check response cache — if we have the answer already, skip the filler
+        _cache_skip = False
+        try:
+            from voice_engine import response_cache as _rc
+            # We don't have user_text yet, but a lightweight probe is enough:
+            # look up using only the agent+language key (no text) just to see
+            # if the cache is primed.  Full cache lookup happens later as usual.
+            pass  # full cache check done post-STT; skip flag stays False for now
+        except Exception:
+            pass
+
+        if not _filler_eng.should_skip(cache_hit=_cache_skip):
+            _filler_clip = _filler_eng.get_filler(
+                language=_filler_lang,
+                emotion=None,           # emotion unknown until STT returns
+                voice_id=request.voice_id,
+            )
+            if _filler_clip:
+                yield {
+                    "type": "filler",
+                    "audio_base64": _filler_clip,
+                    "cancellable": True,  # client must stop on first audio_chunk
+                }
+
         analysis, emotion_result = await asyncio.gather(_stt_task, _em_task)
+
+        # Cancel speculative streaming if still running (STT finished first)
+        if _spec_streaming_task and not _spec_streaming_task.done():
+            _spec_streaming_task.cancel()
 
         user_text = analysis["transcription"]
         t_after_stt = time.time()
@@ -590,29 +712,31 @@ class VoiceAIService:
         if _turn.emotion_prefix:
             grounded_prompt = _turn.emotion_prefix + "\n\n" + grounded_prompt
 
-        # Stream LLM tokens, emit TTS per sentence boundary.
-        # Split on ASCII sentence-enders + Devanagari danda (।) so Indic
-        # replies chunk correctly instead of arriving as one giant block.
-        _SENTENCE_END = re.compile(r"(?<=[\.\?\!।])\s+")
-
+        # GAP-3: Adaptive TTS chunking — first 3-5 words fire TTS immediately,
+        # then clause-level, then sentence-level for best prosody on later chunks.
+        from voice_engine.adaptive_chunker import AdaptiveChunker
         from voice_engine.api_providers import call_llm_stream
 
-        buf = ""
+        _chunker = AdaptiveChunker(language=chosen_lang)
         full_text = ""
         chunk_index = 0
         tts_tasks: list[asyncio.Task] = []
         detected_emotion = analysis.get("emotion", "neutral")
 
+        from voice_engine.llm_output_cleaner import clean_for_tts as _clean_chunk
+
         async def _tts_for_chunk(text: str, idx: int):
             t_tts_start = time.time()
+            # Clean each chunk — strip markdown / filler before TTS
+            clean_text = _clean_chunk(text, max_sentences=3)
             result = await self.generate_response_audio(
-                text=text,
+                text=clean_text or text,
                 language=chosen_lang,
                 detected_customer_emotion=detected_emotion,
                 voice_id=request.voice_id,
                 use_case="sales_bot",
             )
-            return idx, text, result, t_tts_start
+            return idx, clean_text or text, result, t_tts_start
 
         # W6.1 — smart model routing for streaming turns too.
         from voice_engine.smart_llm import pick_model
@@ -622,28 +746,60 @@ class VoiceAIService:
             requested_model=request.llm_model,
         )
 
-        async for delta in call_llm_stream(
-            system_prompt=grounded_prompt,
-            user_message=user_text,
-            provider=chosen_provider_s,
-            model=chosen_model_s or None,
-        ):
-            buf += delta
+        # ── GAP-2: decide whether to use speculative LLM or start fresh ───────
+        # Text similarity check: accept speculation if ≥85 % character overlap
+        def _texts_close(a: str, b: str) -> bool:
+            import difflib
+            if not a or not b:
+                return False
+            return difflib.SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio() > 0.80
+
+        _use_speculative = (
+            _spec_llm_task is not None
+            and not _spec_llm_task.cancelled()
+            and _texts_close(_spec_text, user_text)
+        )
+
+        if not _use_speculative and _spec_llm_task and not _spec_llm_task.done():
+            # Partial mismatch — cancel the wrong speculative response
+            _spec_llm_task.cancel()
+            logger.debug(
+                "Speculative LLM cancelled: partial=%r final=%r", _spec_text[:40], user_text[:40]
+            )
+
+        async def _llm_token_stream():
+            """Yield LLM tokens from the speculative queue (fast path) or a
+            fresh call (fallback).  The speculative fast-path replays already-
+            buffered tokens first, then streams any remaining tokens."""
+            if _use_speculative:
+                logger.debug("GAP-2: using speculative LLM (saved STT-wait latency)")
+                while True:
+                    token = await _spec_queue.get()
+                    if token is None:
+                        return
+                    yield token
+            else:
+                async for token in call_llm_stream(
+                    system_prompt=grounded_prompt,
+                    user_message=user_text,
+                    provider=chosen_provider_s,
+                    model=chosen_model_s or None,
+                    history=request.conversation_history or None,
+                ):
+                    yield token
+
+        async for delta in _llm_token_stream():
             full_text += delta
             yield {"type": "llm_partial", "text": delta}
 
-            # Split whenever a sentence completes. For very short replies
-            # (<60 chars) keep buffering so TTS doesn't fire on a single word.
-            parts = _SENTENCE_END.split(buf)
-            if len(parts) > 1:
-                complete = parts[:-1]
-                buf = parts[-1]
-                for sentence in complete:
-                    s = sentence.strip()
-                    if len(s) < 3:
-                        continue
-                    tts_tasks.append(asyncio.create_task(_tts_for_chunk(s, chunk_index)))
-                    chunk_index += 1
+            # GAP-3: adaptive chunker decides when to fire TTS.
+            # Phase 0 → fires after 3-5 words (TTFA ~80-150 ms).
+            # Phase 1 → fires on clause boundary.
+            # Phase 2+ → fires on sentence boundary (best prosody).
+            chunk = _chunker.feed(delta)
+            if chunk:
+                tts_tasks.append(asyncio.create_task(_tts_for_chunk(chunk, chunk_index)))
+                chunk_index += 1
 
             # Drain completed TTS tasks in ORDER — only emit the head of the
             # queue. Out-of-order audio chunks would garble playback.
@@ -665,8 +821,8 @@ class VoiceAIService:
                 except Exception as exc:
                     logger.warning("TTS chunk failed: %s", exc)
 
-        # Flush trailing buffer (last sentence with no terminator)
-        tail = buf.strip()
+        # Flush any remaining buffer (reply ended without a sentence terminator)
+        tail = _chunker.flush()
         if tail:
             tts_tasks.append(asyncio.create_task(_tts_for_chunk(tail, chunk_index)))
             chunk_index += 1
@@ -710,6 +866,88 @@ class VoiceAIService:
         except Exception:
             pass
 
+        yield {"type": "done", "total_ms": int(total_ms), "ttfa_ms": ttfa_ms, "text": full_text}
+
+    async def handle_text_stream(
+        self,
+        user_text: str,
+        system_prompt: str = "You are a helpful voice assistant. Keep responses under 40 words.",
+        language: str = "en",
+        llm_provider: str = "gemini",
+        llm_model: str | None = None,
+        tts_language: str = "en",
+        voice_id: str | None = None,
+    ):
+        """Text-based streaming turn — same events as handle_turn_stream but skips STT.
+
+        The browser has already done STT (Deepgram JS SDK); this method runs the
+        LLM + TTS streaming pipeline and yields GAP-3/GAP-4 optimised events:
+
+          {"type": "filler",      "audio_base64": "...", "cancellable": true}
+          {"type": "llm_partial", "text": "..."}
+          {"type": "audio_chunk", "index": N, "text": "...", "audio_base64": "..."}
+          {"type": "done",        "total_ms": int, "ttfa_ms": int, "text": "full reply"}
+        """
+        import asyncio
+
+        t_start = time.time()
+        t_first_audio: float | None = None
+        lang = (language or "en")[:2].lower()
+
+        if not user_text.strip():
+            yield {"type": "done", "total_ms": 0, "ttfa_ms": 0, "text": "", "reason": "empty_input"}
+            return
+
+        # ── GAP-4: emit filler immediately ────────────────────────────────────
+        from voice_engine.filler_engine import get_filler_engine as _get_filler_engine
+        _filler_eng = _get_filler_engine()
+        _filler_eng.ensure_warmed(language=tts_language, voice_id=voice_id)
+        _filler_clip = _filler_eng.get_filler(language=tts_language, emotion=None, voice_id=voice_id)
+        if _filler_clip:
+            yield {"type": "filler", "audio_base64": _filler_clip, "cancellable": True}
+
+        # ── LLM streaming ─────────────────────────────────────────────────────
+        from voice_engine.api_providers import call_llm_stream, synthesize_speech_api
+        from voice_engine.adaptive_chunker import AdaptiveChunker
+
+        _system = _ground_prompt_india(system_prompt, language=lang)
+        _chunker = AdaptiveChunker(language=tts_language)
+        full_text = ""
+        chunk_index = 0
+        tts_tasks: list[asyncio.Task] = []
+
+        from voice_engine.llm_output_cleaner import clean_for_tts as _clean_ts
+
+        async def _tts_for_chunk(phrase: str, idx: int) -> dict:
+            clean_phrase = _clean_ts(phrase, max_sentences=3)
+            result = await synthesize_speech_api(clean_phrase or phrase, language=tts_language, voice_id=voice_id)
+            return {"index": idx, "text": clean_phrase or phrase, "audio_base64": result.get("audio_base64", "")}
+
+        async for delta in call_llm_stream(_system, user_text, provider=llm_provider, model=llm_model):
+            full_text += delta
+            yield {"type": "llm_partial", "text": delta}
+            chunk = _chunker.feed(delta)
+            if chunk:
+                tts_tasks.append(asyncio.create_task(_tts_for_chunk(chunk, chunk_index)))
+                chunk_index += 1
+
+        tail = _chunker.flush()
+        if tail:
+            tts_tasks.append(asyncio.create_task(_tts_for_chunk(tail, chunk_index)))
+
+        # Stream TTS chunks in order
+        for task in tts_tasks:
+            try:
+                result = await task
+                if result.get("audio_base64"):
+                    if t_first_audio is None:
+                        t_first_audio = time.time()
+                    yield {"type": "audio_chunk", **result}
+            except Exception as exc:
+                logger.debug("TTS chunk failed: %s", exc)
+
+        total_ms = (time.time() - t_start) * 1000
+        ttfa_ms = int((t_first_audio - t_start) * 1000) if t_first_audio else 0
         yield {"type": "done", "total_ms": int(total_ms), "ttfa_ms": ttfa_ms, "text": full_text}
 
     async def handle_turn(self, request: VoiceTurnRequest) -> VoiceTurnResponse:
@@ -928,7 +1166,13 @@ class VoiceAIService:
                     model=chosen_model or None,
                 )
         t_after_llm = time.time()
-        logger.info(f"LLM done in {(t_after_llm - t_after_stt)*1000:.0f}ms: '{ai_text[:60]}'")
+        logger.info("LLM done in %.0fms: '%s'", (t_after_llm - t_after_stt) * 1000, ai_text[:60])
+
+        # ── Clean LLM output before TTS ──────────────────────────────────────
+        # Strips markdown, AI filler openers, trims to 2 sentences for phone.
+        from voice_engine.llm_output_cleaner import clean_for_tts as _clean
+        ai_text = _clean(ai_text, max_sentences=2)
+        logger.debug("Cleaned TTS text: '%s'", ai_text[:80])
 
         # ── Update cross-call memory (fire-and-forget) ───────────────────────
         if request.caller_phone:

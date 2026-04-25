@@ -137,6 +137,9 @@ class ConversationSession(BaseModel):
     ended_at: str | None = None
     messages: list[ConversationMessage] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # GAP 7 — caller identity for cross-call memory
+    tenant_id: str = ""
+    phone: str = ""
 
 
 class StartConversationRequest(BaseModel):
@@ -144,6 +147,9 @@ class StartConversationRequest(BaseModel):
     language: str = "en"
     api_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    # GAP 7 — optional caller phone for cross-call memory
+    phone: str | None = None
+    tenant_id: str | None = None
 
 
 class StartConversationResponse(BaseModel):
@@ -278,15 +284,47 @@ async def _generate_llm_response(
 ) -> str:
     """Generate an LLM response using available providers.
 
-    Tries Groq -> Anthropic -> canned fallback responses.
+    Priority: Gemini 2.5 Pro -> Groq -> Anthropic -> canned fallback.
+    Response is cleaned for phone TTS (strip markdown, trim to 2 sentences).
     """
-    full_messages = [{"role": "system", "content": system_prompt}] + messages
+    from voice_engine.llm_output_cleaner import clean_for_tts as _clean
 
-    # Try Groq first (fastest for real-time)
-    if settings.GROQ_API_KEY:
+    raw_text: str | None = None
+
+    # 1. Gemini 2.5 Pro (primary — best quality)
+    google_key = getattr(settings, "GOOGLE_API_KEY", "") or ""
+    if google_key:
         try:
             import httpx
 
+            # Build Gemini contents (user/model roles only; system goes separately)
+            gemini_contents = []
+            for m in messages:
+                role = "model" if m["role"] == "assistant" else "user"
+                gemini_contents.append({"role": role, "parts": [{"text": m["content"]}]})
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"gemini-2.5-pro:generateContent?key={google_key}",
+                    json={
+                        "system_instruction": {"parts": [{"text": system_prompt}]},
+                        "contents": gemini_contents,
+                        "generationConfig": {"maxOutputTokens": 200, "temperature": 0.7},
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as exc:
+            logger.warning("Gemini LLM call failed: %s", exc)
+
+    # 2. Groq (fast fallback)
+    if not raw_text and getattr(settings, "GROQ_API_KEY", ""):
+        try:
+            import httpx
+
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -303,19 +341,15 @@ async def _generate_llm_response(
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                raw_text = data["choices"][0]["message"]["content"]
         except Exception as exc:
             logger.warning("Groq LLM call failed: %s", exc)
 
-    # Try Anthropic
-    if settings.ANTHROPIC_API_KEY:
+    # 3. Anthropic (second fallback)
+    if not raw_text and getattr(settings, "ANTHROPIC_API_KEY", ""):
         try:
             import httpx
 
-            # Anthropic expects system separately
-            api_messages = [
-                m for m in full_messages if m["role"] != "system"
-            ]
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
                     "https://api.anthropic.com/v1/messages",
@@ -325,44 +359,47 @@ async def _generate_llm_response(
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": "claude-sonnet-4-20250514",
+                        "model": "claude-haiku-4-5-20251001",
                         "max_tokens": 150,
                         "system": system_prompt,
-                        "messages": api_messages,
+                        "messages": [m for m in messages if m["role"] != "system"],
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return data["content"][0]["text"]
+                raw_text = data["content"][0]["text"]
         except Exception as exc:
             logger.warning("Anthropic LLM call failed: %s", exc)
 
-    # Canned fallback responses by language
-    fallbacks = {
-        "en": [
-            "I'd be happy to help you with that! Could you tell me more about what you're looking for?",
-            "That's a great question. Let me help you find the right solution.",
-            "Thanks for reaching out! How can I assist you further?",
-            "I understand. Let me walk you through our options.",
-        ],
-        "hi": [
-            "Main aapki madad karne ke liye taiyaar hoon! Aap kya dhundh rahe hain?",
-            "Bahut accha sawal hai. Main aapko sahi solution dhundne mein madad karti hoon.",
-            "Dhanyavaad! Main aapki aur kaise madad kar sakti hoon?",
-            "Main samajh gayi. Chaliye options dekhte hain.",
-        ],
-        "ta": [
-            "Ungalukku udavi seiya nan thayaar! Enna thevai endru sollunga.",
-            "Nalla kelvi. Sariyana theervai kaana udavi seigiren.",
-            "Nandri! Innum eppadi udavi seiya mudiyum?",
-            "Purindhadhu. Namadhu vaaipaigalai paarpom.",
-        ],
-    }
+    # 4. Canned fallback responses by language
+    if not raw_text:
+        import random
 
-    import random
+        fallbacks = {
+            "en": [
+                "I can help you with that. Could you tell me more about what you need?",
+                "Let me help you find the right solution for you.",
+                "Thanks for reaching out. How can I assist you further?",
+                "I understand. Let me walk you through our options.",
+            ],
+            "hi": [
+                "Main aapki madad kar sakti hoon. Aap kya dhundh rahe hain?",
+                "Bilkul. Main aapko sahi solution dhundne mein madad karti hoon.",
+                "Dhanyavaad. Main aapki aur kaise madad kar sakti hoon?",
+                "Main samajh gayi. Chaliye options dekhte hain.",
+            ],
+            "ta": [
+                "Ungalukku udavi seiya nan thayaar. Enna thevai endru sollunga.",
+                "Nalla kelvi. Sariyana theervai kaana udavi seigiren.",
+                "Nandri. Innum eppadi udavi seiya mudiyum?",
+                "Purindhadhu. Namadhu vaaipaigalai paarpom.",
+            ],
+        }
+        options = fallbacks.get(language, fallbacks["en"])
+        raw_text = random.choice(options)
 
-    options = fallbacks.get(language, fallbacks["en"])
-    return random.choice(options)
+    # Clean for phone TTS: strip markdown, filler, trim to 2 sentences
+    return _clean(raw_text, max_sentences=2)
 
 
 # =====================================================================
@@ -502,6 +539,9 @@ async def start_conversation(
             "authenticated": authenticated,
             **body.metadata,
         },
+        # GAP 7 — carry caller identity for cross-call memory
+        tenant_id=body.tenant_id or "",
+        phone=body.phone or "",
     )
     _sessions[session_id] = session
 
@@ -1087,6 +1127,9 @@ async def _handle_turn_s2s(
         system_prompt=agent["system_prompt"],
         language=session.language,
         client_tier=client_tier,
+        # GAP 7 — enable cross-call memory for this session
+        tenant_id=session.tenant_id,
+        phone=session.phone,
     )
 
     audio_chunks: list[bytes] = []
@@ -1165,6 +1208,9 @@ async def voice_conversation_ws(
     api_key: str | None = Query(None),
     language: str | None = Query(None),
     client_tier: str = Query("standard"),
+    # GAP 7 — caller identity for cross-call memory
+    phone: str | None = Query(None),
+    tenant_id: str | None = Query(None),
 ):
     """Real-time WebSocket voice conversation endpoint.
 
@@ -1221,6 +1267,9 @@ async def voice_conversation_ws(
             started_at=now,
             messages=[greeting_msg],
             metadata={"client_ip": client_ip, "authenticated": authenticated},
+            # GAP 7 — carry caller identity for cross-call memory
+            tenant_id=tenant_id or "",
+            phone=phone or "",
         )
         _sessions[session_id] = session
 

@@ -13,8 +13,11 @@ from pydantic import BaseModel
 # =============================================================================
 
 class TTSEngine(str, Enum):
-    INDIC_PARLER   = "indic_parler"
-    INDICF5        = "indicf5"
+    ELEVENLABS     = "elevenlabs"        # MOS 4.8 — Turbo v2.5, best English quality
+    CARTESIA       = "cartesia"          # MOS 4.7 — Sonic-2, 80ms TTFA real-time
+    SARVAM_TTS     = "sarvam_tts"        # MOS 4.4 — bulbul:v2, best API Indian TTS
+    INDIC_PARLER   = "indic_parler"      # MOS 4.3 — self-hosted Indian, 12 emotions
+    INDICF5        = "indicf5"           # MOS 4.6 — highest self-hosted Indian quality
     OPENVOICE_V2   = "openvoice_v2"
     XTTS_V2        = "xtts_v2"
     SVARA          = "svara"
@@ -70,6 +73,68 @@ class TamilDialect(str, Enum):
 # =============================================================================
 
 TTS_ENGINE_CONFIG = {
+    TTSEngine.ELEVENLABS: {
+        "model_id": "eleven_turbo_v2_5",
+        "api_base": "https://api.elevenlabs.io/v1",
+        "license": "Commercial API",
+        "languages": [
+            "en", "hi", "ta", "te", "kn", "ml", "bn", "mr", "gu", "pa",
+            "es", "fr", "de", "it", "pt", "pl", "ar", "zh", "ja", "ko",
+        ],
+        "emotions": ["neutral", "happy", "sad", "angry", "excited", "empathetic"],
+        "latency_ms": {"min": 200, "max": 400},
+        "gpu_vram_gb": 0,
+        "cpu_capable": True,
+        "api_only": True,
+        "streaming": True,
+        "quality_mos": 4.8,
+        "env_key": "ELEVENLABS_API_KEY",
+        "best_for": ["english_premium", "customer_service", "sales", "voice_cloning"],
+    },
+
+    TTSEngine.CARTESIA: {
+        "model_id": "sonic-2",
+        "api_base": "https://api.cartesia.ai",
+        "license": "Commercial API",
+        "languages": ["en", "hi", "fr", "de", "es", "pt", "ja", "zh"],
+        "emotions": ["neutral", "happy", "sad", "angry", "excited"],
+        "latency_ms": {"min": 80, "max": 200},
+        "gpu_vram_gb": 0,
+        "cpu_capable": True,
+        "api_only": True,
+        "streaming": True,
+        "quality_mos": 4.7,
+        "env_key": "CARTESIA_API_KEY",
+        "best_for": ["english_realtime", "low_latency", "phone_agents"],
+    },
+
+    TTSEngine.SARVAM_TTS: {
+        "model_id": "bulbul:v2",
+        "api_base": "https://api.sarvam.ai/text-to-speech",
+        "license": "Commercial API",
+        "languages": ["ta", "hi", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or", "en"],
+        "emotions": ["neutral"],
+        "latency_ms": {"min": 150, "max": 350},
+        "gpu_vram_gb": 0,
+        "cpu_capable": True,
+        "api_only": True,
+        "streaming": False,
+        "quality_mos": 4.4,
+        "env_key": "SARVAM_API_KEY",
+        "best_for": ["indian_languages", "conversational_hindi", "south_indian", "tanglish"],
+        "speakers": {
+            "ta-IN": "anushka",
+            "hi-IN": "abhilash",
+            "te-IN": "arya",
+            "kn-IN": "priya",
+            "ml-IN": "manisha",
+            "bn-IN": "neha",
+            "mr-IN": "kavya",
+            "gu-IN": "ritu",
+            "en-IN": "vidya",
+        },
+    },
+
     TTSEngine.INDIC_PARLER: {
         "model_id": "ai4bharat/indic-parler-tts",
         "huggingface_link": "ai4bharat/indic-parler-tts",
@@ -216,79 +281,100 @@ TTS_ENGINE_CONFIG = {
 
 # Map detected customer emotion to appropriate AI response emotion
 EMOTION_RESPONSE_MAPPING = {
-    # Customer emotion -> AI response config
+    # Customer emotion → AI response config.
+    # ElevenLabs/Cartesia are used for English agents; Sarvam TTS for Indian.
+    # stability: ElevenLabs/Cartesia voice stability (0=expressive, 1=flat)
+    # style: ElevenLabs style exaggeration (0=neutral, 1=max style)
     "angry": {
-        "response_emotion": "calm",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "neutral",
-        "pace": "slow",
+        "response_emotion": "empathetic",
+        "engine": TTSEngine.ELEVENLABS,       # warmest, most human-sounding
+        "tts_emotion": "empathetic",
+        "pace": "slow",                        # slower = calmer, de-escalates
         "pitch": "low",
-        "energy": "calm"
+        "energy": "calm",
+        "stability": 0.82,                     # more stable = more controlled
+        "style": 0.05,                         # minimal style = professional calm
     },
     "frustrated": {
         "response_emotion": "empathetic",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "neutral",
+        "engine": TTSEngine.ELEVENLABS,
+        "tts_emotion": "empathetic",
         "pace": "slow",
         "pitch": "medium",
-        "energy": "calm"
+        "energy": "calm",
+        "stability": 0.78,
+        "style": 0.08,
     },
     "happy": {
         "response_emotion": "matching",
-        "engine": TTSEngine.INDIC_PARLER,
+        "engine": TTSEngine.ELEVENLABS,
         "tts_emotion": "happy",
-        "pace": "energetic",
+        "pace": "normal",
         "pitch": "high",
-        "energy": "high"
+        "energy": "high",
+        "stability": 0.58,
+        "style": 0.28,
     },
     "excited": {
         "response_emotion": "enthusiastic",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "happy",
+        "engine": TTSEngine.ELEVENLABS,
+        "tts_emotion": "excited",
         "pace": "fast",
         "pitch": "high",
-        "energy": "high"
+        "energy": "high",
+        "stability": 0.52,
+        "style": 0.35,
     },
     "sad": {
         "response_emotion": "supportive",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "neutral",
+        "engine": TTSEngine.ELEVENLABS,
+        "tts_emotion": "sad",
         "pace": "slow",
         "pitch": "medium",
-        "energy": "gentle"
+        "energy": "gentle",
+        "stability": 0.80,
+        "style": 0.06,
     },
     "confused": {
         "response_emotion": "clear",
-        "engine": TTSEngine.INDICF5,  # Highest intelligibility
-        "tts_emotion": "narration",
+        "engine": TTSEngine.CARTESIA,         # Cartesia: clearest articulation
+        "tts_emotion": "neutral",
         "pace": "slow",
         "pitch": "medium",
-        "energy": "clear"
+        "energy": "clear",
+        "stability": 0.75,
+        "style": 0.10,
     },
     "neutral": {
         "response_emotion": "professional",
-        "engine": TTSEngine.INDICF5,
+        "engine": TTSEngine.ELEVENLABS,
         "tts_emotion": "neutral",
         "pace": "normal",
         "pitch": "medium",
-        "energy": "normal"
+        "energy": "normal",
+        "stability": 0.65,
+        "style": 0.15,
     },
     "interested": {
         "response_emotion": "engaging",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "conversation",
+        "engine": TTSEngine.ELEVENLABS,
+        "tts_emotion": "happy",
         "pace": "normal",
         "pitch": "medium-high",
-        "energy": "engaging"
+        "energy": "engaging",
+        "stability": 0.60,
+        "style": 0.22,
     },
     "fear": {
         "response_emotion": "reassuring",
-        "engine": TTSEngine.INDIC_PARLER,
-        "tts_emotion": "calm",
+        "engine": TTSEngine.ELEVENLABS,
+        "tts_emotion": "empathetic",
         "pace": "slow",
         "pitch": "low",
-        "energy": "soothing"
-    }
+        "energy": "soothing",
+        "stability": 0.85,
+        "style": 0.04,
+    },
 }
 
 
@@ -298,71 +384,77 @@ EMOTION_RESPONSE_MAPPING = {
 
 USE_CASE_ENGINE_MAPPING = {
     "sales_bot": {
-        "primary": TTSEngine.INDIC_PARLER,
-        "fallback": TTSEngine.OPENVOICE_V2,
-        "default_emotion": "conversation",
-        "reason": "Conversation + Happy emotion modes for engaging sales"
+        "primary": TTSEngine.ELEVENLABS,
+        "fallback": TTSEngine.SARVAM_TTS,
+        "default_emotion": "happy",
+        "reason": "ElevenLabs: most engaging, warm voice for sales conversion",
     },
     "support_bot": {
-        "primary": TTSEngine.XTTS_V2,
-        "fallback": TTSEngine.INDIC_PARLER,
-        "default_emotion": "neutral",
-        "reason": "Production stable, emotion transfer for empathy"
+        "primary": TTSEngine.ELEVENLABS,
+        "fallback": TTSEngine.SARVAM_TTS,
+        "default_emotion": "empathetic",
+        "reason": "ElevenLabs: human empathy expression, best for support trust",
     },
     "lead_qualifier": {
-        "primary": TTSEngine.OPENVOICE_V2,
-        "fallback": TTSEngine.INDICF5,
-        "default_emotion": "professional",
-        "reason": "Fast response, professional tone"
+        "primary": TTSEngine.CARTESIA,
+        "fallback": TTSEngine.ELEVENLABS,
+        "default_emotion": "neutral",
+        "reason": "Cartesia: 80ms TTFA — fast qualification, professional tone",
     },
     "survey_caller": {
-        "primary": TTSEngine.INDICF5,
-        "fallback": TTSEngine.INDIC_PARLER,
+        "primary": TTSEngine.CARTESIA,
+        "fallback": TTSEngine.SARVAM_TTS,
         "default_emotion": "neutral",
-        "reason": "Neutral, clear narration"
+        "reason": "Cartesia: fast, clear, neutral — ideal for data collection",
     },
     "appointment_setter": {
-        "primary": TTSEngine.INDIC_PARLER,
-        "fallback": TTSEngine.OPENVOICE_V2,
-        "default_emotion": "command",
-        "reason": "Command mode for clear instructions"
+        "primary": TTSEngine.ELEVENLABS,
+        "fallback": TTSEngine.CARTESIA,
+        "default_emotion": "neutral",
+        "reason": "ElevenLabs: trustworthy voice for confirmed bookings",
     },
     "ivr_voice": {
-        "primary": TTSEngine.AI4B_FASTPITCH,
-        "fallback": TTSEngine.BHASHINI,
-        "default_emotion": "neutral",
-        "reason": "FastPitch — lowest latency (80-200ms), telephony-native 8kHz WAV"
-    },
-    "real_time_agent": {
-        "primary": TTSEngine.AI4B_FASTPITCH,
-        "fallback": TTSEngine.OPENVOICE_V2,
-        "default_emotion": "neutral",
-        "reason": "FastPitch API mode — ultra-low latency, no GPU needed"
-    },
-    "indic_telephony": {
-        "primary": TTSEngine.BHASHINI,
+        "primary": TTSEngine.CARTESIA,
         "fallback": TTSEngine.AI4B_FASTPITCH,
         "default_emotion": "neutral",
-        "reason": "22+ languages FREE, telephony-ready 8kHz, government-hosted"
+        "reason": "Cartesia: 80ms TTFA — best for IVR real-time response",
+    },
+    "real_time_agent": {
+        "primary": TTSEngine.CARTESIA,
+        "fallback": TTSEngine.ELEVENLABS,
+        "default_emotion": "neutral",
+        "reason": "Cartesia Sonic-2: lowest latency (80ms) for real-time phone",
+    },
+    "indic_telephony": {
+        "primary": TTSEngine.SARVAM_TTS,
+        "fallback": TTSEngine.BHASHINI,
+        "default_emotion": "neutral",
+        "reason": "Sarvam TTS: best Indian language quality API, 10 languages",
+    },
+    "indic_sales": {
+        "primary": TTSEngine.SARVAM_TTS,
+        "fallback": TTSEngine.INDIC_PARLER,
+        "default_emotion": "neutral",
+        "reason": "Sarvam TTS: natural Indian language voice for sales context",
     },
     "audiobook": {
-        "primary": TTSEngine.INDIC_PARLER,
-        "fallback": TTSEngine.SVARA,
+        "primary": TTSEngine.ELEVENLABS,
+        "fallback": TTSEngine.INDIC_PARLER,
         "default_emotion": "narration",
-        "reason": "Rich emotional expression"
+        "reason": "ElevenLabs: best emotional range and naturalness for narration",
     },
     "meditation": {
         "primary": TTSEngine.SVARA,
-        "fallback": TTSEngine.INDICF5,
+        "fallback": TTSEngine.ELEVENLABS,
         "default_emotion": "calm",
-        "reason": "Natural rhythm, calming prosody"
+        "reason": "Svara: natural rhythm, calming prosody designed for wellness",
     },
     "news_broadcast": {
-        "primary": TTSEngine.INDIC_PARLER,
-        "fallback": TTSEngine.INDICF5,
+        "primary": TTSEngine.ELEVENLABS,
+        "fallback": TTSEngine.INDIC_PARLER,
         "default_emotion": "news",
-        "reason": "News emotion mode, clear diction"
-    }
+        "reason": "ElevenLabs: clear professional diction, broadcast quality",
+    },
 }
 
 
@@ -372,79 +464,88 @@ USE_CASE_ENGINE_MAPPING = {
 
 LANGUAGE_ENGINE_QUALITY = {
     # Language: {engine: quality_score (1-5)}
-    "ta": {  # Tamil
-        TTSEngine.INDICF5:        5,
-        TTSEngine.INDIC_PARLER:   5,
-        TTSEngine.SVARA:          5,
+    # ElevenLabs/Cartesia are now top tier for English.
+    # Sarvam TTS is primary for Indian languages (API, no GPU, MOS 4.4).
+    "en": {  # English — ElevenLabs primary, Cartesia for real-time
+        TTSEngine.ELEVENLABS:     6,   # MOS 4.8 — best overall
+        TTSEngine.CARTESIA:       5,   # MOS 4.7 — best latency
+        TTSEngine.SARVAM_TTS:     4,   # MOS 4.4 — Indian-accented English
+        TTSEngine.INDIC_PARLER:   4,
+        TTSEngine.XTTS_V2:        4,
+        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.AI4B_FASTPITCH: 3,
+        TTSEngine.BHASHINI:       3,
+        TTSEngine.INDICF5:        3,
+    },
+    "ta": {  # Tamil — Sarvam TTS primary (API), IndicF5 for self-hosted
+        TTSEngine.SARVAM_TTS:     6,   # MOS 4.4 — API, no GPU, best for real-time
+        TTSEngine.INDICF5:        5,   # MOS 4.6 — self-hosted, best quality
+        TTSEngine.INDIC_PARLER:   5,   # MOS 4.3 — 12 emotions
+        TTSEngine.SVARA:          4,
         TTSEngine.AI4B_FASTPITCH: 4,
         TTSEngine.BHASHINI:       4,
-        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.OPENVOICE_V2:   3,
         TTSEngine.XTTS_V2:        2,
     },
-    "hi": {  # Hindi
+    "hi": {  # Hindi — Sarvam TTS primary
+        TTSEngine.SARVAM_TTS:     6,
         TTSEngine.INDICF5:        5,
         TTSEngine.INDIC_PARLER:   5,
         TTSEngine.SVARA:          5,
-        TTSEngine.XTTS_V2:        5,
+        TTSEngine.XTTS_V2:        4,
         TTSEngine.AI4B_FASTPITCH: 4,
         TTSEngine.BHASHINI:       4,
         TTSEngine.OPENVOICE_V2:   4,
     },
     "te": {  # Telugu
+        TTSEngine.SARVAM_TTS:     6,
         TTSEngine.INDICF5:        5,
         TTSEngine.INDIC_PARLER:   5,
-        TTSEngine.SVARA:          5,
+        TTSEngine.SVARA:          4,
         TTSEngine.AI4B_FASTPITCH: 4,
         TTSEngine.BHASHINI:       4,
-        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.OPENVOICE_V2:   3,
         TTSEngine.XTTS_V2:        2,
     },
     "kn": {  # Kannada
+        TTSEngine.SARVAM_TTS:     6,
         TTSEngine.INDICF5:        5,
         TTSEngine.INDIC_PARLER:   5,
-        TTSEngine.SVARA:          5,
+        TTSEngine.SVARA:          4,
         TTSEngine.AI4B_FASTPITCH: 4,
         TTSEngine.BHASHINI:       4,
-        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.OPENVOICE_V2:   3,
         TTSEngine.XTTS_V2:        2,
     },
     "ml": {  # Malayalam
+        TTSEngine.SARVAM_TTS:     6,
         TTSEngine.INDICF5:        5,
         TTSEngine.INDIC_PARLER:   5,
-        TTSEngine.SVARA:          5,
+        TTSEngine.SVARA:          4,
         TTSEngine.AI4B_FASTPITCH: 4,
         TTSEngine.BHASHINI:       4,
-        TTSEngine.OPENVOICE_V2:   4,
+        TTSEngine.OPENVOICE_V2:   3,
         TTSEngine.XTTS_V2:        2,
     },
-    "en": {  # English
-        TTSEngine.XTTS_V2:        5,
-        TTSEngine.OPENVOICE_V2:   5,
-        TTSEngine.INDIC_PARLER:   4,
-        TTSEngine.SVARA:          4,
-        TTSEngine.AI4B_FASTPITCH: 3,
-        TTSEngine.BHASHINI:       3,
-        TTSEngine.INDICF5:        3,
-    },
-    # Languages only covered by Bhashini / AI4B FastPitch
+    # Other Indian languages — Sarvam TTS primary where supported
     "bn": {
-        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.SARVAM_TTS: 6, TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
         TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
     },
     "mr": {
-        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.SARVAM_TTS: 6, TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
         TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
     },
     "gu": {
-        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.SARVAM_TTS: 6, TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
         TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
     },
     "pa": {
-        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.SARVAM_TTS: 6, TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
         TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
     },
     "or": {
-        TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
+        TTSEngine.SARVAM_TTS: 6, TTSEngine.INDICF5: 5, TTSEngine.INDIC_PARLER: 5,
         TTSEngine.AI4B_FASTPITCH: 4, TTSEngine.BHASHINI: 4,
     },
     "as": {
