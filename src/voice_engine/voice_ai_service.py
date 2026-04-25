@@ -118,9 +118,10 @@ async def _call_llm(
     import httpx
 
     # --- Gemini 2.5 Pro (primary) ---
-    if provider in ("gemini", "auto") and os.environ.get("GOOGLE_API_KEY"):
+    _google_api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
+    if provider in ("gemini", "auto") and _google_api_key:
         try:
-            api_key = os.environ["GOOGLE_API_KEY"]
+            api_key = _google_api_key
             chosen_model = model or "gemini-2.5-pro"
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.post(

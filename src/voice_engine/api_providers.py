@@ -40,6 +40,18 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# ── Key alias: accept either GOOGLE_API_KEY or GEMINI_API_KEY ──────────────
+# Coolify users often set GEMINI_API_KEY; all existing code checks GOOGLE_API_KEY.
+# Resolve once at import time so every os.environ.get("GOOGLE_API_KEY") works.
+if not os.environ.get("GOOGLE_API_KEY") and os.environ.get("GEMINI_API_KEY"):
+    os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
+    logger.debug("Aliased GEMINI_API_KEY → GOOGLE_API_KEY")
+
+
+def _google_key() -> str:
+    """Return the Google/Gemini API key — checks both env var names."""
+    return os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or ""
+
 
 # ═════════════════════════════════════════════════════════════════
 # STT (Speech-to-Text) — 4 providers
@@ -452,6 +464,16 @@ async def call_llm_api(
     ]
 
     for name, env_key, func in providers_list:
+        # Special-case Gemini: accept either GOOGLE_API_KEY or GEMINI_API_KEY
+        if name == "gemini":
+            api_key = _google_key()
+            if api_key and provider in ("auto", "gemini"):
+                try:
+                    result = await func(system_prompt, user_message, api_key, model)
+                    return {"text": result, "provider": "gemini"}
+                except Exception as e:
+                    logger.warning("Gemini LLM failed: %s", e)
+            continue
         if provider not in ("auto", name):
             continue
         api_key = os.environ.get(env_key, "")
@@ -499,7 +521,7 @@ async def call_llm_stream(
 
     # ── Gemini streaming (primary) ──────────────────────────────────────────
     if provider in ("auto", "gemini"):
-        gemini_key = os.environ.get("GOOGLE_API_KEY", "")
+        gemini_key = _google_key()
         if gemini_key:
             chosen_model = model or "gemini-2.5-pro"
             url = (
@@ -737,7 +759,7 @@ async def synthesize_speech_api(
             ("sarvam", "SARVAM_API_KEY", lambda: _sarvam_tts(text, os.environ["SARVAM_API_KEY"], language, speed)),
             ("elevenlabs", "ELEVENLABS_API_KEY", lambda: _elevenlabs_tts(text, os.environ["ELEVENLABS_API_KEY"], resolved_voice, speed, stability, similarity_boost)),
             ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
-            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
+            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, _google_key(), language, voice_id)),
         ]
     else:
         # English chain: ElevenLabs → Cartesia → OpenAI → Deepgram → Edge TTS
@@ -746,7 +768,7 @@ async def synthesize_speech_api(
             ("cartesia", "CARTESIA_API_KEY", lambda: _cartesia_tts(text, os.environ["CARTESIA_API_KEY"], voice_id, language, speed)),
             ("openai", "OPENAI_API_KEY", lambda: _openai_tts(text, os.environ["OPENAI_API_KEY"], voice_id, speed)),
             ("deepgram", "DEEPGRAM_API_KEY", lambda: _deepgram_tts(text, os.environ["DEEPGRAM_API_KEY"], voice_id)),
-            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, os.environ["GOOGLE_API_KEY"], language, voice_id)),
+            ("google", "GOOGLE_API_KEY", lambda: _google_tts(text, _google_key(), language, voice_id)),
         ]
 
     # Override: if caller pinned a specific provider
