@@ -408,6 +408,12 @@ export default function Testing() {
 
     try {
       const baseUrl = import.meta.env.VITE_API_URL || ''
+      // Build conversation history from previous turns (skip pending bubbles)
+      const historyMsgs = conversation
+        .filter(m => !m.pending && m.text && m.text !== '…')
+        .slice(-20)
+        .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
+
       const res = await fetch(`${baseUrl}/api/v1/voice/text-stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -417,6 +423,7 @@ export default function Testing() {
           language: userBubbleLang || 'en',
           llm_provider: llmOverride || agentConfig.provider || 'gemini',
           tts_language: userBubbleLang || 'en',
+          conversation_history: historyMsgs,
         }),
       })
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)

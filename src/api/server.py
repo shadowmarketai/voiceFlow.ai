@@ -785,6 +785,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             llm_provider = body.get("llm_provider", "groq")
             tts_language = body.get("tts_language", "en")
             voice_id = body.get("voice_id")
+            conversation_history = body.get("conversation_history") or []
 
             svc = get_voice_ai_service()
 
@@ -796,6 +797,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
                     llm_provider=llm_provider,
                     tts_language=tts_language,
                     voice_id=voice_id,
+                    history=conversation_history or None,
                 ):
                     yield f"data: {_json.dumps(event)}\n\n"
 

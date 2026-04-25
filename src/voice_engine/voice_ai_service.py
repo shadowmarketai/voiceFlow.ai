@@ -877,6 +877,7 @@ class VoiceAIService:
         llm_model: str | None = None,
         tts_language: str = "en",
         voice_id: str | None = None,
+        history: list | None = None,
     ):
         """Text-based streaming turn — same events as handle_turn_stream but skips STT.
 
@@ -945,7 +946,7 @@ class VoiceAIService:
             result = await synthesize_speech_api(clean_phrase or phrase, language=tts_language, voice_id=voice_id)
             return {"index": idx, "text": clean_phrase or phrase, "audio_base64": result.get("audio_base64", "")}
 
-        async for delta in call_llm_stream(_system, user_text, provider=llm_provider, model=llm_model):
+        async for delta in call_llm_stream(_system, user_text, provider=llm_provider, model=llm_model, history=history):
             full_text += delta
             yield {"type": "llm_partial", "text": delta}
             chunk = _chunker.feed(delta)
