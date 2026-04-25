@@ -32,25 +32,92 @@ const fadeUp = {
   show: { opacity: 1, y: 0, transition: { duration: 0.3, ease: 'easeOut' } },
 }
 
-/* ── TTS helper — plays agent reply aloud ──────────────────────── */
+/* ── Audio playback helpers ─────────────────────────────────────── */
 let _ttsAudio = null
+
+/** Decode base64 audio and return a playable Blob URL */
+function _b64toUrl(b64, format = 'wav') {
+  const binary = atob(b64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  const blob = new Blob([bytes], { type: `audio/${format}` })
+  return URL.createObjectURL(blob)
+}
+
+/** Stop whatever is currently playing, clear the queue, release URLs */
+function _stopCurrent() {
+  if (_ttsAudio) {
+    _ttsAudio.pause()
+    if (_ttsAudio._url) URL.revokeObjectURL(_ttsAudio._url)
+    _ttsAudio = null
+  }
+  // Release any queued-but-not-yet-played chunk URLs
+  for (const item of _chunkQueue) URL.revokeObjectURL(item.url)
+  _chunkQueue = []
+  _chunkPlaying = false
+}
+
+/** Play a pre-synthesised filler clip; returns the Audio element so it can be cancelled */
+function playFiller(b64) {
+  if (!b64) return null
+  _stopCurrent()
+  const url = _b64toUrl(b64)
+  const audio = new Audio(url)
+  audio._url = url
+  _ttsAudio = audio
+  audio.play().catch(() => {})
+  audio.onended = () => { URL.revokeObjectURL(url); if (_ttsAudio === audio) _ttsAudio = null }
+  return audio
+}
+
+/** Sequential audio chunk queue — plays chunks one after another without overlap */
+let _chunkQueue = []
+let _chunkPlaying = false
+
+function _playNextChunk() {
+  if (_chunkPlaying || _chunkQueue.length === 0) return
+  const { url } = _chunkQueue.shift()
+  _chunkPlaying = true
+  const audio = new Audio(url)
+  audio._url = url
+  _ttsAudio = audio
+  audio.play().catch(() => {})
+  audio.onended = () => {
+    URL.revokeObjectURL(url)
+    if (_ttsAudio === audio) _ttsAudio = null
+    _chunkPlaying = false
+    _playNextChunk()
+  }
+  // If playback fails, unblock the queue
+  audio.onerror = () => {
+    URL.revokeObjectURL(url)
+    _chunkPlaying = false
+    _playNextChunk()
+  }
+}
+
+/** Enqueue an audio chunk; if filler is still running on the first chunk, stop it first */
+function playChunk(b64, isFirst = false) {
+  if (!b64) return
+  if (isFirst) {
+    // Stop filler and clear any queued chunks from a previous turn
+    _stopCurrent()
+    _chunkQueue = []
+    _chunkPlaying = false
+  }
+  _chunkQueue.push({ url: _b64toUrl(b64) })
+  _playNextChunk()
+}
+
+/* ── Legacy TTS helper (used when streaming is unavailable) ─────── */
 async function playTTS(text, voice = 'nova', language = 'en', provider = 'auto') {
   if (!text || text === '…') return
-  // Stop any currently playing TTS
-  if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio = null }
+  _stopCurrent()
   try {
     const params = new URLSearchParams({ text, voice, provider, language })
     const { data } = await api.get(`/api/v1/tts/preview?${params}`)
     if (data?.audio_base64) {
-      const binary = atob(data.audio_base64)
-      const bytes = new Uint8Array(binary.length)
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-      const blob = new Blob([bytes], { type: `audio/${data.format || 'wav'}` })
-      const url = URL.createObjectURL(blob)
-      const audio = new Audio(url)
-      _ttsAudio = audio
-      audio.play().catch(() => {})
-      audio.onended = () => { URL.revokeObjectURL(url); _ttsAudio = null }
+      playChunk(data.audio_base64)
     }
   } catch {
     // TTS unavailable — text still shown
@@ -250,8 +317,11 @@ export default function Testing() {
 
   /* ── Auto-send STT finals to LLM ─────────────────────────────── */
   const lastSentRef = useRef(-1)
+  const agentSpeakingRef = useRef(false)  // ref mirror of agentSpeaking for use inside effects
   useEffect(() => {
     if (!finals.length || !currentAgent) return
+    // Skip if agent is currently speaking — prevents mic echo loop
+    if (agentSpeakingRef.current) return
     const idx = finals.length - 1
     if (lastSentRef.current === idx) return
     const last = finals[idx]
@@ -261,44 +331,127 @@ export default function Testing() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finals, currentAgent])
 
-  /* ── Core LLM call ──────────────────────────────────────────── */
+  /* ── Core LLM call — uses /text-stream SSE for GAP-3/4 benefits ─ */
   const sendToLLM = useCallback(async (text, confidence = 0.95) => {
     const ts = () => new Date().toLocaleTimeString()
+    // Stop any currently playing audio before starting a new response
+    _stopCurrent()
+    setAgentSpeaking(true)
+    agentSpeakingRef.current = true
     setConversation(prev => [
       ...prev,
       { role: 'user', text, timestamp: ts() },
       { role: 'agent', text: '…', timestamp: ts(), pending: true },
     ])
-    setAgentSpeaking(true)
+
     try {
-      const { data } = await api.post('/api/v1/chat', {
-        message: text,
-        system_prompt: agentConfig.systemPrompt,
-        provider: llmOverride || agentConfig.provider,
-        language: agentConfig.langCode || undefined,
+      const baseUrl = (import.meta.env.VITE_API_URL || '')
+      const res = await fetch(`${baseUrl}/api/v1/voice/text-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          system_prompt: agentConfig.systemPrompt,
+          language: agentConfig.langCode || 'en',
+          llm_provider: llmOverride || agentConfig.provider || 'groq',
+          tts_language: agentConfig.langCode || 'en',
+        }),
       })
-      const reply = data.text || '(empty reply)'
+
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`)
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+      let fullReply = ''
+      let firstChunk = true
+      let latencyMs = 0
+      const startMs = Date.now()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+
+        // SSE lines look like "data: {...}\n\n"
+        const lines = buf.split('\n')
+        buf = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          let event
+          try { event = JSON.parse(line.slice(6)) } catch { continue }
+
+          if (event.type === 'filler' && ttsEnabled) {
+            playFiller(event.audio_base64)
+          } else if (event.type === 'llm_partial') {
+            fullReply += event.text
+            // Update the pending bubble with streaming text
+            setConversation(prev => {
+              const out = [...prev]
+              const last = out[out.length - 1]
+              if (last?.pending) out[out.length - 1] = { ...last, text: fullReply || '…' }
+              return out
+            })
+          } else if (event.type === 'audio_chunk' && ttsEnabled) {
+            playChunk(event.audio_base64, firstChunk)
+            firstChunk = false
+          } else if (event.type === 'done') {
+            latencyMs = event.ttfa_ms || Math.round(Date.now() - startMs)
+            if (event.text) fullReply = event.text
+          }
+        }
+      }
+
+      const reply = fullReply.trim() || '(empty reply)'
       setConversation(prev => {
         const out = prev.slice(0, -1)
         out.push({
           role: 'agent', text: reply, timestamp: ts(),
           emotion: 'neutral', intent: 'reply', confidence,
-          provider: data.provider, latency: Math.round(data.latency_ms || 0),
+          provider: llmOverride || agentConfig.provider, latency: latencyMs,
         })
         return out
       })
-      if (ttsEnabled) {
+
+      // Fallback: if streaming endpoint returned no audio, use legacy TTS
+      if (firstChunk && ttsEnabled) {
         await playTTS(reply, agentConfig.voice, agentConfig.langCode, ttsOverride || 'auto')
       }
+
     } catch (e) {
-      const detail = e.response?.data?.detail || 'LLM call failed'
-      setConversation(prev => {
-        const out = prev.slice(0, -1)
-        out.push({ role: 'agent', text: `Error: ${detail}`, timestamp: ts(), emotion: 'neutral', intent: 'error', confidence: 0 })
-        return out
-      })
+      // Streaming unavailable — fall back to /api/v1/chat
+      try {
+        const { data } = await api.post('/api/v1/chat', {
+          message: text,
+          system_prompt: agentConfig.systemPrompt,
+          provider: llmOverride || agentConfig.provider,
+          language: agentConfig.langCode || undefined,
+        })
+        const reply = data.text || '(empty reply)'
+        setConversation(prev => {
+          const out = prev.slice(0, -1)
+          out.push({
+            role: 'agent', text: reply, timestamp: ts(),
+            emotion: 'neutral', intent: 'reply', confidence,
+            provider: data.provider, latency: Math.round(data.latency_ms || 0),
+          })
+          return out
+        })
+        if (ttsEnabled) {
+          await playTTS(reply, agentConfig.voice, agentConfig.langCode, ttsOverride || 'auto')
+        }
+      } catch (e2) {
+        const detail = e2.response?.data?.detail || 'LLM call failed'
+        setConversation(prev => {
+          const out = prev.slice(0, -1)
+          out.push({ role: 'agent', text: `Error: ${detail}`, timestamp: ts(), emotion: 'neutral', intent: 'error', confidence: 0 })
+          return out
+        })
+      }
     } finally {
       setAgentSpeaking(false)
+      agentSpeakingRef.current = false
     }
   }, [agentConfig, ttsEnabled, llmOverride, ttsOverride])
 
@@ -338,6 +491,17 @@ export default function Testing() {
       recording ? stop() : start()
     }
   }, [voiceCallActive, recording, start, stop])
+
+  // Mute mic while agent is speaking to prevent echo loop
+  useEffect(() => {
+    if (!voiceCallActive) return
+    if (agentSpeaking && recording) {
+      stop()   // pause STT while agent speaks
+    } else if (!agentSpeaking && !recording) {
+      start()  // resume STT when agent finishes
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentSpeaking, voiceCallActive])
 
   // Call duration timer
   useEffect(() => {
