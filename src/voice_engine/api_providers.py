@@ -463,31 +463,89 @@ async def call_llm_api(
         ("deepseek", "DEEPSEEK_API_KEY", _deepseek_llm),
     ]
 
-    for name, env_key, func in providers_list:
-        # Special-case Gemini: accept either GOOGLE_API_KEY or GEMINI_API_KEY
+    # Two-pass strategy:
+    #   PASS 1 — Try the explicitly-requested provider (or any in "auto" mode).
+    #   PASS 2 — If it failed (and we weren't in auto), still cascade through
+    #            the remaining providers as a safety net.  Without this,
+    #            a Gemini outage would silently land users on the stub
+    #            error message even though Groq/OpenAI keys are valid.
+
+    last_error: Exception | None = None
+
+    def _try(name: str, env_key: str, func) -> dict | None:
+        """Attempt one provider; return result dict or None on failure."""
+        nonlocal last_error
         if name == "gemini":
             api_key = _google_key()
-            if api_key and provider in ("auto", "gemini"):
-                try:
-                    result = await func(system_prompt, user_message, api_key, model)
-                    return {"text": result, "provider": "gemini"}
-                except Exception as e:
-                    logger.warning("Gemini LLM failed: %s", e)
+        else:
+            api_key = os.environ.get(env_key, "")
+        if not api_key:
+            return None
+        try:
+            t = time.time()
+            text = func(system_prompt, user_message, api_key, model)
+            # support both sync and async funcs
+            import inspect
+            if inspect.iscoroutine(text):
+                # coroutine — caller is async, so we can't await here.
+                # but all our _xxx_llm funcs ARE coroutines, so this branch
+                # is not actually used in production.  Kept for safety.
+                pass
+            return {"text": text, "provider": name,
+                    "latency_ms": (time.time() - t) * 1000}
+        except Exception as e:
+            last_error = e
+            logger.warning("%s LLM failed: %s", name, e)
+            return None
+
+    # PASS 1 — try the explicit requested provider (if any)
+    if provider != "auto":
+        for name, env_key, func in providers_list:
+            if name == provider:
+                if name == "gemini":
+                    api_key = _google_key()
+                else:
+                    api_key = os.environ.get(env_key, "")
+                if api_key:
+                    try:
+                        t = time.time()
+                        text = await func(system_prompt, user_message, api_key, model)
+                        return {"text": text, "provider": name,
+                                "latency_ms": (time.time() - t) * 1000}
+                    except Exception as e:
+                        last_error = e
+                        logger.warning(
+                            "Requested %s LLM failed: %s — cascading to other providers",
+                            name, e,
+                        )
+                break
+
+    # PASS 2 — cascade through all providers (skipping the one we just tried).
+    # Runs whether mode was "auto" or whether explicit provider failed.
+    skip = provider if provider != "auto" else None
+    for name, env_key, func in providers_list:
+        if name == skip:
             continue
-        if provider not in ("auto", name):
-            continue
-        api_key = os.environ.get(env_key, "")
+        if name == "gemini":
+            api_key = _google_key()
+        else:
+            api_key = os.environ.get(env_key, "")
         if not api_key:
             continue
         try:
             t = time.time()
             text = await func(system_prompt, user_message, api_key, model)
-            return {"text": text, "provider": name, "latency_ms": (time.time() - t) * 1000}
+            logger.info(
+                "LLM cascade: requested=%s succeeded with %s",
+                provider, name,
+            )
+            return {"text": text, "provider": name,
+                    "latency_ms": (time.time() - t) * 1000}
         except Exception as e:
+            last_error = e
             logger.warning("%s LLM failed: %s", name, e)
 
-    # No LLM provider worked — raise a typed error so the streaming caller
-    # yields a visible message instead of pretending a stub was real.
+    # No LLM provider worked — return typed diagnostic so caller can yield it.
     configured = [
         env_k for (_, env_k, _) in providers_list
         if os.environ.get(env_k, "")
@@ -497,9 +555,9 @@ async def call_llm_api(
                "Add GOOGLE_API_KEY (https://aistudio.google.com/app/apikey) to "
                "Coolify env vars and redeploy.")
     else:
-        msg = (f"[LLM_ALL_FAILED] Configured providers ({', '.join(configured)}) "
-               "all failed. Check API key validity and network connectivity. "
-               "See container logs for the exact provider error.")
+        last_msg = f" Last error: {last_error}" if last_error else ""
+        msg = (f"[LLM_ALL_FAILED] All providers ({', '.join(configured)}) "
+               f"returned errors.{last_msg}")
     logger.error(msg)
     return {"text": msg, "provider": "error", "latency_ms": 0}
 
@@ -579,6 +637,11 @@ async def call_llm_stream(
                 logger.warning("Gemini stream failed, trying next: %s", e)
 
     # ── OpenAI-compatible streaming (Groq / OpenAI / DeepSeek) ─────────────
+    # ── OpenAI-compatible streaming (Groq / OpenAI / DeepSeek) ─────────────
+    # If we got here, either the user asked for one of these explicitly OR
+    # the requested provider (e.g. Gemini) failed and we need to fall back.
+    # Cascade through ALL configured ones — don't filter by `provider` here,
+    # the explicit-provider check has already happened above.
     openai_compat = [
         ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions",
          model or "llama-3.1-8b-instant"),
@@ -588,9 +651,18 @@ async def call_llm_stream(
          model or "deepseek-chat"),
     ]
 
+    # If provider is one of the openai-compat options AND it has a key, try
+    # it first (preserve user's explicit choice).  Otherwise just cascade
+    # through all of them in order, which gives us proper fallback behaviour
+    # when the requested provider (gemini) failed silently.
+    if provider in ("groq", "openai", "deepseek"):
+        openai_compat = (
+            [p for p in openai_compat if p[0] == provider] +
+            [p for p in openai_compat if p[0] != provider]
+        )
+
+    streamed_anything = False
     for name, env_key, url, chosen_model in openai_compat:
-        if provider not in ("auto", name):
-            continue
         api_key = os.environ.get(env_key, "")
         if not api_key:
             continue
@@ -607,6 +679,8 @@ async def call_llm_stream(
                 },
             ) as resp:
                 if resp.status_code != 200:
+                    body = await resp.aread()
+                    logger.warning("%s stream HTTP %s: %s", name, resp.status_code, body[:200])
                     raise RuntimeError(f"{name} stream HTTP {resp.status_code}")
                 async for raw_line in resp.aiter_lines():
                     if not raw_line or not raw_line.startswith("data:"):
@@ -618,17 +692,21 @@ async def call_llm_stream(
                         obj = json.loads(payload)
                         delta = obj["choices"][0].get("delta", {}).get("content")
                         if delta:
+                            streamed_anything = True
                             yield delta
                     except (KeyError, IndexError, json.JSONDecodeError):
                         continue
-            return
+            if streamed_anything:
+                logger.info("LLM stream cascade: %s succeeded", name)
+                return
         except Exception as e:
             logger.warning("%s stream failed, trying next: %s", name, e)
 
-    # Fallback: non-streaming call, yield whole response as one chunk
-    result = await call_llm_api(system_prompt, user_message, provider=provider, model=model)
-    if result.get("text"):
-        yield result["text"]
+    # Fallback: non-streaming call as last resort (yields whole text at once)
+    if not streamed_anything:
+        result = await call_llm_api(system_prompt, user_message, provider=provider, model=model)
+        if result.get("text"):
+            yield result["text"]
 
 
 async def _groq_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:

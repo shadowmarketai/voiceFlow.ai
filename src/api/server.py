@@ -819,10 +819,12 @@ def _load_voice_pipeline(application: FastAPI) -> None:
 
         @application.get("/api/v1/llm/health")
         async def llm_health():
-            """Test every LLM provider with a real ping. Visit in browser to
-            debug 'Thank you for calling...' replies instantly.
+            """Test every LLM provider with a real ping. Surfaces the EXACT
+            error from each provider's API so you can see WHY a key fails.
+            Visit in browser to debug 'Thank you for calling...' replies.
             """
             import os as _os
+            import httpx as _httpx
             providers_meta = [
                 ("gemini",    "GOOGLE_API_KEY"),
                 ("gemini_alt","GEMINI_API_KEY"),
@@ -831,40 +833,69 @@ def _load_voice_pipeline(application: FastAPI) -> None:
                 ("anthropic", "ANTHROPIC_API_KEY"),
                 ("deepseek",  "DEEPSEEK_API_KEY"),
             ]
-            from voice_engine.api_providers import call_llm_api as _call
+            from voice_engine.api_providers import (
+                _gemini_llm, _groq_llm, _openai_llm,
+                _anthropic_llm, _deepseek_llm, _google_key,
+            )
+            funcs = {
+                "gemini":     _gemini_llm,
+                "gemini_alt": _gemini_llm,
+                "groq":       _groq_llm,
+                "openai":     _openai_llm,
+                "anthropic":  _anthropic_llm,
+                "deepseek":   _deepseek_llm,
+            }
 
             results = []
             for name, env in providers_meta:
-                key = _os.environ.get(env, "")
+                key = _google_key() if name.startswith("gemini") else _os.environ.get(env, "")
                 if not key:
                     results.append({"provider": name, "key_set": False,
                                     "status": "missing_key", "env_var": env})
                     continue
-                # Skip the alt-name pings if main key is the same value
-                if name == "gemini_alt" and key == _os.environ.get("GOOGLE_API_KEY"):
+                # Skip alias if it points to same key as GOOGLE_API_KEY
+                if name == "gemini_alt" and not _os.environ.get("GEMINI_API_KEY"):
                     results.append({"provider": name, "key_set": True,
                                     "status": "alias_of_GOOGLE_API_KEY",
                                     "env_var": env})
                     continue
+                # Mask key for display: show first 6 + last 4 chars
+                key_preview = (key[:6] + "..." + key[-4:]) if len(key) > 12 else "***short***"
                 try:
-                    real_provider = "gemini" if name.startswith("gemini") else name
-                    r = await _call(
-                        system_prompt="Reply with the single word: OK",
-                        user_message="ping", provider=real_provider,
+                    text = await funcs[name](
+                        "Reply with exactly the word OK.",
+                        "ping", key, None,
                     )
-                    text = (r.get("text") or "").strip()
-                    is_stub = text.startswith("[LLM_") or r.get("provider") in ("error", "stub")
+                    text = (text or "").strip()
                     results.append({
                         "provider": name, "key_set": True,
-                        "status": "error" if is_stub else "ok",
-                        "latency_ms": int(r.get("latency_ms", 0)),
+                        "status": "ok",
+                        "key_preview": key_preview,
                         "sample": text[:80],
                         "env_var": env,
                     })
+                except _httpx.HTTPStatusError as exc:
+                    body = ""
+                    try:
+                        body = exc.response.text[:300]
+                    except Exception:
+                        pass
+                    results.append({
+                        "provider": name, "key_set": True,
+                        "status": "http_error",
+                        "key_preview": key_preview,
+                        "http_status": exc.response.status_code,
+                        "error_body": body,
+                        "env_var": env,
+                    })
                 except Exception as exc:
-                    results.append({"provider": name, "key_set": True,
-                                    "status": "exception", "error": str(exc)[:200],
-                                    "env_var": env})
+                    results.append({
+                        "provider": name, "key_set": True,
+                        "status": "exception",
+                        "key_preview": key_preview,
+                        "error": str(exc)[:300],
+                        "env_var": env,
+                    })
 
             working = [r for r in results if r.get("status") == "ok"]
             return {
@@ -874,10 +905,8 @@ def _load_voice_pipeline(application: FastAPI) -> None:
                     f"OK — {len(working)} provider(s) working: " +
                     ", ".join(r['provider'] for r in working)
                     if working
-                    else "❌ NO LLM IS WORKING. Without this, agents reply "
-                         "'Thank you for calling...' to every message. "
-                         "Add GOOGLE_API_KEY (https://aistudio.google.com/app/apikey) "
-                         "to Coolify env vars and redeploy."
+                    else "❌ NO LLM IS WORKING. Check error_body field of "
+                         "each provider above for the exact API error."
                 ),
             }
 
