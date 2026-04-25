@@ -248,8 +248,15 @@ def _get_session(session_id: str) -> ConversationSession:
     return session
 
 
-def _get_agent(agent_id: str) -> dict[str, Any]:
-    """Retrieve an agent config or raise 404."""
+def _get_agent(agent_id: str, tenant_id: str | None = None) -> dict[str, Any]:
+    """Retrieve an agent config. Checks DB first, DEMO_AGENTS as fallback."""
+    try:
+        from voice_engine.agent_config import AgentRuntimeConfig
+        cfg = AgentRuntimeConfig.load(agent_id, tenant_id)
+        return cfg.to_agent_dict()
+    except Exception as exc:
+        logger.debug("AgentRuntimeConfig load failed (%s), trying DEMO_AGENTS: %s", agent_id, exc)
+
     agent = DEMO_AGENTS.get(agent_id)
     if agent is None:
         raise HTTPException(
@@ -281,19 +288,176 @@ async def _generate_llm_response(
     messages: list[dict[str, str]],
     system_prompt: str,
     language: str = "en",
+    provider: str | None = None,
+    model: str | None = None,
+    temperature: float = 0.7,
+    max_words: int = 60,
 ) -> str:
     """Generate an LLM response using available providers.
 
-    Priority: Gemini 2.5 Pro -> Groq -> Anthropic -> canned fallback.
-    Response is cleaned for phone TTS (strip markdown, trim to 2 sentences).
+    provider controls which backend to try first:
+      "gemini"    → Gemini 2.5 Pro first
+      "groq"      → Groq first
+      "anthropic" → Anthropic first
+      "openai"    → OpenAI first
+      None/other  → Gemini → Groq → Anthropic priority chain
+
+    Response is cleaned for phone TTS (strip markdown, trim to ~max_words words).
     """
     from voice_engine.llm_output_cleaner import clean_for_tts as _clean
 
     raw_text: str | None = None
+    prov = (provider or "gemini").lower()
 
-    # 1. Gemini 2.5 Pro (primary — best quality)
+    logger.debug(
+        "[LLM] provider=%s model=%s lang=%s words_limit=%d",
+        prov, model, language, max_words,
+    )
+
+    # ── Helper: try Gemini ──────────────────────────────────────────────
+    async def _try_gemini() -> str | None:
+        google_key = (
+            getattr(settings, "GOOGLE_API_KEY", "")
+            or getattr(settings, "GEMINI_API_KEY", "")
+            or ""
+        )
+        if not google_key:
+            return None
+        try:
+            import httpx
+            gemini_model = model or "gemini-2.5-pro"
+            gemini_contents = []
+            for m in messages:
+                role = "model" if m["role"] == "assistant" else "user"
+                gemini_contents.append({"role": role, "parts": [{"text": m["content"]}]})
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    f"https://generativelanguage.googleapis.com/v1beta/models/"
+                    f"{gemini_model}:generateContent?key={google_key}",
+                    json={
+                        "system_instruction": {"parts": [{"text": system_prompt}]},
+                        "contents": gemini_contents,
+                        "generationConfig": {
+                            "maxOutputTokens": max_words * 5,
+                            "temperature": temperature,
+                        },
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as exc:
+            logger.warning("[LLM] Gemini failed: %s", exc)
+            return None
+
+    # ── Helper: try Groq ────────────────────────────────────────────────
+    async def _try_groq() -> str | None:
+        groq_key = getattr(settings, "GROQ_API_KEY", "") or ""
+        if not groq_key:
+            return None
+        try:
+            import httpx
+            groq_model = model or "llama-3.3-70b-versatile"
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {groq_key}"},
+                    json={
+                        "model": groq_model,
+                        "messages": full_messages,
+                        "max_tokens": max_words * 5,
+                        "temperature": temperature,
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as exc:
+            logger.warning("[LLM] Groq failed: %s", exc)
+            return None
+
+    # ── Helper: try Anthropic ───────────────────────────────────────────
+    async def _try_anthropic() -> str | None:
+        ant_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
+        if not ant_key:
+            return None
+        try:
+            import httpx
+            ant_model = model or "claude-haiku-4-5-20251001"
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": ant_key,
+                        "anthropic-version": "2023-06-01",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": ant_model,
+                        "max_tokens": max_words * 5,
+                        "system": system_prompt,
+                        "messages": [m for m in messages if m["role"] != "system"],
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["content"][0]["text"]
+        except Exception as exc:
+            logger.warning("[LLM] Anthropic failed: %s", exc)
+            return None
+
+    # ── Helper: try OpenAI ──────────────────────────────────────────────
+    async def _try_openai() -> str | None:
+        oai_key = getattr(settings, "OPENAI_API_KEY", "") or ""
+        if not oai_key:
+            return None
+        try:
+            import httpx
+            oai_model = model or "gpt-4o-mini"
+            full_messages = [{"role": "system", "content": system_prompt}] + messages
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {oai_key}"},
+                    json={
+                        "model": oai_model,
+                        "messages": full_messages,
+                        "max_tokens": max_words * 5,
+                        "temperature": temperature,
+                    },
+                )
+                resp.raise_for_status()
+                return resp.json()["choices"][0]["message"]["content"]
+        except Exception as exc:
+            logger.warning("[LLM] OpenAI failed: %s", exc)
+            return None
+
+    # ── Provider routing ────────────────────────────────────────────────
+    # Try the configured provider first, then fall through.
+    _providers_ordered: list[str]
+    if prov == "groq":
+        _providers_ordered = ["groq", "gemini", "anthropic", "openai"]
+    elif prov == "anthropic":
+        _providers_ordered = ["anthropic", "gemini", "groq", "openai"]
+    elif prov == "openai":
+        _providers_ordered = ["openai", "gemini", "groq", "anthropic"]
+    else:
+        _providers_ordered = ["gemini", "groq", "anthropic", "openai"]
+
+    _fn_map = {
+        "gemini": _try_gemini,
+        "groq": _try_groq,
+        "anthropic": _try_anthropic,
+        "openai": _try_openai,
+    }
+    for _p in _providers_ordered:
+        raw_text = await _fn_map[_p]()
+        if raw_text:
+            logger.debug("[LLM] Got response from %s (%d chars)", _p, len(raw_text))
+            break
+
+    # 1. Gemini 2.5 Pro (legacy path — kept for compatibility, will hit if google_key not yet set above)
     google_key = getattr(settings, "GOOGLE_API_KEY", "") or ""
-    if google_key:
+    if not raw_text and google_key:
         try:
             import httpx
 
@@ -398,8 +562,9 @@ async def _generate_llm_response(
         options = fallbacks.get(language, fallbacks["en"])
         raw_text = random.choice(options)
 
-    # Clean for phone TTS: strip markdown, filler, trim to 2 sentences
-    return _clean(raw_text, max_sentences=2)
+    # Clean for phone TTS: strip markdown, filler, respect word limit
+    max_sentences = max(1, max_words // 20)  # ~20 words/sentence estimate
+    return _clean(raw_text, max_sentences=max_sentences)
 
 
 # =====================================================================
@@ -439,8 +604,84 @@ async def _synthesize_audio(
     text: str,
     language: str = "en",
     voice_id: str | None = None,
+    tts_engine: str | None = None,
 ) -> str | None:
-    """Synthesize text to audio. Returns base64-encoded audio or None."""
+    """Synthesize text to audio. Returns base64-encoded audio or None.
+
+    tts_engine controls which backend to try first:
+      "cartesia"   → Cartesia Sonic (requires CARTESIA_API_KEY)
+      "elevenlabs" → ElevenLabs (requires ELEVENLABS_API_KEY)
+      "sarvam"     → Sarvam TTS (Indian languages)
+      None/other   → existing fallback chain
+    """
+    import os
+
+    engine = (tts_engine or "").lower()
+    logger.debug("[TTS] engine=%s voice=%s lang=%s", engine, voice_id, language)
+
+    # ── Cartesia direct call ────────────────────────────────────────────
+    if engine == "cartesia" and os.getenv("CARTESIA_API_KEY"):
+        try:
+            import httpx, base64 as _b64
+            _lang = language[:2].lower() if language else "en"
+            _model = "sonic-multilingual" if _lang != "en" else "sonic-english"
+            async with httpx.AsyncClient(timeout=12.0) as client:
+                resp = await client.post(
+                    "https://api.cartesia.ai/tts/bytes",
+                    headers={
+                        "Cartesia-Version": "2024-06-10",
+                        "X-API-Key": os.environ["CARTESIA_API_KEY"],
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "transcript": text,
+                        "model_id": _model,
+                        "voice": (
+                            {"mode": "id", "id": voice_id}
+                            if voice_id
+                            else {"mode": "id", "id": "694f9389-aac1-45b6-b726-9d9369183238"}
+                        ),
+                        "output_format": {
+                            "container": "mp3",
+                            "encoding": "mp3",
+                            "sample_rate": 44100,
+                        },
+                        "language": _lang,
+                    },
+                )
+                if resp.status_code == 200 and resp.content:
+                    logger.debug("[TTS] Cartesia OK (%d bytes)", len(resp.content))
+                    return _b64.b64encode(resp.content).decode()
+                logger.warning("[TTS] Cartesia HTTP %s: %s", resp.status_code, resp.text[:200])
+        except Exception as exc:
+            logger.warning("[TTS] Cartesia failed: %s", exc)
+
+    # ── ElevenLabs direct call ──────────────────────────────────────────
+    if engine == "elevenlabs" and os.getenv("ELEVENLABS_API_KEY"):
+        try:
+            import httpx, base64 as _b64
+            _vid = voice_id or "21m00Tcm4TlvDq8ikWAM"   # ElevenLabs default Rachel
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    f"https://api.elevenlabs.io/v1/text-to-speech/{_vid}",
+                    headers={
+                        "xi-api-key": os.environ["ELEVENLABS_API_KEY"],
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "text": text,
+                        "model_id": "eleven_turbo_v2",
+                        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+                    },
+                )
+                if resp.status_code == 200 and resp.content:
+                    logger.debug("[TTS] ElevenLabs OK (%d bytes)", len(resp.content))
+                    return _b64.b64encode(resp.content).decode()
+                logger.warning("[TTS] ElevenLabs HTTP %s", resp.status_code)
+        except Exception as exc:
+            logger.warning("[TTS] ElevenLabs failed: %s", exc)
+
+    # ── VoiceAIService (routes through all configured TTS engines) ─────
     try:
         from voice_engine.voice_ai_service import get_voice_ai_service
 
@@ -450,9 +691,11 @@ async def _synthesize_audio(
             language=language,
             voice_id=voice_id,
         )
-        return result.get("audio_base64")
+        audio = result.get("audio_base64")
+        if audio:
+            return audio
     except (ImportError, Exception) as exc:
-        logger.warning("Voice engine TTS not available: %s", exc)
+        logger.warning("[TTS] VoiceAIService failed: %s", exc)
 
     # Fallback: edge-tts
     try:
@@ -1033,86 +1276,154 @@ async def _handle_turn_parallel_interruptible(
     websocket: WebSocket,
     audio: bytes,
     session: Any,
-    agent: dict[str, Any],
+    agent_cfg: Any,          # AgentRuntimeConfig or legacy dict[str, Any]
     task_tracker: Any | None = None,
     interrupt_mgr: Any | None = None,
 ) -> None:
     """
-    Interruptible parallel pipeline (Track A) with task tracking.
+    Interruptible parallel pipeline (Track A).
 
-    Each async operation is wrapped in a tracked task so the interruption
-    manager can cancel mid-flight if the user barges in.
+    Accepts AgentRuntimeConfig (new) or dict (legacy). Extracts LLM provider,
+    model, TTS engine, voice_id, and system_prompt from the config so agent
+    settings created in the UI are honoured at runtime.
 
     Flow:
-      1. STT (tracked task — cancellable)
-      2. LLM (tracked task — cancellable)
-      3. TTS (tracked task — cancellable)
+      1. STT  → validate transcript quality
+      2. LLM  → use agent's configured provider/model
+      3. TTS  → use agent's configured engine/voice
       4. Send audio chunks back
 
-    If interrupt_mgr or task_tracker is None, behaves identically to
-    _handle_turn_parallel (non-interruptible fallback).
+    Each step runs as a tracked, cancellable asyncio Task.
     """
+    from voice_engine.transcript_cleaner import clean_transcript, is_valid_transcript
+
     sid = session.session_id
 
-    # Fallback to non-interruptible if manager not available
-    if not task_tracker:
-        await _handle_turn_parallel(websocket, audio, session, agent)
-        return
-
-    # ── Step 1: STT (cancellable) ─────────────────────────────────────
-    # Pass None to allow Sarvam auto-detection on the first multilingual
-    # turn; subsequent turns reuse session.language as a hint.
-    stt_lang_hint = session.language if session.language and session.language != "en" else None
-    stt_task = asyncio.create_task(
-        _transcribe_audio(audio, language=stt_lang_hint),
-    )
-    task_tracker.track(sid, stt_task)
-
+    # ── Resolve config fields (supports both AgentRuntimeConfig and dict) ──
     try:
-        transcription = await stt_task
-    except asyncio.CancelledError:
-        logger.info("STT cancelled by interrupt (session=%s)", sid)
-        return
+        system_prompt   = agent_cfg.system_prompt
+        llm_provider    = agent_cfg.llm_provider
+        llm_model       = agent_cfg.llm_model
+        tts_engine_name = agent_cfg.tts_engine
+        voice_id        = agent_cfg.voice_id
+        temperature     = agent_cfg.temperature
+        max_words       = agent_cfg.max_response_words
+    except AttributeError:
+        # Legacy dict fallback
+        system_prompt   = agent_cfg.get("system_prompt", "You are a helpful AI assistant.")
+        llm_provider    = "gemini"
+        llm_model       = None
+        tts_engine_name = "edge_tts"
+        voice_id        = agent_cfg.get("voice")
+        temperature     = 0.7
+        max_words       = 60
 
-    # Resolve actual spoken language for THIS turn.
+    logger.info(
+        "[Turn] START session=%s provider=%s tts=%s voice=%s",
+        sid, llm_provider, tts_engine_name, voice_id,
+    )
+
+    # ── Step 1: STT ───────────────────────────────────────────────────
+    stt_lang_hint = session.language if session.language and session.language != "en" else None
+    if task_tracker:
+        stt_task = asyncio.create_task(_transcribe_audio(audio, language=stt_lang_hint))
+        task_tracker.track(sid, stt_task)
+        try:
+            transcription = await stt_task
+        except asyncio.CancelledError:
+            logger.info("[Turn] STT cancelled (session=%s)", sid)
+            return
+    else:
+        transcription = await _transcribe_audio(audio, language=stt_lang_hint)
+
+    # Resolve actual language for this turn (script/STT detection)
     turn_lang = _resolve_turn_language(session, transcription)
+
+    # ── Transcript quality gate ───────────────────────────────────────
+    raw_text = transcription.get("text", "")
+    cleaned_text = clean_transcript(raw_text)
+
+    logger.info(
+        "[STT] session=%s lang=%s conf=%.2f raw=%r cleaned=%r",
+        sid, turn_lang,
+        transcription.get("confidence", 0.0),
+        raw_text[:80], cleaned_text[:80],
+    )
 
     await websocket.send_text(json.dumps({
         "type": "transcription",
-        "text": transcription["text"],
+        "text": cleaned_text or raw_text,
         "language": turn_lang,
-        "confidence": transcription["confidence"],
+        "confidence": transcription.get("confidence", 0.0),
+        "is_final": True,
     }))
+
+    if not is_valid_transcript(cleaned_text):
+        logger.info(
+            "[Turn] Transcript rejected (too short/noisy) session=%s text=%r",
+            sid, cleaned_text,
+        )
+        await websocket.send_text(json.dumps({
+            "type": "transcript_rejected",
+            "reason": "too_short",
+            "text": cleaned_text,
+        }))
+        return
 
     user_msg = ConversationMessage(
         role=MessageRole.USER,
-        text=transcription["text"],
+        text=cleaned_text,
         language=turn_lang,
-        confidence=transcription["confidence"],
+        confidence=transcription.get("confidence"),
         emotion=transcription.get("emotion"),
     )
     session.messages.append(user_msg)
 
-    # ── Step 2: LLM (cancellable) ─────────────────────────────────────
+    # ── Step 2: LLM ───────────────────────────────────────────────────
     llm_messages = [
         {"role": m.role.value, "content": m.text}
         for m in session.messages
         if m.role != MessageRole.SYSTEM
     ]
-    llm_task = asyncio.create_task(
-        _generate_llm_response(
-            messages=llm_messages,
-            system_prompt=agent["system_prompt"],
-            language=turn_lang,
-        ),
-    )
-    task_tracker.track(sid, llm_task)
 
-    try:
-        response_text = await llm_task
-    except asyncio.CancelledError:
-        logger.info("LLM cancelled by interrupt (session=%s)", sid)
-        return
+    logger.info(
+        "[LLM] session=%s provider=%s model=%s history_turns=%d",
+        sid, llm_provider, llm_model, len(llm_messages),
+    )
+
+    if task_tracker:
+        llm_task = asyncio.create_task(
+            _generate_llm_response(
+                messages=llm_messages,
+                system_prompt=system_prompt,
+                language=turn_lang,
+                provider=llm_provider,
+                model=llm_model,
+                temperature=temperature,
+                max_words=max_words,
+            )
+        )
+        task_tracker.track(sid, llm_task)
+        try:
+            response_text = await llm_task
+        except asyncio.CancelledError:
+            logger.info("[Turn] LLM cancelled (session=%s)", sid)
+            return
+    else:
+        response_text = await _generate_llm_response(
+            messages=llm_messages,
+            system_prompt=system_prompt,
+            language=turn_lang,
+            provider=llm_provider,
+            model=llm_model,
+            temperature=temperature,
+            max_words=max_words,
+        )
+
+    logger.info(
+        "[LLM] session=%s response_len=%d text=%r",
+        sid, len(response_text), response_text[:100],
+    )
 
     assistant_msg = ConversationMessage(
         role=MessageRole.ASSISTANT,
@@ -1127,29 +1438,43 @@ async def _handle_turn_parallel_interruptible(
         "text": response_text,
         "emotion": "friendly",
         "message_id": assistant_msg.id,
+        "language": turn_lang,
     }))
 
-    # Update interrupt manager with what agent is about to say
     if interrupt_mgr:
         interrupt_mgr.set_agent_text(response_text)
 
-    # ── Step 3: TTS (cancellable) ─────────────────────────────────────
-    tts_task = asyncio.create_task(
-        _synthesize_audio(
+    # ── Step 3: TTS ───────────────────────────────────────────────────
+    logger.info(
+        "[TTS] session=%s engine=%s voice=%s lang=%s",
+        sid, tts_engine_name, voice_id, turn_lang,
+    )
+
+    if task_tracker:
+        tts_task = asyncio.create_task(
+            _synthesize_audio(
+                text=response_text,
+                language=turn_lang,
+                voice_id=voice_id,
+                tts_engine=tts_engine_name,
+            )
+        )
+        task_tracker.track(sid, tts_task)
+        try:
+            audio_b64 = await tts_task
+        except asyncio.CancelledError:
+            logger.info("[Turn] TTS cancelled (session=%s)", sid)
+            return
+    else:
+        audio_b64 = await _synthesize_audio(
             text=response_text,
             language=turn_lang,
-            voice_id=agent.get("voice"),
-        ),
-    )
-    task_tracker.track(sid, tts_task)
-
-    try:
-        audio_b64 = await tts_task
-    except asyncio.CancelledError:
-        logger.info("TTS cancelled by interrupt (session=%s)", sid)
-        return
+            voice_id=voice_id,
+            tts_engine=tts_engine_name,
+        )
 
     if audio_b64:
+        logger.info("[TTS] session=%s audio_b64_len=%d", sid, len(audio_b64))
         await websocket.send_text(json.dumps({
             "type": "audio_response",
             "audio": audio_b64,
@@ -1157,10 +1482,15 @@ async def _handle_turn_parallel_interruptible(
             "emotion": "friendly",
             "format": "mp3",
             "message_id": assistant_msg.id,
+            "language": turn_lang,
         }))
+    else:
+        logger.warning("[TTS] session=%s no audio produced", sid)
 
-    # Clean up completed tasks
-    task_tracker.clear(sid)
+    if task_tracker:
+        task_tracker.clear(sid)
+
+    logger.info("[Turn] COMPLETE session=%s", sid)
 
 
 async def _handle_turn_s2s(
@@ -1293,11 +1623,18 @@ async def voice_conversation_ws(
         {"type": "session_started", "session_id": "...", "agent": {...}}
         {"type": "pong"}
     """
-    # Validate agent
-    agent = DEMO_AGENTS.get(agent_id)
-    if agent is None:
-        await websocket.close(code=4004, reason=f"Agent '{agent_id}' not found")
-        return
+    # ── Load agent config from DB (real agents) or DEMO_AGENTS ──────────
+    try:
+        from voice_engine.agent_config import AgentRuntimeConfig
+        agent_cfg = AgentRuntimeConfig.load(agent_id, tenant_id)
+        agent = agent_cfg.to_agent_dict()
+    except Exception as exc:
+        logger.warning("AgentRuntimeConfig load error (agent=%s): %s", agent_id, exc)
+        agent = DEMO_AGENTS.get(agent_id)
+        agent_cfg = agent  # legacy dict fallback
+        if agent is None:
+            await websocket.close(code=4004, reason=f"Agent '{agent_id}' not found")
+            return
 
     # Rate check
     client_ip = websocket.client.host if websocket.client else "unknown"
@@ -1308,7 +1645,7 @@ async def voice_conversation_ws(
 
     await websocket.accept()
 
-    # Create or resume session
+    # ── Create or resume session ──────────────────────────────────────
     if session_id and session_id in _sessions:
         session = _sessions[session_id]
     else:
@@ -1330,13 +1667,12 @@ async def voice_conversation_ws(
             started_at=now,
             messages=[greeting_msg],
             metadata={"client_ip": client_ip, "authenticated": authenticated},
-            # GAP 7 — carry caller identity for cross-call memory
             tenant_id=tenant_id or "",
             phone=phone or "",
         )
         _sessions[session_id] = session
 
-    # Send session info and greeting
+    # ── Send initial handshake ────────────────────────────────────────
     try:
         await websocket.send_text(json.dumps({
             "type": "session_started",
@@ -1345,8 +1681,13 @@ async def voice_conversation_ws(
                 "id": agent_id,
                 "name": agent["name"],
                 "language": agent["language"],
-                "avatar": agent["avatar"],
-                "theme": agent["theme"],
+                "avatar": agent.get("avatar", ""),
+                "theme": agent.get("theme", {}),
+            },
+            "pipeline": {
+                "llm": getattr(agent_cfg, "llm_provider", "auto"),
+                "tts": getattr(agent_cfg, "tts_engine", "auto"),
+                "stt": getattr(agent_cfg, "stt_provider", "auto"),
             },
         }))
         await websocket.send_text(json.dumps({
@@ -1359,21 +1700,22 @@ async def voice_conversation_ws(
         return
 
     logger.info(
-        "WS voice conversation connected: session=%s agent=%s ip=%s",
-        session_id,
-        agent_id,
+        "[WS] Connected: session=%s agent=%s lang=%s llm=%s tts=%s ip=%s",
+        session_id, agent_id, session.language,
+        getattr(agent_cfg, "llm_provider", "?"),
+        getattr(agent_cfg, "tts_engine", "?"),
         client_ip,
     )
 
-    # Audio buffer for chunked audio streaming
-    audio_buffer: list[bytes] = []
+    # ── State machine + support objects ──────────────────────────────
+    from voice_engine.pipeline_state import CallState, StateMachine
 
-    # ── Interruption manager setup ────────────────────────
-    # Provides real barge-in: 3-layer false interrupt filtering
-    # (duration gate → backchannel check → confidence gate)
+    sm = StateMachine(session_id)
+    audio_buffer: list[bytes] = []
+    current_turn_task: asyncio.Task | None = None
+
     interrupt_mgr = None
     task_tracker = None
-    agent_is_speaking = False
     try:
         from voice_engine.interruption_manager import (
             InterruptAction,
@@ -1388,15 +1730,150 @@ async def voice_conversation_ws(
             language=session.language,
         )
         task_tracker = SessionTaskTracker()
-        logger.info("Interruption manager enabled for session=%s", session_id)
+        logger.info("[WS] Interruption manager enabled (session=%s)", session_id)
     except Exception as exc:
         logger.warning(
-            "Interruption manager not available (session=%s): %s — "
-            "falling back to buffer-only interrupt",
-            session_id,
-            exc,
+            "[WS] Interruption manager unavailable (session=%s): %s", session_id, exc
         )
 
+    # ── Internal helpers ──────────────────────────────────────────────
+
+    async def _cancel_current_turn(reason: str = "interrupt") -> None:
+        """Cancel the active pipeline task and reset state."""
+        nonlocal current_turn_task
+        if current_turn_task and not current_turn_task.done():
+            current_turn_task.cancel()
+            try:
+                await asyncio.wait_for(asyncio.shield(current_turn_task), timeout=0.5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+        if task_tracker:
+            await task_tracker.cancel_all(session_id)
+        if interrupt_mgr:
+            interrupt_mgr.reset()
+        await sm.transition(CallState.LISTENING, reason=reason)
+        current_turn_task = None
+
+    async def _fire_text_turn(user_text: str) -> None:
+        """Run a text-only LLM→TTS turn without STT (for text messages)."""
+        from voice_engine.transcript_cleaner import clean_transcript, is_valid_transcript
+
+        cleaned = clean_transcript(user_text)
+        if not is_valid_transcript(cleaned, min_words=1, min_chars=2):
+            return
+
+        try:
+            llm_provider    = getattr(agent_cfg, "llm_provider", "gemini")
+            llm_model       = getattr(agent_cfg, "llm_model", None)
+            tts_engine_name = getattr(agent_cfg, "tts_engine", "edge_tts")
+            voice_id        = getattr(agent_cfg, "voice_id", None) or agent.get("voice")
+            temperature     = getattr(agent_cfg, "temperature", 0.7)
+            max_words       = getattr(agent_cfg, "max_response_words", 60)
+            system_prompt   = getattr(agent_cfg, "system_prompt", agent.get("system_prompt", ""))
+
+            user_msg = ConversationMessage(
+                role=MessageRole.USER,
+                text=cleaned,
+                language=session.language,
+            )
+            session.messages.append(user_msg)
+
+            llm_messages = [
+                {"role": m.role.value, "content": m.text}
+                for m in session.messages
+                if m.role != MessageRole.SYSTEM
+            ]
+
+            await sm.transition(CallState.PROCESSING, reason="text_message")
+            response_text = await _generate_llm_response(
+                messages=llm_messages,
+                system_prompt=system_prompt,
+                language=session.language,
+                provider=llm_provider,
+                model=llm_model,
+                temperature=temperature,
+                max_words=max_words,
+            )
+
+            assistant_msg = ConversationMessage(
+                role=MessageRole.ASSISTANT,
+                text=response_text,
+                language=session.language,
+                emotion="friendly",
+            )
+            session.messages.append(assistant_msg)
+
+            await websocket.send_text(json.dumps({
+                "type": "text_response",
+                "text": response_text,
+                "emotion": "friendly",
+                "message_id": assistant_msg.id,
+            }))
+
+            await sm.transition(CallState.SPEAKING, reason="tts_start")
+            if interrupt_mgr:
+                interrupt_mgr.set_agent_text(response_text)
+
+            audio_b64 = await _synthesize_audio(
+                text=response_text,
+                language=session.language,
+                voice_id=voice_id,
+                tts_engine=tts_engine_name,
+            )
+            if audio_b64:
+                await websocket.send_text(json.dumps({
+                    "type": "audio_response",
+                    "audio": audio_b64,
+                    "text": response_text,
+                    "emotion": "friendly",
+                    "format": "mp3",
+                    "message_id": assistant_msg.id,
+                }))
+        except asyncio.CancelledError:
+            logger.info("[Turn] Text turn cancelled (session=%s)", session_id)
+            raise
+        except Exception as exc:
+            logger.error("[Turn] Text turn error (session=%s): %s", session_id, exc)
+        finally:
+            sm.force(CallState.IDLE, reason="text_turn_done")
+
+    async def _run_audio_turn(combined_audio: bytes) -> None:
+        """Run a full audio turn: STT → LLM → TTS."""
+        try:
+            use_s2s = client_tier in ("premium", "enterprise")
+            if use_s2s:
+                await _handle_turn_s2s(
+                    websocket=websocket,
+                    audio=combined_audio,
+                    session=session,
+                    agent=agent,
+                    client_tier=client_tier,
+                )
+            else:
+                await _handle_turn_parallel_interruptible(
+                    websocket=websocket,
+                    audio=combined_audio,
+                    session=session,
+                    agent_cfg=agent_cfg,
+                    task_tracker=task_tracker,
+                    interrupt_mgr=interrupt_mgr,
+                )
+        except asyncio.CancelledError:
+            logger.info("[Turn] Audio turn cancelled (session=%s)", session_id)
+            raise
+        except Exception as exc:
+            logger.error("[Turn] Audio turn error (session=%s): %s", session_id, exc)
+            try:
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": "Turn processing failed. Please try again.",
+                }))
+            except Exception:
+                pass
+        finally:
+            sm.force(CallState.IDLE, reason="audio_turn_done")
+
+    # ── Main message loop ─────────────────────────────────────────────
     try:
         while True:
             raw = await websocket.receive_text()
@@ -1404,239 +1881,161 @@ async def voice_conversation_ws(
             try:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "message": "Invalid JSON",
-                }))
+                await websocket.send_text(json.dumps({"type": "error", "message": "Invalid JSON"}))
                 continue
 
             msg_type = msg.get("type", "")
+            logger.debug("[WS] msg=%s state=%s session=%s", msg_type, sm.state.value, session_id)
 
-            # ── Ping/Pong ────────────────────────────────────
+            # ── Ping ─────────────────────────────────────────
             if msg_type == "ping":
-                await websocket.send_text(json.dumps({"type": "pong"}))
+                await websocket.send_text(json.dumps({
+                    "type": "pong",
+                    "state": sm.state.value,
+                }))
                 continue
 
-            # ── Text message ─────────────────────────────────
+            # ── State query ───────────────────────────────────
+            if msg_type == "get_state":
+                await websocket.send_text(json.dumps({
+                    "type": "state",
+                    "state": sm.state.value,
+                }))
+                continue
+
+            # ── Text message ──────────────────────────────────
             if msg_type == "text":
                 user_text = msg.get("text", "").strip()
                 if not user_text:
                     continue
 
-                # Store user message
-                user_msg = ConversationMessage(
-                    role=MessageRole.USER,
-                    text=user_text,
-                    language=session.language,
-                )
-                session.messages.append(user_msg)
+                # Cancel any in-flight pipeline before starting new turn
+                if sm.is_busy():
+                    await _cancel_current_turn(reason="new_text_message")
 
-                # Generate LLM response
-                llm_messages = [
-                    {"role": m.role.value, "content": m.text}
-                    for m in session.messages
-                    if m.role != MessageRole.SYSTEM
-                ]
-                response_text = await _generate_llm_response(
-                    messages=llm_messages,
-                    system_prompt=agent["system_prompt"],
-                    language=session.language,
-                )
+                current_turn_task = asyncio.create_task(_fire_text_turn(user_text))
+                continue
 
-                # Store assistant message
-                assistant_msg = ConversationMessage(
-                    role=MessageRole.ASSISTANT,
-                    text=response_text,
-                    language=session.language,
-                    emotion="friendly",
-                )
-                session.messages.append(assistant_msg)
-
-                # Send text response first
-                await websocket.send_text(json.dumps({
-                    "type": "text_response",
-                    "text": response_text,
-                    "emotion": "friendly",
-                    "message_id": assistant_msg.id,
-                }))
-
-                # Synthesize and send audio (non-blocking)
-                agent_is_speaking = True
-                if interrupt_mgr:
-                    interrupt_mgr.reset()
-                audio_b64 = await _synthesize_audio(
-                    text=response_text,
-                    language=session.language,
-                    voice_id=agent.get("voice"),
-                )
-                if audio_b64:
-                    if interrupt_mgr:
-                        interrupt_mgr.set_agent_text(response_text)
-                    await websocket.send_text(json.dumps({
-                        "type": "audio_response",
-                        "audio": audio_b64,
-                        "text": response_text,
-                        "emotion": "friendly",
-                        "format": "mp3",
-                        "message_id": assistant_msg.id,
-                    }))
-                agent_is_speaking = False
-
-            # ── Audio chunk ──────────────────────────────────
-            elif msg_type == "audio_chunk":
+            # ── Audio chunk ───────────────────────────────────
+            if msg_type == "audio_chunk":
                 audio_data = msg.get("data", "")
                 if not audio_data:
                     continue
-
                 try:
                     decoded = base64.b64decode(audio_data)
                 except Exception:
                     await websocket.send_text(json.dumps({
-                        "type": "error",
-                        "message": "Invalid base64 audio data",
+                        "type": "error", "message": "Invalid base64 audio data",
                     }))
                     continue
 
-                # ── Barge-in detection during agent playback ──
-                if agent_is_speaking and interrupt_mgr:
+                # Barge-in check when pipeline is active
+                if sm.is_busy() and interrupt_mgr:
                     decision = await interrupt_mgr.check(decoded)
 
                     if decision.action == InterruptAction.INTERRUPT:
-                        # Real interrupt confirmed — cancel everything
-                        agent_is_speaking = False
+                        logger.info("[Barge-in] Confirmed (session=%s)", session_id)
+                        await _cancel_current_turn(reason="barge_in")
 
-                        if task_tracker:
-                            cancelled = await task_tracker.cancel_all(session_id)
-                            logger.info(
-                                "Interrupt: cancelled %d tasks (session=%s)",
-                                cancelled,
-                                session_id,
-                            )
-
-                        # Notify client to stop playback
                         await websocket.send_text(json.dumps({
                             "type": "interrupted",
-                            "message": "Barge-in detected",
+                            "message": "Barge-in detected — pipeline cancelled",
                             "reason": decision.reason,
                             "agent_partial_text": decision.agent_partial_text,
                         }))
 
-                        # Inject interrupt context into conversation
                         if decision.agent_partial_text:
-                            interrupt_note = ConversationMessage(
+                            session.messages.append(ConversationMessage(
                                 role=MessageRole.SYSTEM,
                                 text=(
-                                    f"[Agent was interrupted. Agent had said: "
-                                    f"'{decision.agent_partial_text}'. "
-                                    f"User interrupted with: "
-                                    f"'{decision.transcript or '[speech]'}']"
+                                    f"[Agent interrupted mid-reply. "
+                                    f"Said so far: '{decision.agent_partial_text}'. "
+                                    f"User spoke: '{decision.transcript or '[speech]'}']"
                                 ),
                                 language=session.language,
-                            )
-                            session.messages.append(interrupt_note)
+                            ))
 
-                        # Feed accumulated audio as the start of new input
+                        # Seed next turn buffer with speech that triggered barge-in
+                        audio_buffer.clear()
                         if decision.accumulated_audio:
-                            audio_buffer.clear()
                             audio_buffer.append(decision.accumulated_audio)
-
+                        audio_buffer.append(decoded)
+                        await sm.transition(CallState.LISTENING, reason="barge_in_audio")
                         continue
 
                     if decision.action == InterruptAction.WAIT:
-                        # Still checking — buffer audio but don't process yet
                         audio_buffer.append(decoded)
                         continue
 
-                    # IGNORE — not speech, just buffer normally
-                    # (don't add to buffer during playback if it's noise)
+                    # IGNORE (noise during playback)
                     continue
 
-                # Normal mode — agent not speaking, buffer audio
-                audio_buffer.append(decoded)
+                # Buffer incoming audio when in IDLE or LISTENING
+                if sm.can_accept_audio():
+                    await sm.transition(CallState.LISTENING, reason="audio_chunk")
+                    audio_buffer.append(decoded)
+                continue
 
             # ── End turn (process buffered audio) ────────────
-            elif msg_type == "end_turn":
-                if audio_buffer:
-                    combined_audio = b"".join(audio_buffer)
-                    audio_buffer.clear()
+            if msg_type == "end_turn":
+                if sm.is_busy():
+                    logger.debug("[WS] end_turn ignored — pipeline busy (state=%s)", sm.state.value)
+                    continue
+                if not audio_buffer:
+                    logger.debug("[WS] end_turn — empty audio buffer, skipping")
+                    continue
 
-                    # Mark agent as speaking before processing
-                    agent_is_speaking = True
-                    if interrupt_mgr:
-                        interrupt_mgr.reset()
-
-                    # Premium/enterprise tiers route through S2S orchestrator
-                    # for low-latency full-duplex audio (Track B/C/D).
-                    # Standard/budget tiers use the parallel pipeline (Track A).
-                    use_s2s = client_tier in ("premium", "enterprise")
-
-                    if use_s2s:
-                        await _handle_turn_s2s(
-                            websocket=websocket,
-                            audio=combined_audio,
-                            session=session,
-                            agent=agent,
-                            client_tier=client_tier,
-                        )
-                    else:
-                        await _handle_turn_parallel_interruptible(
-                            websocket=websocket,
-                            audio=combined_audio,
-                            session=session,
-                            agent=agent,
-                            task_tracker=task_tracker,
-                            interrupt_mgr=interrupt_mgr,
-                        )
-
-                    agent_is_speaking = False
-
-            # ── Interrupt (explicit client interrupt) ────────
-            elif msg_type == "interrupt":
-                agent_is_speaking = False
+                combined_audio = b"".join(audio_buffer)
                 audio_buffer.clear()
 
-                if task_tracker:
-                    cancelled = await task_tracker.cancel_all(session_id)
-                    logger.info(
-                        "Explicit interrupt: cancelled %d tasks (session=%s)",
-                        cancelled,
-                        session_id,
-                    )
+                ok = await sm.transition(CallState.PROCESSING, reason="end_turn")
+                if not ok:
+                    continue
 
                 if interrupt_mgr:
                     interrupt_mgr.reset()
 
+                current_turn_task = asyncio.create_task(_run_audio_turn(combined_audio))
+                continue
+
+            # ── Explicit interrupt ────────────────────────────
+            if msg_type == "interrupt":
+                logger.info("[WS] Explicit interrupt (session=%s)", session_id)
+                await _cancel_current_turn(reason="explicit_interrupt")
+                audio_buffer.clear()
                 await websocket.send_text(json.dumps({
                     "type": "interrupted",
-                    "message": "Audio buffer cleared, tasks cancelled",
+                    "message": "Pipeline cancelled by client request",
                 }))
+                continue
 
-            else:
-                await websocket.send_text(json.dumps({
-                    "type": "error",
-                    "message": f"Unknown message type: {msg_type}",
-                }))
+            await websocket.send_text(json.dumps({
+                "type": "error",
+                "message": f"Unknown message type: {msg_type}",
+            }))
 
     except WebSocketDisconnect:
-        logger.info("WS voice conversation disconnected: session=%s", session_id)
+        logger.info("[WS] Disconnected: session=%s state=%s", session_id, sm.state.value)
     except Exception as exc:
-        logger.error(
-            "WS voice conversation error: session=%s error=%s",
-            session_id,
-            exc,
-        )
+        logger.error("[WS] Error: session=%s error=%s", session_id, exc)
     finally:
-        # Clean up interrupt tracking
+        # Cancel any running pipeline
+        if current_turn_task and not current_turn_task.done():
+            current_turn_task.cancel()
         if task_tracker:
-            task_tracker.cleanup_session(session_id)
+            try:
+                await task_tracker.cancel_all(session_id)
+                task_tracker.cleanup_session(session_id)
+            except Exception:
+                pass
 
         # Mark session as ended
         if session_id in _sessions:
-            _sessions[session_id].ended_at = (
-                datetime.datetime.utcnow().isoformat()
-            )
-        # Fire training pipeline for Track A calls (corpus flywheel)
-        # Non-S2S (standard/budget) calls contribute to the Tamil training corpus.
+            _sessions[session_id].ended_at = datetime.datetime.utcnow().isoformat()
+
+        logger.info("[WS] Session closed: session=%s", session_id)
+
+        # Fire training corpus pipeline (Track A calls only)
         if client_tier not in ("premium", "enterprise"):
             asyncio.create_task(
                 _fire_training_pipeline(session_id, session.language)
