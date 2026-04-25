@@ -169,3 +169,109 @@ async def stt_stream(
         await client_ws.close()
     except Exception:
         pass
+
+
+# =====================================================================
+# Batch STT for Indic languages (multilingual-fix v2)
+# =====================================================================
+# Deepgram Nova-2 streaming only supports Hindi from the Indic family
+# (no Tamil/Telugu/Kannada/Malayalam/Bengali/Marathi/Gujarati/Punjabi/
+# Odia).  When the browser records audio for those languages we POST
+# the whole blob here and route it through the ensemble (Sarvam first,
+# then Bhashini, then Whisper) which handles native scripts properly.
+#
+# This endpoint accepts ANY language code and will:
+#   - send Indic codes through transcribe_ensemble (Sarvam path)
+#   - send English through Deepgram REST
+#   - return the actual detected language code in the response
+#
+# Use it from the frontend with a MediaRecorder push-to-talk pattern
+# any time the selected language is something other than en/hi.
+
+from fastapi import File, Form, UploadFile  # noqa: E402
+
+INDIC_BATCH_LANGS = {"ta", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or",
+                     "as", "ur", "ne", "kok", "mni", "sd", "sa"}
+
+
+@router.post("/transcribe")
+async def transcribe_batch(
+    file: UploadFile = File(...),
+    language: str | None = Form(None, description="ISO language hint (omit for auto-detect)"),
+):
+    """Batch STT for recorded audio. Returns transcript + detected language.
+
+    Routes Indic languages through Sarvam (correct script output) and
+    falls back to the ensemble for everything else.  The detected
+    language in the response is the AUTHORITATIVE one — the frontend
+    should use it as the next turn's tts_language hint, NOT the one it
+    requested.
+    """
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        return {"text": "", "language": language or "en", "provider": "none",
+                "confidence": 0.0, "error": "empty audio"}
+
+    norm = (language or "").lower().split("-")[0] or None
+
+    try:
+        from voice_engine.api_providers import transcribe_ensemble
+        result = await transcribe_ensemble(audio_bytes, language=norm)
+    except Exception as exc:
+        logger.warning("Batch STT ensemble failed: %s", exc)
+        return {"text": "", "language": norm or "en", "provider": "error",
+                "confidence": 0.0, "error": str(exc)[:200]}
+
+    text = result.get("text", "")
+    detected = (result.get("language") or norm or "en").lower().split("-")[0]
+
+    # Refine detection with script analysis on the transcript itself.
+    # Catches Sarvam mis-routing (e.g. Tamil audio transcribed in Hindi script).
+    try:
+        from voice_engine.lang_detect import pick_tts_language
+        chosen, reason = pick_tts_language(
+            user_hint=norm, stt_detected=detected, text=text,
+        )
+        if chosen != detected:
+            logger.info("Batch STT lang refine: %s → %s (%s)", detected, chosen, reason)
+            detected = chosen
+    except Exception:
+        pass
+
+    return {
+        "text": text,
+        "language": detected,
+        "provider": result.get("provider", "ensemble"),
+        "confidence": result.get("confidence", 0.85),
+    }
+
+
+def should_use_batch(language: str | None) -> bool:
+    """Helper exported for the frontend: True when batch STT is required.
+
+    Use this on the client to decide whether to open the WebSocket
+    streamer (Deepgram-supported) or do MediaRecorder push-to-talk
+    against /transcribe (everything else).
+    """
+    if not language:
+        return False  # let user pick streaming for auto-detect
+    return language.lower().split("-")[0] in INDIC_BATCH_LANGS
+
+
+@router.get("/health")
+async def stt_health():
+    """Quick configuration check — call this from a browser tab to see
+    which STT providers are wired up.  If sarvam=false you will not get
+    multilingual STT no matter what the UI does."""
+    return {
+        "deepgram": bool(os.getenv("DEEPGRAM_API_KEY")),
+        "sarvam": bool(os.getenv("SARVAM_API_KEY")),
+        "groq_whisper": bool(os.getenv("GROQ_API_KEY")),
+        "openai_whisper": bool(os.getenv("OPENAI_API_KEY")),
+        "indic_batch_languages": sorted(INDIC_BATCH_LANGS),
+        "deepgram_streaming_languages": sorted(_NOVA2_SUPPORTED),
+        "recommendation": (
+            "Set SARVAM_API_KEY in .env for Tamil/Telugu/Kannada/Malayalam/Bengali/Marathi/Gujarati/Punjabi/Odia. "
+            "Without it, batch STT falls back to Whisper which has worse Indic accuracy."
+        ) if not os.getenv("SARVAM_API_KEY") else "OK",
+    }

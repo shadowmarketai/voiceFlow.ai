@@ -883,20 +883,42 @@ class VoiceAIService:
         The browser has already done STT (Deepgram JS SDK); this method runs the
         LLM + TTS streaming pipeline and yields GAP-3/GAP-4 optimised events:
 
+          {"type": "language",    "from": "en", "to": "ta", "reason": "..."}
           {"type": "filler",      "audio_base64": "...", "cancellable": true}
           {"type": "llm_partial", "text": "..."}
           {"type": "audio_chunk", "index": N, "text": "...", "audio_base64": "..."}
-          {"type": "done",        "total_ms": int, "ttfa_ms": int, "text": "full reply"}
+          {"type": "done",        "total_ms": int, "ttfa_ms": int, "text": "full reply", "language": "ta"}
         """
         import asyncio
 
         t_start = time.time()
         t_first_audio: float | None = None
-        lang = (language or "en")[:2].lower()
 
         if not user_text.strip():
             yield {"type": "done", "total_ms": 0, "ttfa_ms": 0, "text": "", "reason": "empty_input"}
             return
+
+        # ── Per-turn language detection (multilingual fix v2) ────────────────
+        # The browser sent us text, but we don't know what language it actually
+        # is — Deepgram may have transliterated Tamil/Telugu to English, or the
+        # user typed in a script that doesn't match the agent's configured
+        # language. Run script + romanized-Indic detection on the text itself.
+        from voice_engine.lang_detect import pick_tts_language
+        chosen_lang, lang_reason = pick_tts_language(
+            user_hint=tts_language or language,
+            stt_detected=language if language and language != "en" else None,
+            text=user_text,
+        )
+
+        # Tell the client which language we picked, so the UI can show it
+        # AND so the next turn can pass that as the new tts_language hint.
+        if chosen_lang != (tts_language or "en"):
+            yield {"type": "language", "from": tts_language or "en",
+                   "to": chosen_lang, "reason": lang_reason}
+
+        # All downstream stages now use chosen_lang, not the request defaults.
+        lang = chosen_lang[:2].lower()
+        tts_language = chosen_lang
 
         # ── GAP-4: emit filler immediately ────────────────────────────────────
         from voice_engine.filler_engine import get_filler_engine as _get_filler_engine
@@ -948,7 +970,8 @@ class VoiceAIService:
 
         total_ms = (time.time() - t_start) * 1000
         ttfa_ms = int((t_first_audio - t_start) * 1000) if t_first_audio else 0
-        yield {"type": "done", "total_ms": int(total_ms), "ttfa_ms": ttfa_ms, "text": full_text}
+        yield {"type": "done", "total_ms": int(total_ms), "ttfa_ms": ttfa_ms,
+               "text": full_text, "language": chosen_lang}
 
     async def handle_turn(self, request: VoiceTurnRequest) -> VoiceTurnResponse:
         """
