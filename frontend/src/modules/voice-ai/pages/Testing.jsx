@@ -212,8 +212,9 @@ export default function Testing() {
   const [detectedLang, setDetectedLang] = useState('en')
   const [autoDetectMsg, setAutoDetectMsg] = useState('')
 
-  const [llmOverride, setLlmOverride] = useState('')
-  const [ttsOverride, setTtsOverride] = useState('')
+  // Save toggles — gate what gets written to agentsAPI.logCall
+  const [saveRecording, setSaveRecording] = useState(true)
+  const [saveTranscript, setSaveTranscript] = useState(true)
 
   const [message, setMessage] = useState('')
   const [conversation, setConversation] = useState([])
@@ -227,6 +228,7 @@ export default function Testing() {
   const [agentSpeaking, setAgentSpeaking] = useState(false)
 
   const [lastDiag, setLastDiag] = useState(null)
+  const [diagOpen, setDiagOpen] = useState(false)
 
   /* ── STT health check on mount ─────────────────────────────────── */
   // Surfaces a banner if Sarvam isn't configured — that's the #1
@@ -248,6 +250,7 @@ export default function Testing() {
       firstMessage: cfg.firstMessage || '',
       provider: (cfg.llmProvider && cfg.llmProvider !== 'groq') ? cfg.llmProvider : 'gemini',
       voice: cfg.voice || 'nova',
+      ttsEngine: cfg.ttsEngine || cfg.tts_engine || 'auto',
       defaultLang: LEGACY_LANG_MAP[currentAgent.language] ||
                    LEGACY_LANG_MAP[currentAgent.language?.split('+')?.[0]?.trim()] || 'en',
     }
@@ -300,12 +303,14 @@ export default function Testing() {
 
   /* ── Save conversation ──────────────────────────────────────── */
   const saveConversationToDB = useCallback(async (conv, agent) => {
+    if (!saveRecording) return
     if (!agent || !conv || conv.length < 2 || savedRef.current) return
     savedRef.current = true
     const userMsgs = conv.filter(m => m.role === 'user')
     if (userMsgs.length === 0) return
-    const transcript = conv.filter(m => !m.pending)
-      .map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`).join('\n')
+    const transcript = saveTranscript
+      ? conv.filter(m => !m.pending).map(m => `${m.role === 'user' ? 'User' : 'Agent'}: ${m.text}`).join('\n')
+      : undefined
     const lastEmotion = conv.filter(m => m.emotion).slice(-1)[0]?.emotion || 'neutral'
     const now = new Date().toISOString()
     const startedAt = sessionStartRef.current || now
@@ -323,7 +328,7 @@ export default function Testing() {
                 agent_name: agent.name, language: detectedLang || 'en' },
       })
     } catch {}
-  }, [detectedLang])
+  }, [detectedLang, saveRecording, saveTranscript])
 
   useEffect(() => () => saveConversationToDB(conversation, currentAgent), []) // eslint-disable-line
   useEffect(() => {
@@ -421,7 +426,7 @@ export default function Testing() {
           text,
           system_prompt: agentConfig.systemPrompt,
           language: userBubbleLang || 'en',
-          llm_provider: llmOverride || agentConfig.provider || 'gemini',
+          llm_provider: agentConfig.provider || 'gemini',
           tts_language: userBubbleLang || 'en',
           conversation_history: historyMsgs,
         }),
@@ -479,7 +484,7 @@ export default function Testing() {
         out.push({
           role: 'agent', text: reply, timestamp: ts(),
           emotion: 'neutral', intent: 'reply', confidence,
-          provider: llmOverride || agentConfig.provider, latency: latencyMs,
+          provider: agentConfig.provider, latency: latencyMs,
           language: backendLang,
         })
         return out
@@ -489,12 +494,12 @@ export default function Testing() {
         sttProvider: meta.sttProvider || 'deepgram-stream',
         sttConfidence: meta.sttConfidence || confidence,
         detectedLang: backendLang,
-        llmProvider: llmOverride || agentConfig.provider || 'gemini',
-        ttsProvider: ttsOverride || 'auto',
+        llmProvider: agentConfig.provider || 'gemini',
+        ttsProvider: agentConfig.ttsEngine || 'auto',
         latencyMs,
       })
 
-      if (firstChunk && ttsEnabled) await playTTS(reply, agentConfig.voice, backendLang, ttsOverride || 'auto')
+      if (firstChunk && ttsEnabled) await playTTS(reply, agentConfig.voice, backendLang, 'auto')
     } catch (e) {
       try {
         const { data } = await api.post('/api/v1/chat', {
@@ -511,7 +516,7 @@ export default function Testing() {
                      language: userBubbleLang })
           return out
         })
-        if (ttsEnabled) await playTTS(reply, agentConfig.voice, userBubbleLang, ttsOverride || 'auto')
+        if (ttsEnabled) await playTTS(reply, agentConfig.voice, userBubbleLang, 'auto')
       } catch (e2) {
         const detail = e2.response?.data?.detail || 'LLM call failed'
         setConversation(prev => {
@@ -525,7 +530,7 @@ export default function Testing() {
       setAgentSpeaking(false)
       agentSpeakingRef.current = false
     }
-  }, [agentConfig, ttsEnabled, llmOverride, ttsOverride, effectiveLang])
+  }, [agentConfig, ttsEnabled, effectiveLang])
 
   const handleSend = async () => {
     const text = message.trim()
@@ -650,6 +655,13 @@ export default function Testing() {
           <p className="text-gray-500 mt-1 text-sm">Multilingual-aware testing — speak any of 12 Indian languages</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* STT health — collapsed to small badge */}
+          {sttHealth && !sttHealth.sarvam && (
+            <span title="Sarvam API key not configured — Indic STT falls back to Whisper (lower accuracy). Add SARVAM_API_KEY to .env and restart."
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs cursor-help">
+              <AlertTriangle className="w-3 h-3" /> Sarvam missing
+            </span>
+          )}
           <button onClick={() => setTtsEnabled(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium border transition-all ${
               ttsEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -672,20 +684,6 @@ export default function Testing() {
           )}
         </div>
       </div>
-
-      {/* ── STT Health Banner — shows when Sarvam is missing ── */}
-      {sttHealth && !sttHealth.sarvam && (
-        <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="flex-1 text-xs">
-            <div className="font-semibold text-amber-900">Sarvam API key not configured</div>
-            <div className="text-amber-700 mt-0.5">
-              Tamil/Telugu/Kannada/Malayalam/Bengali/etc. STT will fall back to Whisper (lower accuracy).
-              Add <code className="font-mono bg-amber-100 px-1 rounded">SARVAM_API_KEY=sk_...</code> to your <code className="font-mono bg-amber-100 px-1 rounded">.env</code> and restart.
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── LANGUAGE PICKER ── */}
       <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 border border-indigo-100">
@@ -732,10 +730,11 @@ export default function Testing() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* ── Chat ── */}
+        {/* ── Chat — col-span-2 ── */}
         <motion.div variants={fadeUp} initial="hidden" animate="show"
           className="lg:col-span-2 flex flex-col bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden"
           style={{ minHeight: 560 }}>
+
           {/* Agent selector */}
           <div className="p-4 border-b border-gray-100">
             {agentsLoading ? (
@@ -763,11 +762,17 @@ export default function Testing() {
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Using <span className="font-medium text-gray-700">{currentAgent.name}</span></span>
                 <span className="text-gray-300">•</span>
-                <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100 font-mono">{llmOverride || agentConfig.provider}</span>
+                <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-100 font-mono">{agentConfig.provider}</span>
                 <span className="text-gray-300">•</span>
                 <span className="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 font-mono">{effectiveLang.toUpperCase()}</span>
               </div>
             )}
+          </div>
+
+          {/* Save toggles */}
+          <div className="flex items-center gap-5 px-4 py-2 bg-gray-50/60 border-b border-gray-100">
+            <SaveToggle label="Save Recording" value={saveRecording} onChange={setSaveRecording} />
+            <SaveToggle label="Save Transcript" value={saveTranscript} onChange={setSaveTranscript} />
           </div>
 
           {/* Messages */}
@@ -869,10 +874,71 @@ export default function Testing() {
           </div>
         </motion.div>
 
-        {/* ── Right column ── */}
-        <div className="space-y-5">
-          {/* Voice Call */}
+        {/* ── Right column — clean ── */}
+        <div className="space-y-4">
+          {/* 1. Active Pipeline chips */}
+          <motion.div variants={fadeUp} initial="hidden" animate="show"
+            className="p-4 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">Active Pipeline</div>
+            <div className="flex flex-wrap gap-2">
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-xs font-mono border border-indigo-100">
+                <Activity className="w-3 h-3" />
+                STT: {sttMode === 'stream' ? 'deepgram' : 'sarvam'}
+              </span>
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 text-xs font-mono border border-violet-100">
+                <Brain className="w-3 h-3" />
+                LLM: {agentConfig.provider || 'gemini'}
+              </span>
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-pink-50 text-pink-700 text-xs font-mono border border-pink-100">
+                <AudioLines className="w-3 h-3" />
+                TTS: {agentConfig.ttsEngine || 'auto'}
+              </span>
+            </div>
+          </motion.div>
+
+          {/* 2. Live Transcription */}
           <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.05 }}
+            className="p-4 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="p-1.5 rounded-lg bg-indigo-50"><Activity className="w-4 h-4 text-indigo-600" /></div>
+              <h3 className="text-sm font-semibold text-gray-900">Live Transcription</h3>
+            </div>
+            <div className="min-h-[100px] p-3 rounded-xl bg-gray-50/80 border border-gray-200/60 space-y-2 max-h-[180px] overflow-y-auto">
+              {sttMode === 'stream' ? (
+                <>
+                  {finals.map((f, i) => <p key={i} className="text-sm text-gray-800 leading-relaxed">{f.text}</p>)}
+                  {partial && <p className="text-sm text-gray-400 italic leading-relaxed">{partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" /></p>}
+                  {!finals.length && !partial && (
+                    recording ? (
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+                        </span>
+                        <p className="text-sm text-gray-600">Listening…</p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400">Deepgram streaming. Click mic to start.</p>
+                    )
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-gray-400">
+                  {recording
+                    ? <div className="flex items-center gap-2 text-amber-700"><Radio className="w-3.5 h-3.5 animate-pulse" /> Recording {langInfo.label}…</div>
+                    : <span className="text-xs">Push-to-talk ({langInfo.label}). Tap mic to record.</span>}
+                </div>
+              )}
+              {sttError && (
+                <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{sttError}</span>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          {/* 3. Voice Call */}
+          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.1 }}
             className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
             {voiceCallActive ? (
               <div className="flex flex-col items-center gap-4 p-6">
@@ -916,127 +982,56 @@ export default function Testing() {
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-4 p-8">
-                <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-200">
-                  <Phone className="w-10 h-10 text-white" />
+              <div className="flex flex-col items-center gap-4 p-6">
+                <div className="w-16 h-16 rounded-full flex items-center justify-center shadow-lg bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-200">
+                  <Phone className="w-8 h-8 text-white" />
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">Voice Call</h3>
-                <p className="text-sm text-gray-500 text-center max-w-xs">
-                  {sttMode === 'stream'
-                    ? 'Hands-free continuous conversation. Speak naturally.'
-                    : `${langInfo.label}: tap-to-talk call. Mic auto-starts each turn.`}
-                </p>
+                <div className="text-center">
+                  <h3 className="text-base font-semibold text-gray-900">Voice Call</h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {sttMode === 'stream' ? 'Hands-free continuous conversation.' : `${langInfo.label}: tap-to-talk mode.`}
+                  </p>
+                </div>
                 <button onClick={startVoiceCall} disabled={!currentAgent}
-                  className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-200 hover:shadow-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                  <Phone className="w-5 h-5" /> Start Voice Call
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-200 hover:shadow-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed text-sm">
+                  <Phone className="w-4 h-4" /> Start Voice Call
                 </button>
               </div>
             )}
           </motion.div>
 
-          {/* Live Transcription */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.1 }}
-            className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-3">
-              <div className="p-1.5 rounded-lg bg-indigo-50"><Activity className="w-4 h-4 text-indigo-600" /></div>
-              <h3 className="text-sm font-semibold text-gray-900">Live Transcription</h3>
-            </div>
-            <div className="min-h-[120px] p-4 rounded-xl bg-gray-50/80 border border-gray-200/60 space-y-2 max-h-[200px] overflow-y-auto">
-              {sttMode === 'stream' ? (
-                <>
-                  {finals.map((f, i) => <p key={i} className="text-sm text-gray-800 leading-relaxed">{f.text}</p>)}
-                  {partial && <p className="text-sm text-gray-400 italic leading-relaxed">{partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" /></p>}
-                  {!finals.length && !partial && (
-                    recording ? (
-                      <div className="flex items-center gap-2.5">
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-                        </span>
-                        <p className="text-sm text-gray-600">Listening… speak now</p>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-400">Streaming STT (Deepgram). Click mic to start.</p>
-                    )
-                  )}
-                </>
-              ) : (
-                <div className="text-sm text-gray-400">
-                  {recording
-                    ? <div className="flex items-center gap-2 text-amber-700"><Radio className="w-3.5 h-3.5 animate-pulse" /> Recording {langInfo.label}… tap mic to send</div>
-                    : `Push-to-talk mode (${langInfo.label}). Tap mic to record.`}
-                </div>
-              )}
-              {sttError && (
-                <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{sttError}</span>
-                </div>
-              )}
-            </div>
-          </motion.div>
-
-          {/* Pipeline Diagnostics */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.2 }}
-            className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="p-1.5 rounded-lg bg-violet-50"><Brain className="w-4 h-4 text-violet-600" /></div>
-              <h3 className="text-sm font-semibold text-gray-900">Pipeline Diagnostics</h3>
-            </div>
-            {lastDiag ? (
-              <div className="space-y-2">
-                <DiagRow label="STT Provider" value={lastDiag.sttProvider} color="indigo" />
-                <DiagRow label="Detected Language" value={lastDiag.detectedLang?.toUpperCase()} color="emerald" mono />
-                <DiagRow label="LLM Provider" value={lastDiag.llmProvider} color="violet" />
-                <DiagRow label="TTS Provider" value={lastDiag.ttsProvider} color="pink" />
-                <DiagRow label="Latency (TTFA)" value={`${lastDiag.latencyMs}ms`} color="amber" mono />
-                <DiagRow label="STT Confidence" value={`${((lastDiag.sttConfidence || 0) * 100).toFixed(0)}%`} color="emerald" mono />
+          {/* 4. Pipeline Diagnostics — collapsible accordion */}
+          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.15 }}
+            className="bg-white rounded-2xl border border-gray-200/60 shadow-sm overflow-hidden">
+            <button onClick={() => setDiagOpen(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-gray-50/50 transition-colors">
+              <div className="flex items-center gap-2">
+                <div className="p-1 rounded-md bg-violet-50"><Brain className="w-3.5 h-3.5 text-violet-600" /></div>
+                <span className="text-sm font-semibold text-gray-900">Pipeline Diagnostics</span>
+                {lastDiag && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Has data" />}
               </div>
-            ) : (
-              <div className="p-6 rounded-xl bg-gray-50/50 text-center">
-                <Zap className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                <p className="text-sm text-gray-400">Send a message to see live diagnostics</p>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${diagOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {diagOpen && (
+              <div className="px-4 pb-4 space-y-2 border-t border-gray-100">
+                {lastDiag ? (
+                  <>
+                    <div className="h-3" />
+                    <DiagRow label="STT Provider" value={lastDiag.sttProvider} color="indigo" />
+                    <DiagRow label="Detected Language" value={lastDiag.detectedLang?.toUpperCase()} color="emerald" mono />
+                    <DiagRow label="LLM Provider" value={lastDiag.llmProvider} color="violet" />
+                    <DiagRow label="TTS Provider" value={lastDiag.ttsProvider} color="pink" />
+                    <DiagRow label="Latency (TTFA)" value={`${lastDiag.latencyMs}ms`} color="amber" mono />
+                    <DiagRow label="STT Confidence" value={`${((lastDiag.sttConfidence || 0) * 100).toFixed(0)}%`} color="emerald" mono />
+                  </>
+                ) : (
+                  <div className="py-4 text-center">
+                    <Zap className="w-6 h-6 text-gray-300 mx-auto mb-1" />
+                    <p className="text-xs text-gray-400">Send a message to see diagnostics</p>
+                  </div>
+                )}
               </div>
             )}
-          </motion.div>
-
-          {/* Provider Overrides */}
-          <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ delay: 0.25 }}
-            className="p-5 bg-white rounded-2xl border border-gray-200/60 shadow-sm">
-            <div className="flex items-center gap-2.5 mb-4">
-              <div className="p-1.5 rounded-lg bg-emerald-50"><AudioLines className="w-4 h-4 text-emerald-600" /></div>
-              <h3 className="text-sm font-semibold text-gray-900">Provider Overrides</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">LLM</label>
-                <select value={llmOverride} onChange={e => setLlmOverride(e.target.value)}
-                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-100 transition-all">
-                  <option value="">Agent default ({agentConfig.provider || 'gemini'})</option>
-                  <option value="gemini">Gemini 2.5 Pro</option>
-                  <option value="auto">Auto (Gemini → Groq → OpenAI)</option>
-                  <option value="groq">Groq (fastest)</option>
-                  <option value="openai">OpenAI GPT</option>
-                  <option value="anthropic">Anthropic Claude</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-500 mb-1 block">TTS</label>
-                <select value={ttsOverride} onChange={e => setTtsOverride(e.target.value)}
-                  className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-pink-300 focus:ring-1 focus:ring-pink-100 transition-all">
-                  <option value="">Auto (best for language)</option>
-                  <option value="sarvam">Sarvam AI (best for Indic)</option>
-                  <option value="elevenlabs">ElevenLabs Multilingual</option>
-                  <option value="openai">OpenAI TTS</option>
-                  <option value="edge">Edge TTS (free)</option>
-                </select>
-              </div>
-              <div className="pt-2 mt-1 border-t border-gray-100 text-[11px] text-gray-500">
-                STT auto-routes:&nbsp;
-                <span className="font-mono text-gray-700">
-                  {sttMode === 'stream' ? 'Deepgram WebSocket' : 'Sarvam batch'}
-                </span>
-              </div>
-            </div>
           </motion.div>
         </div>
       </div>
@@ -1052,5 +1047,22 @@ function DiagRow({ label, value, color, mono }) {
         {value || '—'}
       </span>
     </div>
+  )
+}
+
+function SaveToggle({ label, value, onChange }) {
+  return (
+    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+      <button
+        onClick={() => onChange(v => !v)}
+        className={`relative inline-flex h-4 w-7 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${
+          value ? 'bg-emerald-500' : 'bg-gray-300'
+        }`}>
+        <span className={`inline-block h-3 w-3 rounded-full bg-white shadow transition-transform ${
+          value ? 'translate-x-3' : 'translate-x-0'
+        }`} />
+      </button>
+      <span className="text-[11px] text-gray-500">{label}</span>
+    </label>
   )
 }
