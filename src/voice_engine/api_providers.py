@@ -486,8 +486,22 @@ async def call_llm_api(
         except Exception as e:
             logger.warning("%s LLM failed: %s", name, e)
 
-    return {"text": "Thank you for calling. Could you please share more details?",
-            "provider": "stub", "latency_ms": 0}
+    # No LLM provider worked — raise a typed error so the streaming caller
+    # yields a visible message instead of pretending a stub was real.
+    configured = [
+        env_k for (_, env_k, _) in providers_list
+        if os.environ.get(env_k, "")
+    ]
+    if not configured:
+        msg = ("[LLM_NOT_CONFIGURED] No LLM API key reached the server. "
+               "Add GOOGLE_API_KEY (https://aistudio.google.com/app/apikey) to "
+               "Coolify env vars and redeploy.")
+    else:
+        msg = (f"[LLM_ALL_FAILED] Configured providers ({', '.join(configured)}) "
+               "all failed. Check API key validity and network connectivity. "
+               "See container logs for the exact provider error.")
+    logger.error(msg)
+    return {"text": msg, "provider": "error", "latency_ms": 0}
 
 
 # ─── W1.2 Streaming LLM — yields token deltas as SSE events arrive ───

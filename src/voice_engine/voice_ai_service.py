@@ -177,8 +177,18 @@ async def _call_llm(
         except Exception as e:
             logger.warning("Anthropic fallback failed (%s), using stub...", e)
 
-    # --- Stub (dev/demo — no API key) ---
-    return "Thank you for calling. Could you please share more details so I can assist you better?"
+    # --- No LLM available — return visible diagnostic instead of silent stub ---
+    configured = [k for k in ("GOOGLE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY",
+                              "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY")
+                  if os.environ.get(k)]
+    if not configured:
+        msg = ("[LLM_NOT_CONFIGURED] No LLM API key reached the server. "
+               "Add GOOGLE_API_KEY to Coolify env vars and redeploy.")
+    else:
+        msg = (f"[LLM_ALL_FAILED] Providers with keys ({', '.join(configured)}) "
+               "all returned errors. Check container logs for the exact failure.")
+    logger.error(msg)
+    return msg
 
 
 # ---------------------------------------------------------------------------

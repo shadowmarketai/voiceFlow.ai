@@ -817,6 +817,70 @@ def _load_voice_pipeline(application: FastAPI) -> None:
                 },
             )
 
+        @application.get("/api/v1/llm/health")
+        async def llm_health():
+            """Test every LLM provider with a real ping. Visit in browser to
+            debug 'Thank you for calling...' replies instantly.
+            """
+            import os as _os
+            providers_meta = [
+                ("gemini",    "GOOGLE_API_KEY"),
+                ("gemini_alt","GEMINI_API_KEY"),
+                ("groq",      "GROQ_API_KEY"),
+                ("openai",    "OPENAI_API_KEY"),
+                ("anthropic", "ANTHROPIC_API_KEY"),
+                ("deepseek",  "DEEPSEEK_API_KEY"),
+            ]
+            from voice_engine.api_providers import call_llm_api as _call
+
+            results = []
+            for name, env in providers_meta:
+                key = _os.environ.get(env, "")
+                if not key:
+                    results.append({"provider": name, "key_set": False,
+                                    "status": "missing_key", "env_var": env})
+                    continue
+                # Skip the alt-name pings if main key is the same value
+                if name == "gemini_alt" and key == _os.environ.get("GOOGLE_API_KEY"):
+                    results.append({"provider": name, "key_set": True,
+                                    "status": "alias_of_GOOGLE_API_KEY",
+                                    "env_var": env})
+                    continue
+                try:
+                    real_provider = "gemini" if name.startswith("gemini") else name
+                    r = await _call(
+                        system_prompt="Reply with the single word: OK",
+                        user_message="ping", provider=real_provider,
+                    )
+                    text = (r.get("text") or "").strip()
+                    is_stub = text.startswith("[LLM_") or r.get("provider") in ("error", "stub")
+                    results.append({
+                        "provider": name, "key_set": True,
+                        "status": "error" if is_stub else "ok",
+                        "latency_ms": int(r.get("latency_ms", 0)),
+                        "sample": text[:80],
+                        "env_var": env,
+                    })
+                except Exception as exc:
+                    results.append({"provider": name, "key_set": True,
+                                    "status": "exception", "error": str(exc)[:200],
+                                    "env_var": env})
+
+            working = [r for r in results if r.get("status") == "ok"]
+            return {
+                "any_working": bool(working),
+                "providers": results,
+                "recommendation": (
+                    f"OK — {len(working)} provider(s) working: " +
+                    ", ".join(r['provider'] for r in working)
+                    if working
+                    else "❌ NO LLM IS WORKING. Without this, agents reply "
+                         "'Thank you for calling...' to every message. "
+                         "Add GOOGLE_API_KEY (https://aistudio.google.com/app/apikey) "
+                         "to Coolify env vars and redeploy."
+                ),
+            }
+
         @application.post("/api/v1/voice/analyze-and-speak")
         async def analyze_and_speak(
             file: UploadFile = File(...),
