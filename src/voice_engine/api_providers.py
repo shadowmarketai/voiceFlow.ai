@@ -458,6 +458,7 @@ async def call_llm_api(
     providers_list = [
         ("gemini", "GOOGLE_API_KEY", _gemini_llm),
         ("groq", "GROQ_API_KEY", _groq_llm),
+        ("kimi", "KIMI_API_KEY", _kimi_llm),
         ("openai", "OPENAI_API_KEY", _openai_llm),
         ("anthropic", "ANTHROPIC_API_KEY", _anthropic_llm),
         ("deepseek", "DEEPSEEK_API_KEY", _deepseek_llm),
@@ -645,6 +646,8 @@ async def call_llm_stream(
     openai_compat = [
         ("groq", "GROQ_API_KEY", "https://api.groq.com/openai/v1/chat/completions",
          model or "llama-3.1-8b-instant"),
+        ("kimi", "KIMI_API_KEY", "https://api.moonshot.cn/v1/chat/completions",
+         model or "moonshot-v1-8k"),
         ("openai", "OPENAI_API_KEY", "https://api.openai.com/v1/chat/completions",
          model or "gpt-4o-mini"),
         ("deepseek", "DEEPSEEK_API_KEY", "https://api.deepseek.com/v1/chat/completions",
@@ -655,7 +658,7 @@ async def call_llm_stream(
     # it first (preserve user's explicit choice).  Otherwise just cascade
     # through all of them in order, which gives us proper fallback behaviour
     # when the requested provider (gemini) failed silently.
-    if provider in ("groq", "openai", "deepseek"):
+    if provider in ("groq", "kimi", "openai", "deepseek"):
         openai_compat = (
             [p for p in openai_compat if p[0] == provider] +
             [p for p in openai_compat if p[0] != provider]
@@ -779,6 +782,21 @@ async def _deepseek_llm(system_prompt: str, user_message: str, api_key: str, mod
             "https://api.deepseek.com/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={"model": model or "deepseek-chat",
+                  "messages": [{"role": "system", "content": system_prompt},
+                               {"role": "user", "content": user_message}],
+                  "max_tokens": 200, "temperature": 0.7},
+        )
+        resp.raise_for_status()
+        return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+async def _kimi_llm(system_prompt: str, user_message: str, api_key: str, model: str = None) -> str:
+    """Kimi (Moonshot AI) — OpenAI-compatible, strong multilingual."""
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            "https://api.moonshot.cn/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": model or "moonshot-v1-8k",
                   "messages": [{"role": "system", "content": system_prompt},
                                {"role": "user", "content": user_message}],
                   "max_tokens": 200, "temperature": 0.7},

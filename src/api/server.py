@@ -829,18 +829,20 @@ def _load_voice_pipeline(application: FastAPI) -> None:
                 ("gemini",    "GOOGLE_API_KEY"),
                 ("gemini_alt","GEMINI_API_KEY"),
                 ("groq",      "GROQ_API_KEY"),
+                ("kimi",      "KIMI_API_KEY"),
                 ("openai",    "OPENAI_API_KEY"),
                 ("anthropic", "ANTHROPIC_API_KEY"),
                 ("deepseek",  "DEEPSEEK_API_KEY"),
             ]
             from voice_engine.api_providers import (
                 _gemini_llm, _groq_llm, _openai_llm,
-                _anthropic_llm, _deepseek_llm, _google_key,
+                _anthropic_llm, _deepseek_llm, _kimi_llm, _google_key,
             )
             funcs = {
                 "gemini":     _gemini_llm,
                 "gemini_alt": _gemini_llm,
                 "groq":       _groq_llm,
+                "kimi":       _kimi_llm,
                 "openai":     _openai_llm,
                 "anthropic":  _anthropic_llm,
                 "deepseek":   _deepseek_llm,
