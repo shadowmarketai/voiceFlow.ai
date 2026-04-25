@@ -230,6 +230,14 @@ def _register_lifecycle(application: FastAPI) -> None:
         except Exception as exc:
             logger.warning("Leads database init warning: %s", exc)
 
+        # Initialize multi-DB tables (CRM, Recording, Voice DBs)
+        try:
+            from api.multi_db import init_all_db_tables
+            await init_all_db_tables()
+            logger.info("Multi-DB tables initialized (CRM / Recording / Voice).")
+        except Exception as exc:
+            logger.warning("Multi-DB init warning: %s", exc)
+
         # Initialize voice engine (lazy — fails gracefully)
         try:
             from voice_engine.engine import VoiceFlowEngine
@@ -679,7 +687,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             language: str | None = None,
             system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
             llm_provider: str = "groq",
-            tts_language: str = "en",
+            tts_language: str | None = None,
             voice_id: str | None = None,
         ):
             """Full voice conversation turn: upload audio -> get AI voice response."""
@@ -716,7 +724,7 @@ def _load_voice_pipeline(application: FastAPI) -> None:
             language: str | None = None,
             system_prompt: str = "You are a helpful sales assistant. Keep responses under 40 words.",
             llm_provider: str = "groq",
-            tts_language: str = "en",
+            tts_language: str | None = None,
             voice_id: str | None = None,
         ):
             """Streaming voice turn — yields SSE events with audio chunks.
@@ -741,6 +749,54 @@ def _load_voice_pipeline(application: FastAPI) -> None:
 
             async def event_stream():
                 async for event in svc.handle_turn_stream(req):
+                    yield f"data: {_json.dumps(event)}\n\n"
+
+            return StreamingResponse(
+                event_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "X-Accel-Buffering": "no",
+                },
+            )
+
+        @application.post("/api/v1/voice/text-stream")
+        async def voice_text_stream(request: Request):
+            """Text-based streaming voice turn (SSE) — client has already done STT.
+
+            JSON body:
+              { "text": "...", "system_prompt": "...", "language": "en",
+                "llm_provider": "groq", "tts_language": "en", "voice_id": null }
+
+            Yields SSE events:
+              {"type": "filler",      "audio_base64": "...", "cancellable": true}
+              {"type": "llm_partial", "text": "..."}
+              {"type": "audio_chunk", "index": N, "text": "...", "audio_base64": "..."}
+              {"type": "done",        "total_ms": int, "ttfa_ms": int, "text": "full reply"}
+            """
+            import json as _json
+
+            from fastapi.responses import StreamingResponse
+
+            body = await request.json()
+            user_text = body.get("text", "")
+            system_prompt = body.get("system_prompt", "You are a helpful sales assistant. Keep responses under 40 words.")
+            language = body.get("language", "en")
+            llm_provider = body.get("llm_provider", "groq")
+            tts_language = body.get("tts_language", "en")
+            voice_id = body.get("voice_id")
+
+            svc = get_voice_ai_service()
+
+            async def event_stream():
+                async for event in svc.handle_text_stream(
+                    user_text=user_text,
+                    system_prompt=system_prompt,
+                    language=language,
+                    llm_provider=llm_provider,
+                    tts_language=tts_language,
+                    voice_id=voice_id,
+                ):
                     yield f"data: {_json.dumps(event)}\n\n"
 
             return StreamingResponse(

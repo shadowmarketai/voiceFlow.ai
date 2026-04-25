@@ -5,6 +5,12 @@ Modern SQLAlchemy 2.0 DeclarativeBase with reusable mixins.
 
 KB-001: Uses DeclarativeBase (NOT deprecated declarative_base())
 KB-002: Uses mapped_column() with Mapped[] type hints (NOT Column())
+
+Multi-DB Base classes:
+  Base          → voiceflow_platform  (tenants, users, billing — default DB)
+  CRMBase       → voiceflow_crm       (leads, deals, caller_memories, campaigns)
+  RecordingBase → voiceflow_recording (call_recordings, cloned_voices, voice_library)
+  VoiceBase     → voiceflow_voice     (voice_agents, conversations, analyses, RAG)
 """
 
 from datetime import datetime
@@ -15,10 +21,22 @@ from sqlalchemy.sql import func
 
 
 class Base(DeclarativeBase):
-    """
-    SQLAlchemy 2.0 DeclarativeBase.
-    All models inherit from this class.
-    """
+    """Platform DB — tenants, users, billing, API keys."""
+    pass
+
+
+class CRMBase(DeclarativeBase):
+    """CRM DB — leads, deals, contacts, campaigns, caller_memories."""
+    pass
+
+
+class RecordingBase(DeclarativeBase):
+    """Recording DB — call recordings, voice clones, voice library."""
+    pass
+
+
+class VoiceBase(DeclarativeBase):
+    """Voice & Conversation DB — agents, conversations, turns, analyses, RAG."""
     pass
 
 

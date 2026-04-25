@@ -315,7 +315,13 @@ async def _deepgram_stt(
 
 
 async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: str | None) -> dict[str, Any]:
-    """Sarvam AI — built for Indian languages (Tamil, Hindi, Telugu, etc.)."""
+    """Sarvam AI — built for Indian languages (Tamil, Hindi, Telugu, etc.).
+
+    When `language` is None or unknown, we send `language_code='unknown'`
+    which triggers Sarvam's built-in language identification instead of
+    silently defaulting to Hindi.  The detected language is read back from
+    the response and returned so downstream TTS picks the right voice.
+    """
     # Sarvam confirmed supports these 11 Indic locales as of 2026.
     # Others (as/ur/ne/kok/mni/sd/sa) route to OpenAI Whisper via
     # the chain in transcribe_audio_api().
@@ -325,9 +331,14 @@ async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: str | None) ->
     # Devanagari-family langs (Nepali, Konkani, Sanskrit) — fall back to Hindi
     # locale at Sarvam. Accuracy drops but voice still intelligible.
     devanagari_fallback = {"ne", "kok", "sa"}
-    sarvam_lang = lang_map.get(
-        language, "hi-IN" if (language or "") in devanagari_fallback else "hi-IN"
-    )
+    norm = (language or "").lower().split("-")[0] or None
+    if norm and norm in lang_map:
+        sarvam_lang = lang_map[norm]
+    elif norm and norm in devanagari_fallback:
+        sarvam_lang = "hi-IN"
+    else:
+        # No usable hint — let Sarvam auto-detect instead of pinning to hi-IN.
+        sarvam_lang = "unknown"
 
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         f.write(audio_bytes)
@@ -354,9 +365,15 @@ async def _sarvam_stt(audio_bytes: bytes, api_key: str, language: str | None) ->
     finally:
         os.unlink(tmp_path)
 
+    # Read back the detected language Sarvam actually used.  Falls back to
+    # the requested hint, then "hi" as a last resort.  This is what fixes
+    # the long-standing bug where every auto-detect call reported "hi".
+    detected_raw = (data.get("language_code") or sarvam_lang or "").lower()
+    detected = detected_raw.split("-")[0] if detected_raw and detected_raw != "unknown" else (norm or "hi")
+
     return {
         "text": data.get("transcript", ""),
-        "language": language or "hi",
+        "language": detected,
         "provider": "sarvam", "confidence": data.get("confidence", 0.85),
     }
 

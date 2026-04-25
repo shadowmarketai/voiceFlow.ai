@@ -195,7 +195,7 @@ class VoiceTurnRequest:
         voice_id: str | None = None,
         llm_provider: str = "gemini",
         llm_model: str | None = None,
-        tts_language: str = "en",
+        tts_language: str | None = None,
         tts_emotion: str | None = None,
         dialect: str | None = None,
         # Cross-call memory

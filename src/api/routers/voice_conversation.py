@@ -483,6 +483,57 @@ async def _synthesize_audio(
 
 
 # =====================================================================
+# Per-turn language resolution (multilingual fix)
+# =====================================================================
+# This is the missing glue that lets the WebSocket handlers honour the
+# caller's actual spoken language instead of being pinned to whatever
+# session.language was set at startup.
+#
+# Strategy:
+#   1. After STT, call pick_tts_language() with three signals:
+#      - user_hint     = current session.language (sticky default)
+#      - stt_detected  = language Sarvam/Whisper actually returned
+#      - text          = transcript (script + romanized-Indic detection)
+#   2. If the chosen language differs from session.language for two
+#      consecutive turns, promote it to the new session default.
+#      Two-turn confirmation prevents flip-flopping on a single misheard
+#      backchannel.
+
+def _resolve_turn_language(
+    session: Any,
+    transcription: dict[str, Any],
+) -> str:
+    """Decide which language this turn's LLM + TTS should use.
+
+    Mutates session.metadata to track recent detections for sticky
+    promotion across turns.  Always returns a 2-letter ISO code.
+    """
+    try:
+        from voice_engine.lang_detect import pick_tts_language
+    except ImportError:
+        return session.language or "en"
+
+    chosen, reason = pick_tts_language(
+        user_hint=session.language,
+        stt_detected=transcription.get("language"),
+        text=transcription.get("text") or "",
+    )
+
+    # Sticky promotion — only flip session default after 2 turns in a row.
+    # Stops one misheard "hello" from switching the whole call.
+    last = session.metadata.get("_last_detected_lang")
+    session.metadata["_last_detected_lang"] = chosen
+    if chosen != session.language and chosen == last:
+        logger.info(
+            "Session %s language flip: %s → %s (reason=%s)",
+            session.session_id, session.language, chosen, reason,
+        )
+        session.language = chosen
+
+    return chosen
+
+
+# =====================================================================
 # Router: Voice Conversation (REST)
 # =====================================================================
 
@@ -911,20 +962,26 @@ async def _handle_turn_parallel(
     STT → LLM → TTS → send audio back.
     Non-interruptible version (legacy fallback).
     """
-    # Transcribe
-    transcription = await _transcribe_audio(audio, language=session.language)
+    # Transcribe (allow Sarvam to auto-detect by passing None when the
+    # session is still on the English default — this lets multilingual
+    # callers be heard correctly on their first turn).
+    stt_lang_hint = session.language if session.language and session.language != "en" else None
+    transcription = await _transcribe_audio(audio, language=stt_lang_hint)
+
+    # Resolve the actual language for THIS turn (script + romanized + STT).
+    turn_lang = _resolve_turn_language(session, transcription)
 
     await websocket.send_text(json.dumps({
         "type": "transcription",
         "text": transcription["text"],
-        "language": transcription["language"],
+        "language": turn_lang,
         "confidence": transcription["confidence"],
     }))
 
     user_msg = ConversationMessage(
         role=MessageRole.USER,
         text=transcription["text"],
-        language=transcription["language"],
+        language=turn_lang,
         confidence=transcription["confidence"],
         emotion=transcription.get("emotion"),
     )
@@ -938,13 +995,13 @@ async def _handle_turn_parallel(
     response_text = await _generate_llm_response(
         messages=llm_messages,
         system_prompt=agent["system_prompt"],
-        language=session.language,
+        language=turn_lang,
     )
 
     assistant_msg = ConversationMessage(
         role=MessageRole.ASSISTANT,
         text=response_text,
-        language=session.language,
+        language=turn_lang,
         emotion="friendly",
     )
     session.messages.append(assistant_msg)
@@ -958,7 +1015,7 @@ async def _handle_turn_parallel(
 
     audio_b64 = await _synthesize_audio(
         text=response_text,
-        language=session.language,
+        language=turn_lang,
         voice_id=agent.get("voice"),
     )
     if audio_b64:
@@ -1003,8 +1060,11 @@ async def _handle_turn_parallel_interruptible(
         return
 
     # ── Step 1: STT (cancellable) ─────────────────────────────────────
+    # Pass None to allow Sarvam auto-detection on the first multilingual
+    # turn; subsequent turns reuse session.language as a hint.
+    stt_lang_hint = session.language if session.language and session.language != "en" else None
     stt_task = asyncio.create_task(
-        _transcribe_audio(audio, language=session.language),
+        _transcribe_audio(audio, language=stt_lang_hint),
     )
     task_tracker.track(sid, stt_task)
 
@@ -1014,17 +1074,20 @@ async def _handle_turn_parallel_interruptible(
         logger.info("STT cancelled by interrupt (session=%s)", sid)
         return
 
+    # Resolve actual spoken language for THIS turn.
+    turn_lang = _resolve_turn_language(session, transcription)
+
     await websocket.send_text(json.dumps({
         "type": "transcription",
         "text": transcription["text"],
-        "language": transcription["language"],
+        "language": turn_lang,
         "confidence": transcription["confidence"],
     }))
 
     user_msg = ConversationMessage(
         role=MessageRole.USER,
         text=transcription["text"],
-        language=transcription["language"],
+        language=turn_lang,
         confidence=transcription["confidence"],
         emotion=transcription.get("emotion"),
     )
@@ -1040,7 +1103,7 @@ async def _handle_turn_parallel_interruptible(
         _generate_llm_response(
             messages=llm_messages,
             system_prompt=agent["system_prompt"],
-            language=session.language,
+            language=turn_lang,
         ),
     )
     task_tracker.track(sid, llm_task)
@@ -1054,7 +1117,7 @@ async def _handle_turn_parallel_interruptible(
     assistant_msg = ConversationMessage(
         role=MessageRole.ASSISTANT,
         text=response_text,
-        language=session.language,
+        language=turn_lang,
         emotion="friendly",
     )
     session.messages.append(assistant_msg)
@@ -1074,7 +1137,7 @@ async def _handle_turn_parallel_interruptible(
     tts_task = asyncio.create_task(
         _synthesize_audio(
             text=response_text,
-            language=session.language,
+            language=turn_lang,
             voice_id=agent.get("voice"),
         ),
     )
@@ -1599,6 +1662,11 @@ def _generate_embed_js(api_base: str, ws_base: str) -> str:
   var agentId = script ? script.getAttribute('data-agent-id') : 'sales-assistant-en';
   var apiKey  = script ? script.getAttribute('data-api-key') : '';
   var position = script ? script.getAttribute('data-position') : 'bottom-right';
+  // Multilingual: caller can set data-language="ta" (or hi/te/kn/ml/...)
+  // on the embed script tag, OR pass ?vf_lang=ta in the page URL.
+  // Empty string = let the server auto-detect from the first audio turn.
+  var urlLang = (new URLSearchParams(window.location.search)).get('vf_lang') || '';
+  var language = (script && script.getAttribute('data-language')) || urlLang || '';
 
   // ── State ─────────────────────────────────────────────
   var sessionId = null;
@@ -1696,10 +1764,12 @@ def _generate_embed_js(api_base: str, ws_base: str) -> str:
 
   // ── Start Session ─────────────────────────────────────
   function startSession() {{
+    var startBody = {{ agent_id: agentId, api_key: apiKey }};
+    if (language) startBody.language = language;
     fetch(VOICEFLOW_API + '/voice/conversation/start', {{
       method: 'POST',
       headers: {{ 'Content-Type': 'application/json' }},
-      body: JSON.stringify({{ agent_id: agentId, api_key: apiKey }})
+      body: JSON.stringify(startBody)
     }})
     .then(function(r) {{ return r.json(); }})
     .then(function(data) {{

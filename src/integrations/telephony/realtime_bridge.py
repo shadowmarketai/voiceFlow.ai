@@ -108,6 +108,10 @@ class RealtimeCallSession:
     # Task tracking for cancellation
     active_tasks: list[asyncio.Task] = field(default_factory=list)
 
+    # GAP-6: did the agent's last response end with a question?
+    # When True the EOS engine uses 200ms silence threshold for the next turn.
+    last_agent_asked_question: bool = False
+
 
 # Active sessions registry
 _active_calls: dict[str, RealtimeCallSession] = {}
@@ -179,13 +183,16 @@ async def twilio_media_stream_ws(
     except Exception as exc:
         logger.warning("Interruption manager not available: %s", exc)
 
-    # EOS engine for turn detection
+    # EOS engine for turn detection (GAP-6: dynamic linguistic threshold)
     eos_engine = None
+    _indic = language in ("ta", "hi", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or", "ur")
     try:
         from voice_engine.eos.eos_engine import EOSConfig, EOSEngine
         eos_engine = EOSEngine(EOSConfig(
-            min_silence_ms=600 if language in ("ta", "hi", "te", "kn", "ml") else 500,
-            indian_language_mode=language in ("ta", "hi", "te", "kn", "ml"),
+            min_silence_ms=600 if _indic else 500,
+            indian_language_mode=_indic,
+            dynamic_threshold=True,
+            language=language,
         ))
     except Exception as exc:
         logger.warning("EOS engine not available: %s", exc)
@@ -195,9 +202,11 @@ async def twilio_media_stream_ws(
         session_id, agent_id, language,
     )
 
+    # GAP-6: question flag lives on session so _process_phone_turn can update it
+
     # Silence accumulator for EOS detection
     silence_start: float | None = None
-    SILENCE_THRESHOLD_MS = 600 if language in ("ta", "hi", "te", "kn", "ml") else 500
+    SILENCE_THRESHOLD_MS = 600 if _indic else 500
 
     try:
         while True:
@@ -306,12 +315,15 @@ async def twilio_media_stream_ws(
                 # ── Normal mode: buffer + EOS detection ───────
                 session.audio_buffer.append(pcm_16k)
 
-                # Simple silence-based turn detection
-                # (EOS engine works on energy levels)
                 if eos_engine:
                     import numpy as np
                     audio_array = np.frombuffer(pcm_16k, dtype=np.int16).astype(np.float32) / 32768.0
-                    eos_result = eos_engine.process_chunk(audio_array, sample_rate=16000)
+                    # GAP-6: pass agent_asked_question so yes/no answers get 200ms threshold
+                    eos_result = eos_engine.process_chunk(
+                        audio_array,
+                        sample_rate=16000,
+                        agent_asked_question=session.last_agent_asked_question,
+                    )
 
                     if eos_result.is_end_of_speech and session.audio_buffer:
                         # Turn complete — process it
@@ -319,6 +331,8 @@ async def twilio_media_stream_ws(
                         session.audio_buffer.clear()
                         eos_engine.reset()
                         silence_start = None
+                        # GAP-6: reset question flag — only valid for one turn
+                        session.last_agent_asked_question = False
 
                         # Process turn in background
                         turn_task = asyncio.create_task(
@@ -420,10 +434,14 @@ async def generic_stream_ws(
         pass
 
     eos_engine = None
+    _indic_g = language in ("ta", "hi", "te", "kn", "ml", "bn", "mr", "gu", "pa", "or", "ur")
     try:
         from voice_engine.eos.eos_engine import EOSConfig, EOSEngine
         eos_engine = EOSEngine(EOSConfig(
-            indian_language_mode=language in ("ta", "hi", "te", "kn", "ml"),
+            min_silence_ms=600 if _indic_g else 500,
+            indian_language_mode=_indic_g,
+            dynamic_threshold=True,
+            language=language,
         ))
     except Exception:
         pass
@@ -497,12 +515,19 @@ async def generic_stream_ws(
                 if eos_engine:
                     import numpy as np
                     audio_array = np.frombuffer(pcm_16k, dtype=np.int16).astype(np.float32) / 32768.0
-                    eos_result = eos_engine.process_chunk(audio_array, sample_rate=16000)
+                    # GAP-6: pass agent_asked_question so yes/no answers get 200ms threshold
+                    eos_result = eos_engine.process_chunk(
+                        audio_array,
+                        sample_rate=16000,
+                        agent_asked_question=session.last_agent_asked_question,
+                    )
 
                     if eos_result.is_end_of_speech and session.audio_buffer:
                         combined = b"".join(session.audio_buffer)
                         session.audio_buffer.clear()
                         eos_engine.reset()
+                        # GAP-6: reset question flag — only valid for one turn
+                        session.last_agent_asked_question = False
 
                         turn_task = asyncio.create_task(
                             _process_generic_turn(
@@ -546,7 +571,13 @@ async def _process_phone_turn(
     interrupt_mgr: Any | None,
     task_tracker: Any | None,
 ) -> None:
-    """Process one caller turn: STT → LLM → TTS → send audio back via Twilio."""
+    """Process one caller turn via handle_turn_stream (GAP 2/3/4 enabled).
+
+    Event flow:
+      filler      → play immediately so caller hears something in <50 ms
+      audio_chunk → stream each TTS phrase to Twilio as it arrives
+      done        → turn complete, update conversation history
+    """
     session.turns_count += 1
 
     if not voice_svc:
@@ -554,56 +585,71 @@ async def _process_phone_turn(
         return
 
     try:
-        # 1. STT
-        transcription = await voice_svc.transcribe_and_analyze(
-            audio_pcm16, language=session.language,
-        )
-        user_text = transcription.get("transcription", "")
-        if not user_text.strip():
-            return
+        from voice_engine.voice_ai_service import VoiceTurnRequest
 
-        detected_lang = transcription.get("language", session.language)
-        if detected_lang != session.language:
-            session.language = detected_lang
-            if interrupt_mgr:
-                interrupt_mgr.update_language(detected_lang)
-
-        session.messages.append({"role": "user", "content": user_text})
-
-        # 2. LLM
-        from voice_engine.api_providers import call_llm_api
-        from voice_engine.smart_llm import pick_model
-
-        provider, model = pick_model(user_text)
-        llm_messages = [{"role": "system", "content": session.system_prompt}] + session.messages
-
-        response_text = await call_llm_api(
-            messages=llm_messages,
-            provider=provider,
-            model=model,
-        )
-        if not response_text:
-            return
-
-        session.messages.append({"role": "assistant", "content": response_text})
-
-        # 3. Mark agent as speaking + update interrupt manager
-        session.is_agent_speaking = True
-        if interrupt_mgr:
-            interrupt_mgr.reset()
-            interrupt_mgr.set_agent_text(response_text)
-
-        # 4. TTS
-        tts_result = await voice_svc.generate_response_audio(
-            text=response_text,
+        # Pass conversation history so the agent remembers prior turns
+        request = VoiceTurnRequest(
+            audio_bytes=audio_pcm16,
             language=session.language,
+            system_prompt=session.system_prompt,
+            tts_language=session.language,
+            tenant_id=session.tenant_id,
+            conversation_history=list(session.messages),
         )
-        audio_b64 = tts_result.get("audio_base64", "")
-        if audio_b64:
-            audio_bytes = base64.b64decode(audio_b64)
-            await _send_audio_to_twilio(websocket, session.stream_sid, audio_bytes)
 
-        session.is_agent_speaking = False
+        full_text = ""
+        filler_played = False
+        first_real_chunk = True
+
+        async for event in voice_svc.handle_turn_stream(request):
+            ev_type = event.get("type", "")
+
+            if ev_type == "stt":
+                user_text = event.get("text", "")
+                if user_text.strip():
+                    session.messages.append({"role": "user", "content": user_text})
+
+            elif ev_type == "filler":
+                # Play pre-synthesised filler immediately so caller hears the agent
+                audio_b64 = event.get("audio_base64", "")
+                if audio_b64 and not filler_played:
+                    filler_played = True
+                    session.is_agent_speaking = True
+                    filler_bytes = base64.b64decode(audio_b64)
+                    await _send_audio_to_twilio(websocket, session.stream_sid, filler_bytes)
+
+            elif ev_type == "audio_chunk":
+                audio_b64 = event.get("audio_base64", "")
+                if audio_b64:
+                    if first_real_chunk:
+                        first_real_chunk = False
+                        # If filler is playing Twilio clears it on the next media packet;
+                        # we send a clear to flush the buffer immediately so real audio
+                        # starts without overlap.
+                        if filler_played:
+                            await _clear_twilio_audio(websocket, session.stream_sid)
+                        session.is_agent_speaking = True
+                        if interrupt_mgr:
+                            interrupt_mgr.reset()
+
+                    chunk_bytes = base64.b64decode(audio_b64)
+                    await _send_audio_to_twilio(websocket, session.stream_sid, chunk_bytes)
+
+            elif ev_type == "done":
+                full_text = event.get("text", "")
+                if full_text:
+                    session.messages.append({"role": "assistant", "content": full_text})
+                    if interrupt_mgr:
+                        interrupt_mgr.set_agent_text(full_text)
+                    # GAP-6: flag yes/no questions so next turn uses 200ms threshold
+                    session.last_agent_asked_question = full_text.rstrip().endswith("?")
+                session.is_agent_speaking = False
+
+            elif ev_type == "error":
+                logger.warning(
+                    "Phone turn stream error: session=%s msg=%s",
+                    session.session_id, event.get("message", ""),
+                )
 
     except asyncio.CancelledError:
         logger.info("Phone turn cancelled (barge-in): session=%s", session.session_id)
@@ -623,63 +669,89 @@ async def _process_generic_turn(
     output_format: str = "pcm16",
     output_sample_rate: int = 16000,
 ) -> None:
-    """Process one turn for generic provider — same as Twilio but different output."""
+    """Process one turn for generic provider via handle_turn_stream (GAP 2/3/4 enabled)."""
     session.turns_count += 1
 
     if not voice_svc:
         return
 
     try:
-        # STT
-        transcription = await voice_svc.transcribe_and_analyze(
-            audio_pcm16, language=session.language,
+        from voice_engine.voice_ai_service import VoiceTurnRequest
+
+        # Pass conversation history so the agent remembers prior turns
+        request = VoiceTurnRequest(
+            audio_bytes=audio_pcm16,
+            language=session.language,
+            system_prompt=session.system_prompt,
+            tts_language=session.language,
+            tenant_id=session.tenant_id,
+            conversation_history=list(session.messages),
         )
-        user_text = transcription.get("transcription", "")
-        if not user_text.strip():
-            return
 
-        session.messages.append({"role": "user", "content": user_text})
+        full_text = ""
+        filler_played = False
+        first_real_chunk = True
 
-        # LLM
-        from voice_engine.api_providers import call_llm_api
-        from voice_engine.smart_llm import pick_model
+        async for event in voice_svc.handle_turn_stream(request):
+            ev_type = event.get("type", "")
 
-        provider, model = pick_model(user_text)
-        llm_messages = [{"role": "system", "content": session.system_prompt}] + session.messages
+            if ev_type == "stt":
+                user_text = event.get("text", "")
+                if user_text.strip():
+                    session.messages.append({"role": "user", "content": user_text})
 
-        response_text = await call_llm_api(
-            messages=llm_messages, provider=provider, model=model,
-        )
-        if not response_text:
-            return
+            elif ev_type == "filler":
+                audio_b64 = event.get("audio_base64", "")
+                if audio_b64 and not filler_played:
+                    filler_played = True
+                    session.is_agent_speaking = True
+                    filler_bytes = base64.b64decode(audio_b64)
+                    # Convert to provider output format
+                    if output_sample_rate == 8000:
+                        filler_bytes = resample_16k_to_8k(filler_bytes)
+                    if output_format == "mulaw":
+                        filler_bytes = pcm16_to_mulaw(filler_bytes)
+                    await websocket.send_text(json.dumps({
+                        "type": "audio",
+                        "data": base64.b64encode(filler_bytes).decode(),
+                    }))
 
-        session.messages.append({"role": "assistant", "content": response_text})
+            elif ev_type == "audio_chunk":
+                audio_b64 = event.get("audio_base64", "")
+                if audio_b64:
+                    if first_real_chunk:
+                        first_real_chunk = False
+                        if filler_played:
+                            await websocket.send_text(json.dumps({"type": "clear"}))
+                        session.is_agent_speaking = True
+                        if interrupt_mgr:
+                            interrupt_mgr.reset()
 
-        # TTS
-        session.is_agent_speaking = True
-        if interrupt_mgr:
-            interrupt_mgr.reset()
-            interrupt_mgr.set_agent_text(response_text)
+                    chunk_bytes = base64.b64decode(audio_b64)
+                    if output_sample_rate == 8000:
+                        chunk_bytes = resample_16k_to_8k(chunk_bytes)
+                    if output_format == "mulaw":
+                        chunk_bytes = pcm16_to_mulaw(chunk_bytes)
+                    await websocket.send_text(json.dumps({
+                        "type": "audio",
+                        "data": base64.b64encode(chunk_bytes).decode(),
+                    }))
 
-        tts_result = await voice_svc.generate_response_audio(
-            text=response_text, language=session.language,
-        )
-        audio_b64 = tts_result.get("audio_base64", "")
-        if audio_b64:
-            audio_bytes = base64.b64decode(audio_b64)
+            elif ev_type == "done":
+                full_text = event.get("text", "")
+                if full_text:
+                    session.messages.append({"role": "assistant", "content": full_text})
+                    if interrupt_mgr:
+                        interrupt_mgr.set_agent_text(full_text)
+                    # GAP-6: flag yes/no questions so next turn uses 200ms threshold
+                    session.last_agent_asked_question = full_text.rstrip().endswith("?")
+                session.is_agent_speaking = False
 
-            # Convert to output format
-            if output_sample_rate == 8000:
-                audio_bytes = resample_16k_to_8k(audio_bytes)
-            if output_format == "mulaw":
-                audio_bytes = pcm16_to_mulaw(audio_bytes)
-
-            await websocket.send_text(json.dumps({
-                "type": "audio",
-                "data": base64.b64encode(audio_bytes).decode(),
-            }))
-
-        session.is_agent_speaking = False
+            elif ev_type == "error":
+                logger.warning(
+                    "Generic turn stream error: session=%s msg=%s",
+                    session.session_id, event.get("message", ""),
+                )
 
     except asyncio.CancelledError:
         session.is_agent_speaking = False

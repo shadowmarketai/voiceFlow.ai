@@ -49,6 +49,9 @@ class CallMeta:
     ttfa_ms:        float   = 0.0
     error:          str     = ""
     started_at:     float   = field(default_factory=time.time)
+    # GAP 7 fields
+    tenant_id:      str     = ""
+    phone:          str     = ""
 
 
 class S2SOrchestrator:
@@ -72,12 +75,18 @@ class S2SOrchestrator:
         language: str = "en",
         client_tier: str = "standard",
         force_track: str | None = None,
+        # GAP 7 — caller identity for cross-call memory
+        tenant_id: str = "",
+        phone: str = "",
     ):
         self.system_prompt = system_prompt
         self.language      = language
         self.client_tier   = client_tier
         self.force_track   = force_track
         self._router       = get_router()
+        # GAP 7
+        self.tenant_id     = tenant_id
+        self.phone         = phone
 
     async def stream(
         self,
@@ -91,7 +100,34 @@ class S2SOrchestrator:
         Yields PCM16 audio bytes for the phone leg.
         Falls back through tracks if primary is unavailable.
         """
-        meta = CallMeta(call_id=call_id, language=self.language, client_tier=self.client_tier)
+        meta = CallMeta(
+            call_id     = call_id,
+            language    = self.language,
+            client_tier = self.client_tier,
+            tenant_id   = self.tenant_id,
+            phone       = self.phone,
+        )
+
+        # ── GAP 7: load caller memory and inject into system prompt ──────────
+        _caller_profile: dict  = {}
+        _turn_buffer:    list  = []
+        _memory_injected       = False
+
+        if self.tenant_id and self.phone:
+            try:
+                from voice_engine.caller_memory import on_call_start
+                _caller_profile, memory_block = await on_call_start(
+                    self.tenant_id, self.phone, language=self.language
+                )
+                if memory_block:
+                    self.system_prompt = memory_block + "\n\n" + self.system_prompt
+                    _memory_injected   = True
+                    logger.info(
+                        "Orchestrator: GAP7 memory injected (calls=%d) call=%s",
+                        _caller_profile.get("total_calls", 0), call_id,
+                    )
+            except Exception as _gap7_exc:
+                logger.warning("Orchestrator: GAP7 load failed: %s", _gap7_exc)
 
         # Route decision
         chosen = self._router.route(
@@ -116,6 +152,8 @@ class S2SOrchestrator:
         if is_s2s:
             _active_s2s += 1
 
+        _call_start_time = time.time()
+
         try:
             async for chunk in self._dispatch(chosen, audio_iterator, on_transcript):
                 if first_chunk:
@@ -133,6 +171,25 @@ class S2SOrchestrator:
         finally:
             if is_s2s:
                 _active_s2s = max(0, _active_s2s - 1)
+
+            # ── GAP 7: persist caller memory on call end ─────────────────────
+            if self.tenant_id and self.phone:
+                try:
+                    from voice_engine.caller_memory import on_call_end
+                    duration = time.time() - _call_start_time
+                    await on_call_end(
+                        tenant_id    = self.tenant_id,
+                        phone        = self.phone,
+                        profile      = _caller_profile,
+                        turn_buffer  = _turn_buffer,
+                        final_intent = _caller_profile.get("last_intent", ""),
+                        outcome      = "completed" if not meta.error else "error",
+                        language     = self.language,
+                        duration_sec = duration,
+                        call_id      = call_id,
+                    )
+                except Exception as _gap7_end_exc:
+                    logger.warning("Orchestrator: GAP7 on_call_end failed: %s", _gap7_end_exc)
 
     async def _dispatch(
         self,
@@ -217,8 +274,9 @@ class S2SOrchestrator:
             )
             svc = VoiceAIService()
             req = VoiceTurnRequest(
-                audio_data=audio_bytes,
+                audio_bytes=audio_bytes,
                 language=self.language,
+                tts_language=self.language,
                 system_prompt=self.system_prompt,
             )
             async for chunk in svc.handle_turn_stream(req):
