@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import {
  Search, LayoutGrid, List, Play, Pause, Download, Share2, Trash2,
- FileAudio, Filter, ChevronDown, Clock, HardDrive, User, Loader2
+ FileAudio, Filter, ChevronDown, Clock, HardDrive, User, Loader2, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import DialectBadge from './components/DialectBadge';
@@ -216,6 +216,9 @@ export default function RecordingsPage() {
  const [apiRecordings, setApiRecordings] = useState([]);
  const audioRef = useRef(null);
  const audioCache = useRef({}); // cache generated audio URLs by recording id
+ const [audioSrcs, setAudioSrcs] = useState({}); // blob URLs for actual recording audio
+ const [refreshCounter, setRefreshCounter] = useState(0);
+ const [isRefreshing, setIsRefreshing] = useState(false);
 
  // Load agents list
  useEffect(() => {
@@ -227,9 +230,10 @@ export default function RecordingsPage() {
    .catch(() => {});
  }, []);
 
- // Fetch real recordings from API, merge with mock data
+ // Fetch real recordings from backend
  useEffect(() => {
  let cancelled = false;
+ setIsRefreshing(true);
  voiceAgentAPI.listRecordings(undefined, 100)
  .then(({ data }) => {
  if (cancelled || !Array.isArray(data)) return;
@@ -255,9 +259,10 @@ export default function RecordingsPage() {
  }));
  setApiRecordings(mapped);
  })
- .catch(() => {}); // silently fall back to mock only
+ .catch(() => {})
+ .finally(() => { if (!cancelled) setIsRefreshing(false); });
  return () => { cancelled = true; };
- }, []);
+ }, [refreshCounter]);
 
  const allRecordings = useMemo(() => [...apiRecordings], [apiRecordings]);
 
@@ -280,6 +285,16 @@ export default function RecordingsPage() {
  }, [search, dialectFilter, agentFilter]);
 
  const browserSpeakingId = useRef(null);
+
+ // Fetch actual recording audio from backend and return a blob URL.
+ // Result is cached in audioSrcs so subsequent plays are instant.
+ const loadRecordingAudio = useCallback(async (rec) => {
+   if (audioSrcs[rec.id]) return audioSrcs[rec.id];
+   const { data: blob } = await voiceAgentAPI.getRecordingAudio(rec.apiId);
+   const url = URL.createObjectURL(blob);
+   setAudioSrcs(prev => ({ ...prev, [rec.id]: url }));
+   return url;
+ }, [audioSrcs]);
 
  // ── Play toggle ────────────────────────────────────────────────────────
  const togglePlay = useCallback(async (rec) => {
@@ -309,6 +324,24 @@ export default function RecordingsPage() {
  audioRef.current.play().catch(() => {});
  setPlayingId(id);
  return;
+ }
+
+ // For API recordings, play the actual stored audio (not TTS re-synthesis)
+ if (recording.isApi && recording.apiId) {
+   setLoadingId(id);
+   try {
+     const audioUrl = await loadRecordingAudio(recording);
+     if (audioRef.current) {
+       audioRef.current.src = audioUrl;
+       audioRef.current.play().catch(() => {});
+     }
+     setPlayingId(id);
+     setLoadingId(null);
+     return;
+   } catch (_audioErr) {
+     setLoadingId(null);
+     // no real audio stored — fall through to TTS preview
+   }
  }
 
  const text = recording.transcriptPreview.join('');
@@ -438,6 +471,20 @@ export default function RecordingsPage() {
  </div>
  </div>
 
+ {/* Native audio player — shown once the recording blob is fetched */}
+ {rec.isApi && audioSrcs[rec.id] && (
+ <div className="px-4 pb-2">
+   <audio
+     src={audioSrcs[rec.id]}
+     controls
+     className="w-full h-8"
+     onPlay={() => setPlayingId(rec.id)}
+     onPause={() => setPlayingId(null)}
+     onEnded={() => setPlayingId(null)}
+   />
+ </div>
+ )}
+
  {/* Action buttons */}
  <div className="flex border-t border-slate-100 divide-x divide-slate-100">
  <button
@@ -545,6 +592,16 @@ export default function RecordingsPage() {
  </>
  )}
  </div>
+
+ {/* Refresh */}
+ <button
+   onClick={() => setRefreshCounter(c => c + 1)}
+   disabled={isRefreshing}
+   className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+   title="Refresh recordings"
+ >
+   <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+ </button>
 
  {/* View toggle */}
  <div className="flex rounded-lg border border-slate-200 overflow-hidden">
@@ -709,7 +766,7 @@ export default function RecordingsPage() {
  </p>
  <p className="text-sm text-slate-500">
  Total size: <span className="font-medium text-slate-700">
- {(filtered.reduce((sum, r) => sum + parseFloat(r.size), 0)).toFixed(1)} MB
+ {(filtered.reduce((sum, r) => sum + (parseFloat(r.size) || 0), 0)).toFixed(1)} MB
  </span>
  </p>
  </div>
