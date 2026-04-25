@@ -900,6 +900,19 @@ class VoiceAIService:
             yield {"type": "done", "total_ms": 0, "ttfa_ms": 0, "text": "", "reason": "empty_input"}
             return
 
+        # ── GAP-4: emit filler immediately — before ANY processing ───────────
+        # Fire within ~50 ms of receiving the user message so the caller hears
+        # acknowledgment before LLM even starts. Language detection and the LLM
+        # call are 600-1500 ms away; the filler bridges that silence.
+        from voice_engine.filler_engine import get_filler_engine as _get_filler_engine
+        _filler_eng = _get_filler_engine()
+        _filler_eng.ensure_warmed(language=tts_language or language, voice_id=voice_id)
+        _filler_clip = _filler_eng.get_filler(
+            language=tts_language or language, emotion=None, voice_id=voice_id
+        )
+        if _filler_clip:
+            yield {"type": "filler", "audio_base64": _filler_clip, "cancellable": True}
+
         # ── Per-turn language detection (multilingual fix v2) ────────────────
         # The browser sent us text, but we don't know what language it actually
         # is — Deepgram may have transliterated Tamil/Telugu to English, or the
@@ -921,14 +934,6 @@ class VoiceAIService:
         # All downstream stages now use chosen_lang, not the request defaults.
         lang = chosen_lang[:2].lower()
         tts_language = chosen_lang
-
-        # ── GAP-4: emit filler immediately ────────────────────────────────────
-        from voice_engine.filler_engine import get_filler_engine as _get_filler_engine
-        _filler_eng = _get_filler_engine()
-        _filler_eng.ensure_warmed(language=tts_language, voice_id=voice_id)
-        _filler_clip = _filler_eng.get_filler(language=tts_language, emotion=None, voice_id=voice_id)
-        if _filler_clip:
-            yield {"type": "filler", "audio_base64": _filler_clip, "cancellable": True}
 
         # ── LLM streaming ─────────────────────────────────────────────────────
         from voice_engine.api_providers import call_llm_stream, synthesize_speech_api

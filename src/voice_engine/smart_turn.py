@@ -150,14 +150,27 @@ def _completion_score(text: str, lang: str) -> float:
     return max(0.0, min(1.0, score))
 
 
-def _silence_budget_ms(completion: float, lang: str) -> int:
+# Languages that need wider silence windows (slower syllable rate, more pauses)
+_INDIC_LANGS = {"ta", "hi", "te", "kn", "ml", "mr", "bn", "gu", "pa", "or"}
+
+
+def _silence_budget_ms(
+    completion: float,
+    lang: str,
+    override_ms: int | None = None,
+) -> int:
     """
     Map completion score to recommended silence window.
-    Tamil gets wider windows because it has natural micro-pauses.
+
+    Defaults: 800 ms for English, 1200 ms for Indic languages.
+    When override_ms is provided (from agent config silence_threshold_ms) it
+    is used directly, ignoring the language-based default.
     """
-    base = 900 if lang == "ta" else 700
-    # Low completion → wait longer; high completion → respond sooner
-    extra = int((1.0 - completion) * 600)
+    if override_ms is not None:
+        return override_ms
+    base = 1200 if lang in _INDIC_LANGS else 800
+    # Low completion → wait a bit longer; high completion → respond sooner
+    extra = int((1.0 - completion) * 400)
     return base + extra
 
 
@@ -170,6 +183,7 @@ def evaluate_turn(
     language: str = "en",
     emotion_result: dict[str, Any] | None = None,
     transfer_enabled: bool = True,
+    silence_threshold_ms: int | None = None,
 ) -> TurnDecision:
     """
     Decide what the voice pipeline should do with this caller turn.
@@ -230,7 +244,7 @@ def evaluate_turn(
 
     # ── 5. Completion scoring → silence budget ────────────────────────────
     completion = _completion_score(text, lang)
-    silence_ms = _silence_budget_ms(completion, lang)
+    silence_ms = _silence_budget_ms(completion, lang, override_ms=silence_threshold_ms)
 
     # Build emotion prefix for LLM prompt (if emotions detected)
     emotion_prefix = ""

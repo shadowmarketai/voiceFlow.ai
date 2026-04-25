@@ -148,15 +148,29 @@ class InterruptionManager:
         config:     Override interrupt thresholds (optional)
     """
 
+    #: Maps interruption_sensitivity values to min_speech_ms overrides.
+    _SENSITIVITY_MS: dict[str, float] = {
+        "low":    500.0,   # only obvious speech triggers barge-in
+        "medium": 300.0,   # default — balanced
+        "high":   150.0,   # react quickly (e.g. command-style agents)
+    }
+
     def __init__(
         self,
         vad_engine: Any,
         language: str = "en",
         config: InterruptConfig | None = None,
+        interruption_sensitivity: str = "medium",
     ):
         self._vad = vad_engine
         self._language = (language or "en")[:2].lower()
         self._config = config or get_config(self._language)
+
+        # Apply sensitivity override — read from agent config when provided.
+        sensitivity_key = (interruption_sensitivity or "medium").lower()
+        override_ms = self._SENSITIVITY_MS.get(sensitivity_key)
+        if override_ms is not None:
+            self._config.min_speech_ms = override_ms
 
         # State tracking
         self._speech_start: float | None = None
@@ -409,11 +423,12 @@ class InterruptionManager:
     def _is_backchannel_simple(self, text: str) -> bool:
         """Lightweight backchannel check without smart_turn import."""
         normalized = text.strip().lower()
-        # Common backchannels across Indian languages
+        # Common backchannels and noise tokens across Indian languages
         tokens = {
             "ok", "okay", "yes", "yeah", "hmm", "mm", "mmm",
             "haan", "han", "ji", "accha", "thik",
             "sari", "aama", "ama", "seri",
+            "um", "uh", "mhm", "hm",
         }
         return normalized in tokens or len(normalized) <= 3
 
