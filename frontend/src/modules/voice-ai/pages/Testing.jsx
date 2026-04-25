@@ -250,7 +250,7 @@ export default function Testing() {
     return {
       systemPrompt: fullPrompt,
       firstMessage: cfg.firstMessage || '',
-      provider: (cfg.llmProvider && cfg.llmProvider !== 'groq') ? cfg.llmProvider : 'gemini',
+      provider: cfg.llmProvider || 'groq',
       voice: cfg.voice || 'nova',
       ttsEngine: cfg.ttsEngine || cfg.tts_engine || 'auto',
       defaultLang: LEGACY_LANG_MAP[currentAgent.language] ||
