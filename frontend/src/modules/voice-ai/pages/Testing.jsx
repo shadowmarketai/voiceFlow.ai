@@ -567,29 +567,59 @@ export default function Testing() {
 
   const startVoiceCall = useCallback(() => {
     if (!currentAgent) return
-    if (sttMode !== 'stream') {
-      setAutoDetectMsg(`Voice Call mode requires English, Hindi, or Auto-detect. Use the mic button for ${langInfo.label}.`)
-      return
-    }
     setVoiceCallActive(true)
     setCallDuration(0)
-    lastSentRef.current = finals.length - 1
-    dgStart()
-  }, [currentAgent, sttMode, langInfo.label, dgStart, finals.length])
+    if (sttMode === 'stream') {
+      lastSentRef.current = finals.length - 1
+      dgStart()
+    }
+    // batch mode: user taps the mic button inside the call UI to record
+  }, [currentAgent, sttMode, dgStart, finals.length])
 
   const endVoiceCall = useCallback(() => {
     setVoiceCallActive(false)
     dgStop()
+    // stop batch recorder if mid-recording when call ends
+    if (batch.isRecording) batch.stop()
     if (_ttsAudio) { _ttsAudio.pause(); _ttsAudio = null }
     if (conversation.length >= 2 && currentAgent) saveConversationToDB(conversation, currentAgent)
-  }, [dgStop, conversation, currentAgent, saveConversationToDB])
+  }, [dgStop, batch, conversation, currentAgent, saveConversationToDB])
 
+  // Stream mode: mute mic while agent speaks, resume after
   useEffect(() => {
     if (!voiceCallActive || sttMode !== 'stream') return
     if (agentSpeaking && dgRecording) dgStop()
     else if (!agentSpeaking && !dgRecording) dgStart()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentSpeaking, voiceCallActive])
+
+  // Batch mode: auto-start recording after agent finishes speaking
+  useEffect(() => {
+    if (!voiceCallActive || sttMode !== 'batch') return
+    if (!agentSpeaking && !batch.isRecording) {
+      batch.start().catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentSpeaking, voiceCallActive])
+
+  // Batch mode in call: mic button stops recording and sends
+  const handleCallBatchMic = useCallback(async () => {
+    if (!batch.isRecording) return
+    const blob = await batch.stop()
+    if (!blob) return
+    try {
+      const result = await transcribeBatch(blob, sessionLang)
+      if (!result.text?.trim()) return
+      setDetectedLang(result.language)
+      await sendToLLM(result.text, result.confidence || 0.9, {
+        sttProvider: result.provider,
+        sttConfidence: result.confidence,
+        detectedLang: result.language,
+      })
+    } catch (err) {
+      setAutoDetectMsg(`STT failed: ${err.message}`)
+    }
+  }, [batch, sessionLang, sendToLLM])
 
   useEffect(() => {
     if (!voiceCallActive) return
@@ -850,7 +880,22 @@ export default function Testing() {
                     <span className="text-xs text-indigo-600 font-medium">Agent speaking…</span>
                   </div>
                 )}
-                {partial && (
+                {sttMode === 'batch' && !agentSpeaking && (
+                  <div className="flex flex-col items-center gap-2">
+                    <button onClick={handleCallBatchMic} disabled={!batch.isRecording}
+                      className={`p-4 rounded-full transition-all shadow-lg ${
+                        batch.isRecording
+                          ? 'bg-amber-500 text-white shadow-amber-200 hover:bg-amber-600 animate-pulse'
+                          : 'bg-gray-100 text-gray-300 shadow-gray-100 cursor-not-allowed'
+                      }`}>
+                      {batch.isRecording ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+                    </button>
+                    <p className="text-[10px] text-gray-500">
+                      {batch.isRecording ? 'Recording… tap to send' : 'Starting mic…'}
+                    </p>
+                  </div>
+                )}
+                {sttMode === 'stream' && partial && (
                   <div className="w-full px-3 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-500 italic text-center">
                     {partial}<span className="inline-block w-1 h-3 bg-gray-400 ml-0.5 animate-pulse" />
                   </div>
@@ -859,24 +904,22 @@ export default function Testing() {
                   className="p-4 rounded-full bg-red-500 text-white hover:bg-red-600 shadow-lg shadow-red-200 transition-all">
                   <PhoneOff className="w-6 h-6" />
                 </button>
-                <p className="text-[10px] text-gray-400">Speak naturally — agent responds automatically</p>
+                <p className="text-[10px] text-gray-400">
+                  {sttMode === 'batch' ? `${langInfo.label} — tap mic to send each turn` : 'Speak naturally — agent responds automatically'}
+                </p>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-4 p-8">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-lg ${
-                  sttMode === 'stream'
-                    ? 'bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-200'
-                    : 'bg-gradient-to-br from-gray-300 to-gray-400 shadow-gray-200'
-                }`}>
+                <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-lg bg-gradient-to-br from-emerald-400 to-teal-500 shadow-emerald-200">
                   <Phone className="w-10 h-10 text-white" />
                 </div>
                 <h3 className="text-lg font-semibold text-gray-900">Voice Call</h3>
                 <p className="text-sm text-gray-500 text-center max-w-xs">
                   {sttMode === 'stream'
                     ? 'Hands-free continuous conversation. Speak naturally.'
-                    : `${langInfo.label} uses push-to-talk mode. Use the mic button in chat instead.`}
+                    : `${langInfo.label}: tap-to-talk call. Mic auto-starts each turn.`}
                 </p>
-                <button onClick={startVoiceCall} disabled={!currentAgent || sttMode !== 'stream'}
+                <button onClick={startVoiceCall} disabled={!currentAgent}
                   className="flex items-center gap-2 px-8 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-lg shadow-emerald-200 hover:shadow-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed">
                   <Phone className="w-5 h-5" /> Start Voice Call
                 </button>
