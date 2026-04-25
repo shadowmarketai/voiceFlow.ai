@@ -218,6 +218,8 @@ export default function Testing() {
 
   const [message, setMessage] = useState('')
   const [conversation, setConversation] = useState([])
+  const conversationRef = useRef([])
+  useEffect(() => { conversationRef.current = conversation }, [conversation])
   const [sending, setSending] = useState(false)
   const chatEndRef = useRef(null)
   const sessionStartRef = useRef(null)
@@ -414,7 +416,8 @@ export default function Testing() {
     try {
       const baseUrl = import.meta.env.VITE_API_URL || ''
       // Build conversation history from previous turns (skip pending bubbles)
-      const historyMsgs = conversation
+      // Use ref to avoid stale closure — conversation state captured at callback creation time
+      const historyMsgs = conversationRef.current
         .filter(m => !m.pending && m.text && m.text !== '…')
         .slice(-20)
         .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.text }))
