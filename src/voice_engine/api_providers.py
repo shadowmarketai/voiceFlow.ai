@@ -736,8 +736,9 @@ async def synthesize_speech_api(
     if provider not in ("auto",) and not is_indic:
         pass  # will be filtered in the loop below by provider != name check
 
-    # If the voice is an OpenAI voice name, put OpenAI first
-    if is_openai_voice and provider == "auto":
+    # If the voice is an OpenAI voice name, put OpenAI first — but NOT for Indic
+    # languages where Sarvam is vastly better (OpenAI doesn't speak Tamil/Hindi well)
+    if is_openai_voice and provider == "auto" and not is_indic:
         providers_list = [p for p in providers_list if p[0] == "openai"] + \
                          [p for p in providers_list if p[0] != "openai"]
 

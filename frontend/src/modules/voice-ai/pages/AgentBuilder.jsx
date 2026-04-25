@@ -300,7 +300,7 @@ export default function AgentBuilder() {
   const [quickPreset, setQuickPreset] = useState('low_latency');
 
   // ── LLM state (must be declared BEFORE the ref/effects that read it) ──
-  const [llmProvider, setLlmProvider] = useState('groq');
+  const [llmProvider, setLlmProvider] = useState('gemini');
   // Advanced LLM settings (shown in an expandable "Advanced Settings" block)
   const [llmModel, setLlmModel] = useState('default');      // specific model within provider
   const [temperature, setTemperature] = useState(0.7);
@@ -318,7 +318,7 @@ export default function AgentBuilder() {
     (async () => {
       try {
         const res = await agentsAPI.post('/api/v1/billing/validate-providers', {
-          llmProvider: 'groq', llmModel: 'default',
+          llmProvider: 'gemini', llmModel: 'default',
         });
         if (res.data?.allowed_tiers) setAllowedTiers(res.data.allowed_tiers);
         if (res.data?.plan_name) setPlanName(res.data.plan_name);

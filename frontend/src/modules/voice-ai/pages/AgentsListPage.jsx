@@ -88,7 +88,7 @@ Q: What floor options? A: Floors 3-22 available, higher floors have city/garden 
     status: 'active', isDemo: true, conversations: 890, icon: '💼', category: 'Sales',
     gradient: 'from-blue-600 to-indigo-500',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'default',
+      llmProvider: 'gemini', voice: 'nova', accent: 'default',
       firstMessage: 'Namaskar! Moi TechSolutions Assam-or poraah Meera bolisu. Apunar business-or laagi amaar digital solutions-or bishoye koisom. Apunar kichu somoy aase neki?',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 50 words.
@@ -162,7 +162,7 @@ Q: Do you have an office in Guwahati? A: Yes, GS Road, Guwahati — walk-ins wel
     status: 'active', isDemo: true, conversations: 2100, icon: '🎧', category: 'Support',
     gradient: 'from-emerald-500 to-teal-400',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'default',
+      llmProvider: 'gemini', voice: 'nova', accent: 'default',
       firstMessage: 'Namaskar! Odisha Telecom customer support re aapanku swaagat. Mun Priya. Aaji aapankara ki sahayata kari paaribe, boli kahantu?',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 50 words. Be patient and empathetic.
@@ -236,7 +236,7 @@ WORKING HOURS: 8 AM - 10 PM, 7 days`,
     status: 'active', isDemo: true, conversations: 560, icon: '🏠', category: 'Real Estate',
     gradient: 'from-pink-500 to-rose-400',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'default',
+      llmProvider: 'gemini', voice: 'nova', accent: 'default',
       firstMessage: 'Namaskar! Ami Kolkata Dream Homes theke Ananya bolchi. Apni amader Rajarhat-er notun project-er ad dekhechen? Apnake ki kichu jaanate paari?',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 60 words.
@@ -294,7 +294,7 @@ BUILDER TRACK RECORD: 15 years, 12 delivered projects, 3000+ happy families`,
     status: 'active', isDemo: true, conversations: 430, icon: '💼', category: 'Sales',
     gradient: 'from-violet-600 to-purple-500',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'indian_english',
+      llmProvider: 'gemini', voice: 'nova', accent: 'indian_english',
       firstMessage: 'Namaskara! Naanu Bangalore EduTech-inda Ananya. Nimage online education platform bagge helbeku antha call maadtiddini. Nimma business-ge digital learning solution beku antha gotaaytu.',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 50 words.
@@ -356,7 +356,7 @@ COMPLIANCE: ISO 27001 certified, GDPR compliant, data hosted in India (Mumbai)`,
     status: 'active', isDemo: true, conversations: 1850, icon: '🎧', category: 'Support',
     gradient: 'from-cyan-500 to-sky-400',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'default',
+      llmProvider: 'gemini', voice: 'nova', accent: 'default',
       firstMessage: 'Namaskaram! Hyderabad FinServ customer support ki welcome. Nenu Priya ni. Meeku ee roju emlo help cheyagalanu?',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 50 words. Always be patient with financial queries.
@@ -419,7 +419,7 @@ APP: Download "FinServ" on Play Store / App Store for self-service`,
     status: 'active', isDemo: true, conversations: 3200, icon: '🏠', category: 'Real Estate',
     gradient: 'from-red-500 to-orange-400',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'indian_english',
+      llmProvider: 'gemini', voice: 'nova', accent: 'indian_english',
       firstMessage: 'Vanakkam! Naan Chennai Prime Homes-la irunthu Priya pesuren. Ungalukku OMR-la oru pudhu flat thevai-nu theriyuthu. Unga requirement enna-nu sollunga, naan help panren.',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 60 words.
@@ -477,7 +477,7 @@ OFFERS: Free car parking (worth Rs 4 Lakh), free registration for first 20 booki
     status: 'active', isDemo: true, conversations: 5100, icon: '💼', category: 'Sales',
     gradient: 'from-yellow-500 to-orange-400',
     config: {
-      llmProvider: 'groq', voice: 'nova', accent: 'indian_english',
+      llmProvider: 'gemini', voice: 'nova', accent: 'indian_english',
       firstMessage: 'Namaste! Main Digital India Solutions se Meera bol rahi hoon. Aapke business ko online grow karne ke liye humne ek special offer tayyar kiya hai. Kya aapke paas 2 minute hain?',
       prompt: `## CRITICAL INSTRUCTION
 NEVER output thinking. Only speak dialogue. Keep responses under 50 words. Be energetic but not pushy.

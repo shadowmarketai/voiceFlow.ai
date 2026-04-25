@@ -162,7 +162,8 @@ export default function Testing() {
     return {
       systemPrompt: fullPrompt,
       firstMessage: cfg.firstMessage || '',
-      provider: cfg.llmProvider || 'auto',
+      // Upgrade legacy "groq" agents to Gemini 2.5 Pro automatically
+      provider: (cfg.llmProvider && cfg.llmProvider !== 'groq') ? cfg.llmProvider : 'gemini',
       voice: cfg.voice || 'nova',
       langCode: LANG_MAP[lang] || LANG_MAP[lang.split('+')[0]?.trim()] || 'en',
       langLabel: lang,
@@ -353,7 +354,7 @@ export default function Testing() {
           text,
           system_prompt: agentConfig.systemPrompt,
           language: agentConfig.langCode || 'en',
-          llm_provider: llmOverride || agentConfig.provider || 'groq',
+          llm_provider: llmOverride || agentConfig.provider || 'gemini',
           tts_language: agentConfig.langCode || 'en',
         }),
       })
@@ -725,7 +726,7 @@ export default function Testing() {
                   <Phone className="w-5 h-5" /> Start Voice Call
                 </button>
                 <p className="text-[10px] text-gray-400">
-                  {sttOverride === 'deepgram' ? 'Deepgram' : sttOverride} STT → {llmOverride || agentConfig.provider || 'auto'} LLM → {ttsOverride || 'auto'} TTS
+                  {sttOverride === 'deepgram' ? 'Deepgram' : sttOverride} STT → {llmOverride || agentConfig.provider || 'gemini'} LLM → {ttsOverride || 'auto'} TTS
                 </p>
               </div>
             )}
@@ -833,10 +834,10 @@ export default function Testing() {
                 <select value={llmOverride} onChange={e => setLlmOverride(e.target.value)}
                   className="w-full appearance-none bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-700 focus:outline-none focus:border-violet-300 focus:ring-1 focus:ring-violet-100 transition-all"
                 >
-                  <option value="">Agent Default ({agentConfig.provider || 'auto'})</option>
-                  <option value="auto">Auto (Groq → Gemini → OpenAI)</option>
+                  <option value="">Agent Default ({agentConfig.provider || 'gemini'})</option>
+                  <option value="gemini">Gemini 2.5 Pro (Best)</option>
+                  <option value="auto">Auto (Gemini → Groq → OpenAI)</option>
                   <option value="groq">Groq (Fastest)</option>
-                  <option value="gemini">Google Gemini</option>
                   <option value="openai">OpenAI GPT</option>
                   <option value="anthropic">Anthropic Claude</option>
                   <option value="deepseek">DeepSeek</option>
