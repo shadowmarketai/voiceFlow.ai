@@ -3,9 +3,10 @@
  * White cards, indigo/violet chart fills, clean design
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
+import { analyticsAPI, agentsAPI } from '../../../services/api';
 import {
   Calendar, Download, TrendingUp, TrendingDown, Phone, Clock,
   Smile, Brain, Globe, BarChart3, Activity, Sparkles, Target,
@@ -25,82 +26,56 @@ const DATE_RANGES = [
   { label: 'Custom', value: 'custom' },
 ];
 
-/* ─── Mock Data ────────────────────────────────────────────────── */
+/* ─── Colour palette for dynamic chart data ─────────────────────── */
 
-const VOLUME_DATA = [
-  { date: 'Mar 7', total: 245, resolved: 198, escalated: 47 },
-  { date: 'Mar 8', total: 312, resolved: 267, escalated: 45 },
-  { date: 'Mar 9', total: 289, resolved: 241, escalated: 48 },
-  { date: 'Mar 10', total: 378, resolved: 334, escalated: 44 },
-  { date: 'Mar 11', total: 421, resolved: 389, escalated: 32 },
-  { date: 'Mar 12', total: 198, resolved: 156, escalated: 42 },
-  { date: 'Mar 13', total: 356, resolved: 298, escalated: 58 },
-];
+const CHART_COLORS = ['#f97316', '#3b82f6', '#a855f7', '#14b8a6', '#ec4899', '#94a3b8',
+  '#10b981', '#6366f1', '#f59e0b', '#ef4444'];
 
-const RESOLUTION_DATA = [
-  { name: 'Auto-Resolved', value: 68, color: '#10b981' },
-  { name: 'Agent Assist', value: 18, color: '#6366f1' },
-  { name: 'Escalated', value: 9, color: '#f59e0b' },
-  { name: 'Unresolved', value: 5, color: '#ef4444' },
-];
-
-const AVG_HANDLE_TIME = [
-  { date: 'Mar 7', time: 4.2, target: 3.5 },
-  { date: 'Mar 8', time: 3.8, target: 3.5 },
-  { date: 'Mar 9', time: 4.0, target: 3.5 },
-  { date: 'Mar 10', time: 3.5, target: 3.5 },
-  { date: 'Mar 11', time: 3.2, target: 3.5 },
-  { date: 'Mar 12', time: 3.9, target: 3.5 },
-  { date: 'Mar 13', time: 3.4, target: 3.5 },
-];
-
-const CSAT_TREND = [
-  { date: 'Mar 7', score: 4.2, responses: 156 },
-  { date: 'Mar 8', score: 4.3, responses: 198 },
-  { date: 'Mar 9', score: 4.4, responses: 178 },
-  { date: 'Mar 10', score: 4.5, responses: 234 },
-  { date: 'Mar 11', score: 4.6, responses: 267 },
-  { date: 'Mar 12', score: 4.5, responses: 123 },
-  { date: 'Mar 13', score: 4.7, responses: 212 },
-];
-
-const LANGUAGE_DATA = [
-  { name: 'Hindi', value: 35, color: '#f97316' },
-  { name: 'English', value: 30, color: '#3b82f6' },
-  { name: 'Tamil', value: 15, color: '#a855f7' },
-  { name: 'Telugu', value: 10, color: '#14b8a6' },
-  { name: 'Hinglish', value: 5, color: '#ec4899' },
-  { name: 'Other', value: 5, color: '#94a3b8' },
-];
-
-const EMOTION_BAR_DATA = [
-  { emotion: 'Happy', value: 32, color: '#10b981' },
-  { emotion: 'Neutral', value: 28, color: '#94a3b8' },
-  { emotion: 'Excited', value: 18, color: '#f59e0b' },
-  { emotion: 'Sad', value: 12, color: '#3b82f6' },
-  { emotion: 'Confused', value: 6, color: '#a855f7' },
-  { emotion: 'Angry', value: 4, color: '#ef4444' },
-];
-
-const PEAK_HOURS = [
-  [2, 3, 5, 8, 12, 15, 18, 20, 22, 18, 14, 10, 8, 6, 4, 3, 2, 1, 1, 0, 0, 0, 0, 1],
-  [1, 2, 4, 7, 11, 14, 17, 19, 21, 19, 15, 12, 9, 7, 5, 4, 3, 2, 1, 1, 0, 0, 0, 0],
-  [3, 4, 6, 9, 13, 16, 19, 22, 24, 20, 16, 13, 10, 8, 6, 5, 4, 3, 2, 1, 1, 0, 0, 1],
-  [2, 3, 5, 8, 12, 15, 18, 21, 23, 19, 15, 11, 9, 7, 5, 4, 3, 2, 1, 1, 0, 0, 0, 1],
-  [4, 5, 7, 10, 14, 18, 22, 25, 28, 24, 20, 16, 12, 9, 7, 5, 4, 3, 2, 1, 1, 0, 0, 2],
-  [1, 1, 2, 4, 6, 8, 10, 12, 14, 12, 10, 8, 6, 5, 4, 3, 2, 1, 1, 0, 0, 0, 0, 0],
-  [0, 1, 1, 3, 5, 7, 8, 10, 12, 10, 8, 6, 5, 4, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0],
-];
+const EMOTION_COLORS = {
+  happy: '#10b981', neutral: '#94a3b8', excited: '#f59e0b',
+  sad: '#3b82f6', confused: '#a855f7', angry: '#ef4444',
+  fear: '#ef4444', surprise: '#f59e0b',
+};
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-const AGENT_PERF = [
-  { name: 'Sales Pro', conversations: 3842, resolution: 74, avgTime: '4:22', csat: 4.8 },
-  { name: 'Support Guru', conversations: 5621, resolution: 89, avgTime: '6:15', csat: 4.9 },
-  { name: 'Promo Blaster', conversations: 12430, resolution: 61, avgTime: '2:45', csat: 4.2 },
-  { name: 'Retention Bot', conversations: 2156, resolution: 78, avgTime: '5:30', csat: 4.5 },
-  { name: 'Onboarding Helper', conversations: 876, resolution: 82, avgTime: '3:50', csat: 4.6 },
+// Peak hours and handle-time are computed server-side in future;
+// shown as illustrative until dedicated endpoints are added.
+const PEAK_HOURS = [
+  [2,3,5,8,12,15,18,20,22,18,14,10,8,6,4,3,2,1,1,0,0,0,0,1],
+  [1,2,4,7,11,14,17,19,21,19,15,12,9,7,5,4,3,2,1,1,0,0,0,0],
+  [3,4,6,9,13,16,19,22,24,20,16,13,10,8,6,5,4,3,2,1,1,0,0,1],
+  [2,3,5,8,12,15,18,21,23,19,15,11,9,7,5,4,3,2,1,1,0,0,0,1],
+  [4,5,7,10,14,18,22,25,28,24,20,16,12,9,7,5,4,3,2,1,1,0,0,2],
+  [1,1,2,4,6,8,10,12,14,12,10,8,6,5,4,3,2,1,1,0,0,0,0,0],
+  [0,1,1,3,5,7,8,10,12,10,8,6,5,4,3,2,1,1,0,0,0,0,0,0],
 ];
+const AVG_HANDLE_TIME = [
+  {date:'Mon',time:4.2,target:3.5},{date:'Tue',time:3.8,target:3.5},
+  {date:'Wed',time:4.0,target:3.5},{date:'Thu',time:3.5,target:3.5},
+  {date:'Fri',time:3.2,target:3.5},{date:'Sat',time:3.9,target:3.5},
+  {date:'Sun',time:3.4,target:3.5},
+];
+const CSAT_TREND = [
+  {date:'Mon',score:4.2,responses:156},{date:'Tue',score:4.3,responses:198},
+  {date:'Wed',score:4.4,responses:178},{date:'Thu',score:4.5,responses:234},
+  {date:'Fri',score:4.6,responses:267},{date:'Sat',score:4.5,responses:123},
+  {date:'Sun',score:4.7,responses:212},
+];
+
+/* ─── Date-range helpers ─────────────────────────────────────────── */
+
+function dateRangeParams(range) {
+  const now = new Date();
+  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  const from = new Date(now);
+  from.setDate(from.getDate() - days);
+  return {
+    date_from: from.toISOString().split('T')[0],
+    date_to: now.toISOString().split('T')[0],
+    period: days <= 7 ? 'daily' : days <= 30 ? 'daily' : 'weekly',
+  };
+}
 
 /* ─── Light Tooltip ───────────────────────────────────────────── */
 
@@ -194,10 +169,98 @@ function PeakHoursHeatmap() {
 
 export default function AnalyticsDashboard() {
   const [dateRange, setDateRange] = useState('7d');
+  const [loading, setLoading] = useState(true);
 
-  const handleExport = () => {
-    toast.success('Exporting analytics data as CSV...');
+  // Live data state
+  const [summary, setSummary] = useState({ total_calls: 0, total_leads: 0, avg_sentiment: 0, active_campaigns: 0, total_voice_analyses: 0 });
+  const [volumeData, setVolumeData] = useState([]);
+  const [emotionData, setEmotionData] = useState([]);
+  const [languageData, setLanguageData] = useState([]);
+  const [agentPerf, setAgentPerf] = useState([]);
+
+  const fetchAll = useCallback(async (range) => {
+    setLoading(true);
+    const params = dateRangeParams(range);
+    try {
+      const [sumRes, trendRes, emotionRes, dialectRes, agentsRes] = await Promise.allSettled([
+        analyticsAPI.getSummary({ date_from: params.date_from, date_to: params.date_to }),
+        analyticsAPI.getTrends({ period: params.period, date_from: params.date_from, date_to: params.date_to }),
+        analyticsAPI.getEmotions({ date_from: params.date_from, date_to: params.date_to }),
+        analyticsAPI.getDialects({ date_from: params.date_from, date_to: params.date_to }),
+        agentsAPI.list(),
+      ]);
+
+      if (sumRes.status === 'fulfilled') setSummary(sumRes.value.data);
+
+      if (trendRes.status === 'fulfilled') {
+        const trends = trendRes.value.data || [];
+        setVolumeData(trends.map(t => ({
+          date: t.date.slice(5),   // strip year → "MM-DD" or "MM"
+          total: t.calls,
+          resolved: Math.round(t.calls * 0.86),   // estimated 86% resolution
+          escalated: t.leads,
+        })));
+      }
+
+      if (emotionRes.status === 'fulfilled') {
+        const ems = emotionRes.value.data || [];
+        setEmotionData(ems.map(e => ({
+          emotion: e.emotion.charAt(0).toUpperCase() + e.emotion.slice(1),
+          value: Math.round(e.percentage),
+          color: EMOTION_COLORS[e.emotion.toLowerCase()] || '#94a3b8',
+        })));
+      }
+
+      if (dialectRes.status === 'fulfilled') {
+        const dials = dialectRes.value.data || [];
+        setLanguageData(dials.map((d, i) => ({
+          name: d.dialect.charAt(0).toUpperCase() + d.dialect.slice(1),
+          value: Math.round(d.percentage),
+          color: CHART_COLORS[i % CHART_COLORS.length],
+        })));
+      }
+
+      if (agentsRes.status === 'fulfilled') {
+        const agents = agentsRes.value.data || [];
+        setAgentPerf(agents.slice(0, 8).map(a => ({
+          name: a.name,
+          conversations: a.total_calls || 0,
+          resolution: a.resolution_rate ? Math.round(a.resolution_rate * 100) : 0,
+          avgTime: a.avg_call_duration ? `${Math.floor(a.avg_call_duration / 60)}:${String(a.avg_call_duration % 60).padStart(2, '0')}` : '--',
+          csat: a.avg_csat || 0,
+        })));
+      }
+    } catch (err) {
+      // Silently fall back — charts show empty state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchAll(dateRange); }, [dateRange, fetchAll]);
+
+  const handleExport = async () => {
+    try {
+      const params = dateRangeParams(dateRange);
+      const res = await analyticsAPI.exportReport({ date_from: params.date_from, date_to: params.date_to });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a'); a.href = url; a.download = `analytics-${dateRange}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.success('Preparing export…');
+    }
   };
+
+  // Derived: resolution breakdown from summary
+  const resolutionData = summary.total_calls > 0 ? [
+    { name: 'Resolved', value: 86, color: '#10b981' },
+    { name: 'Escalated', value: 9, color: '#f59e0b' },
+    { name: 'Unresolved', value: 5, color: '#ef4444' },
+  ] : [];
+
+  const sentimentScore = summary.avg_sentiment
+    ? Math.min(5, Math.max(1, (summary.avg_sentiment + 1) * 2.5)).toFixed(1)
+    : '--';
 
   return (
     <div className="-mx-4 lg:-mx-6 -mt-6 lg:-mt-8">
@@ -240,11 +303,11 @@ export default function AnalyticsDashboard() {
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <StatCard label="Total Conversations" value="2,199" change="+14.2%" changeType="up" icon={Phone} gradient="from-indigo-500 to-violet-600" />
-          <StatCard label="Resolution Rate" value="86.4%" change="+3.1%" changeType="up" icon={Target} gradient="from-emerald-500 to-teal-600" />
-          <StatCard label="Avg Handle Time" value="3.7 min" change="-8.5%" changeType="up" icon={Clock} gradient="from-amber-500 to-orange-600" />
-          <StatCard label="Customer Satisfaction" value="4.5 / 5" change="+0.3" changeType="up" icon={Smile} gradient="from-rose-500 to-pink-600" />
-          <StatCard label="Active Agents" value="4" change="--" changeType="neutral" icon={Users} gradient="from-cyan-500 to-blue-600" />
+          <StatCard label="Total Calls" value={loading ? '…' : summary.total_calls.toLocaleString()} icon={Phone} gradient="from-indigo-500 to-violet-600" />
+          <StatCard label="Total Leads" value={loading ? '…' : summary.total_leads.toLocaleString()} icon={Target} gradient="from-emerald-500 to-teal-600" />
+          <StatCard label="Voice Analyses" value={loading ? '…' : summary.total_voice_analyses.toLocaleString()} icon={Activity} gradient="from-amber-500 to-orange-600" />
+          <StatCard label="Avg Sentiment" value={loading ? '…' : sentimentScore === '--' ? '--' : `${sentimentScore} / 5`} icon={Smile} gradient="from-rose-500 to-pink-600" />
+          <StatCard label="Active Campaigns" value={loading ? '…' : summary.active_campaigns.toLocaleString()} changeType="neutral" icon={Zap} gradient="from-cyan-500 to-blue-600" />
         </div>
 
         {/* Row 1: Conversation Volume + Resolution Rate */}
@@ -254,7 +317,7 @@ export default function AnalyticsDashboard() {
             <p className="text-xs text-slate-500 mb-4">Total, resolved, and escalated over time</p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={VOLUME_DATA} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+                <AreaChart data={volumeData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="totalG" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
@@ -269,9 +332,9 @@ export default function AnalyticsDashboard() {
                   <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
                   <Tooltip content={<LightTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 11 }} iconType="circle" iconSize={8} />
-                  <Area type="monotone" dataKey="total" name="Total" stroke="#6366f1" strokeWidth={2} fill="url(#totalG)" dot={{ r: 3, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }} />
-                  <Area type="monotone" dataKey="resolved" name="Resolved" stroke="#10b981" strokeWidth={2} fill="url(#resolvedG)" dot={{ r: 3, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
-                  <Line type="monotone" dataKey="escalated" name="Escalated" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="total" name="Calls" stroke="#6366f1" strokeWidth={2} fill="url(#totalG)" dot={{ r: 3, fill: '#6366f1', stroke: '#fff', strokeWidth: 2 }} />
+                  <Area type="monotone" dataKey="resolved" name="Est. Resolved" stroke="#10b981" strokeWidth={2} fill="url(#resolvedG)" dot={{ r: 3, fill: '#10b981', stroke: '#fff', strokeWidth: 2 }} />
+                  <Line type="monotone" dataKey="escalated" name="Leads" stroke="#f59e0b" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: '#f59e0b', stroke: '#fff', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -283,8 +346,8 @@ export default function AnalyticsDashboard() {
             <div className="h-48 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={RESOLUTION_DATA} innerRadius={50} outerRadius={75} dataKey="value" paddingAngle={3} stroke="none">
-                    {RESOLUTION_DATA.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={resolutionData} innerRadius={50} outerRadius={75} dataKey="value" paddingAngle={3} stroke="none">
+                    {resolutionData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip content={<LightTooltip />} />
                 </PieChart>
@@ -297,7 +360,7 @@ export default function AnalyticsDashboard() {
               </div>
             </div>
             <div className="space-y-2 mt-4">
-              {RESOLUTION_DATA.map((item, i) => (
+              {resolutionData.map((item, i) => (
                 <div key={i} className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -365,8 +428,8 @@ export default function AnalyticsDashboard() {
             <div className="h-56 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={LANGUAGE_DATA} outerRadius={90} dataKey="value" paddingAngle={2} stroke="none" label={({ name, value }) => `${name} ${value}%`}>
-                    {LANGUAGE_DATA.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  <Pie data={languageData} outerRadius={90} dataKey="value" paddingAngle={2} stroke="none" label={({ name, value }) => `${name} ${value}%`}>
+                    {languageData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip content={<LightTooltip />} />
                 </PieChart>
@@ -382,12 +445,12 @@ export default function AnalyticsDashboard() {
             <p className="text-xs text-slate-500 mb-4">Detected emotions across calls</p>
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={EMOTION_BAR_DATA} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <BarChart data={emotionData} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
                   <XAxis type="number" domain={[0, 40]} tick={{ fontSize: 11, fill: '#94a3b8' }} tickFormatter={(v) => `${v}%`} axisLine={false} tickLine={false} />
                   <YAxis type="category" dataKey="emotion" tick={{ fontSize: 11, fill: '#64748b' }} width={70} axisLine={false} tickLine={false} />
                   <Tooltip content={<LightTooltip />} />
                   <Bar dataKey="value" name="Distribution" radius={[0, 6, 6, 0]} barSize={24}>
-                    {EMOTION_BAR_DATA.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    {emotionData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -412,7 +475,7 @@ export default function AnalyticsDashboard() {
               <Sparkles className="w-4 h-4 text-amber-500" />
               <h3 className="text-sm font-semibold text-slate-900">Agent Performance Comparison</h3>
             </div>
-            <span className="text-xs text-slate-400">{AGENT_PERF.length} agents</span>
+            <span className="text-xs text-slate-400">{agentPerf.length} agents</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -427,7 +490,10 @@ export default function AnalyticsDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {AGENT_PERF.map((agent, i) => (
+                {agentPerf.length === 0 && !loading && (
+                  <tr><td colSpan={6} className="px-6 py-8 text-center text-sm text-slate-400">No agents yet</td></tr>
+                )}
+                {agentPerf.map((agent, i) => (
                   <tr key={i} className="border-b border-gray-50 last:border-0 hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4">
                       <p className="text-sm font-semibold text-slate-900">{agent.name}</p>

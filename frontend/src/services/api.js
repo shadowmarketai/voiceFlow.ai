@@ -308,22 +308,28 @@ export const ticketsAPI = {
 export const analyticsAPI = {
   // Get dashboard stats
   getDashboard: (params) => api.get('/api/v1/analytics/dashboard', { params }),
-  
+
+  // Overview metrics (total_calls, total_leads, avg_sentiment, etc.)
+  getSummary: (params) => api.get('/api/v1/analytics/summary', { params }),
+
+  // Time-series trends — period: 'daily' | 'weekly' | 'monthly'
+  getTrends: (params) => api.get('/api/v1/analytics/trends', { params }),
+
   // Get call volume
   getCallVolume: (params) => api.get('/api/v1/analytics/calls/volume', { params }),
-  
+
   // Get emotion analytics
   getEmotions: (params) => api.get('/api/v1/analytics/emotions', { params }),
-  
+
   // Get dialect/language analytics
   getDialects: (params) => api.get('/api/v1/analytics/dialects', { params }),
-  
+
   // Get conversion analytics
   getConversions: (params) => api.get('/api/v1/analytics/conversions', { params }),
-  
+
   // Get hourly distribution
   getHourlyDistribution: (params) => api.get('/api/v1/analytics/hourly', { params }),
-  
+
   // Export report
   exportReport: (params) => api.get('/api/v1/analytics/export', { params, responseType: 'blob' }),
 };
