@@ -370,6 +370,13 @@ def _include_routers(application: FastAPI) -> None:
     except Exception as exc:
         logger.warning("Voice Agent router not available: %s", exc)
 
+    try:
+        from api.routers.voices_catalog import router as voices_catalog_router
+        application.include_router(voices_catalog_router)
+        logger.info("Voices Catalog router loaded (real voice library)")
+    except Exception as exc:
+        logger.warning("Voices Catalog router not available: %s", exc)
+
     # ── CRM Leads (separate leads database) ───────────────────
     try:
         from api.routers.crm_leads import router as crm_leads_router

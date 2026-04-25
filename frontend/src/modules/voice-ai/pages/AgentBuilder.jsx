@@ -952,7 +952,7 @@ export default function AgentBuilder() {
           {/* Voice + Response Timing */}
           <Section title="Voice" icon={Volume2} badge={`${selectedVoice}`}>
             <p className="text-xs text-gray-500 mb-3">Pick from {50}+ built-in voices across 6 providers, or your tenant's cloned voices.</p>
-            <AgentVoicePicker selected={selectedVoice} onSelect={setSelectedVoice} />
+            <AgentVoicePicker selected={selectedVoice} onSelect={setSelectedVoice} language={agentLang} />
 
             <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider mb-2 block mt-5">Response Timing</label>
             <div className="grid grid-cols-3 gap-2">

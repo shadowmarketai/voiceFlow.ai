@@ -24,7 +24,41 @@ import {
 import toast from 'react-hot-toast'
 import { voiceCloneAPI } from '../../../services/api'
 
-/* Built-in voice catalog (mirrors VoiceLibrary.jsx). Keep in sync. */
+/* Language name → ISO code (matches catalog API) */
+const LANG_TO_ISO = {
+  'English': 'en', 'Hindi': 'hi', 'Tamil': 'ta', 'Telugu': 'te',
+  'Kannada': 'kn', 'Malayalam': 'ml', 'Bengali': 'bn', 'Gujarati': 'gu',
+  'Marathi': 'mr', 'Punjabi': 'pa', 'Odia': 'or', 'Assamese': 'as',
+  'Hinglish': 'hi',
+}
+
+/* ISO code → full language name */
+const ISO_TO_LANG = {
+  'en': 'English', 'hi': 'Hindi', 'ta': 'Tamil', 'te': 'Telugu',
+  'kn': 'Kannada', 'ml': 'Malayalam', 'bn': 'Bengali', 'gu': 'Gujarati',
+  'mr': 'Marathi', 'pa': 'Punjabi', 'or': 'Odia', 'as': 'Assamese',
+}
+
+/* Engine name → display provider label */
+const ENGINE_LABEL = {
+  'elevenlabs': 'ElevenLabs', 'cartesia': 'Cartesia',
+  'sarvam': 'Sarvam', 'edge': 'Edge TTS',
+}
+
+/* Convert a catalog API voice object to the internal picker format */
+function apiVoiceToRow(v) {
+  return {
+    id:       v.id,
+    name:     v.name,
+    provider: ENGINE_LABEL[v.engine] || v.engine,
+    gender:   v.gender ? (v.gender[0].toUpperCase() + v.gender.slice(1)) : 'Female',
+    lang:     ISO_TO_LANG[v.language] || v.language || 'Multi',
+    accent:   v.accent || '',
+    tag:      v.tier === 'premium' ? 'Premium' : 'Free',
+  }
+}
+
+/* Built-in fallback catalog (used when API is unavailable). */
 const CATALOG = [
   // ── Deepgram Aura — 12 voices ──
   { id: 'dg-asteria',  name: 'Asteria',  provider: 'Deepgram Aura', gender: 'Female', lang: 'English', accent: 'American', tag: 'Default' },
@@ -94,8 +128,9 @@ const CATALOG = [
 
 const PROVIDER_TABS = ['All', 'Cloned', 'Deepgram Aura', 'ElevenLabs', 'Sarvam', 'OpenAI', 'Edge TTS', 'Cartesia']
 
-export default function AgentVoicePicker({ selected, onSelect }) {
+export default function AgentVoicePicker({ selected, onSelect, language }) {
   const [cloned, setCloned] = useState([])
+  const [catalogVoices, setCatalogVoices] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('All')
   const [search, setSearch] = useState('')
@@ -114,13 +149,34 @@ export default function AgentVoicePicker({ selected, onSelect }) {
       setCloned(list)
     } catch {
       setCloned([])
+    }
+  }
+
+  const loadCatalog = async (lang) => {
+    setLoading(true)
+    try {
+      const iso = LANG_TO_ISO[lang] || 'en'
+      const resp = await fetch(`/api/v1/voices/catalog?language=${iso}`)
+      if (!resp.ok) throw new Error(resp.statusText)
+      const data = await resp.json()
+      setCatalogVoices((data.voices || []).map(apiVoiceToRow))
+    } catch {
+      // Fall back to hardcoded CATALOG on error
+      setCatalogVoices(CATALOG)
     } finally {
       setLoading(false)
     }
   }
-  useEffect(() => { loadCloned() }, [])
 
-  const all = useMemo(() => [...cloned, ...CATALOG], [cloned])
+  useEffect(() => {
+    loadCloned()
+  }, [])
+
+  useEffect(() => {
+    loadCatalog(language || 'English')
+  }, [language])
+
+  const all = useMemo(() => [...cloned, ...catalogVoices], [cloned, catalogVoices])
 
   const visible = useMemo(() => {
     let v = all
