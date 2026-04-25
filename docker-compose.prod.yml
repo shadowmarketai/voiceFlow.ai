@@ -42,7 +42,15 @@ services:
     restart: unless-stopped
     ports:
       - "8001:8001"
+    # Forward EVERY env var from Coolify (Coolify writes them to .env on
+    # deploy).  This means any new key you add in Coolify's UI flows
+    # through to the container without compose changes.
+    env_file:
+      - .env
     environment:
+      # Compose-level defaults + aliases (override .env where needed).
+      # GEMINI_API_KEY auto-aliases to GOOGLE_API_KEY when only one is set.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}
       # ── App ──────────────────────────────────
       APP_ENV: production
       APP_NAME: VoiceFlow AI

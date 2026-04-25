@@ -43,7 +43,12 @@ services:
     restart: unless-stopped
     ports:
       - "8001:8001"
+    # Forward every env var from .env automatically.
+    env_file:
+      - .env
     environment:
+      # GEMINI_API_KEY aliases GOOGLE_API_KEY if you set only one.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}
       DATABASE_URL: postgresql+asyncpg://voiceflow:${DB_PASSWORD:-voiceflow_secret}@postgres:5432/voiceflow
       REDIS_URL: redis://redis:6379/0
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
